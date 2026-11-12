@@ -1,0 +1,41 @@
+#!/bin/sh
+# title 'a few words'  -- name yourself, once, for the work you are here to do.
+#
+#   title 'Short status headline'
+#
+# Prints the worker as worker-service now has it. Exits 1 on an HTTP error,
+# and 409 once you have a title: only the person changes it after that.
+#
+# Env: WS_URL and WS_TOKEN (set for the session); WS_WORKER_ID overrides the worker.
+set -eu
+
+usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+[ $# -eq 1 ] || usage
+
+url=${WS_URL:?"title: WS_URL is not set: this session was started without worker-service's address"}
+token=${WS_TOKEN:?"title: WS_TOKEN is not set: this session was started without worker-service's token"}
+
+if [ -n "${WS_WORKER_ID-}" ]; then
+  id=$WS_WORKER_ID
+else
+  config=${CLAUDE_CONFIG_DIR:?"title: CLAUDE_CONFIG_DIR is not set, so which worker this is is unknown"}
+  file=$(dirname "$(dirname "$config")")/worker.json
+  id=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1)
+  [ -n "$id" ] || { echo "title: no worker id in $file" >&2; exit 1; }
+fi
+
+name=$(printf %s "$1" | tr '\n\r\t' '   ' | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+# The token goes in by a header file on stdin, so it is never on a command line.
+code=$(printf 'authorization: Bearer %s\n' "$token" | curl -sS -o "$out" -w '%{http_code}' -X PUT -H @- \
+  -H 'content-type: application/json' --data-binary "{\"title\":\"$name\"}" \
+  "${url%/}/fleet/workers/$id/title")
+
+cat "$out"
+[ -s "$out" ] && [ "$(tail -c1 "$out")" != "" ] && echo
+if [ "$code" -ge 400 ]; then
+  echo "title: HTTP $code" >&2
+  exit 1
+fi
