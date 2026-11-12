@@ -23,7 +23,7 @@ import {
   type Sent,
   type Session,
   type SessionEnding,
-  type Worker,
+  type Agent,
   unreported,
 } from "./domain.ts";
 import type { Push } from "./push.ts";
@@ -44,7 +44,7 @@ import { Conflict, type Change, type SessionWrite, type Store } from "./store.ts
  */
 const ATTEMPTS = 4;
 
-/** A `guarded` change that found a worker written since it was read. */
+/** A `guarded` change that found an agent written since it was read. */
 export const conflicted = (err: unknown): boolean => err instanceof Conflict;
 
 /** Runs `attempt`, which reads what it writes, again while it is `conflicted`. */
@@ -74,7 +74,7 @@ export class Fleet {
 
   /**
    * Writes `change`, then pushes its commands to their host's sockets and the
-   * workers it names to viewers. Written first, so a push never announces
+   * agents it names to viewers. Written first, so a push never announces
    * what the table does not hold.
    */
   async apply(change: Change): Promise<void> {
@@ -85,7 +85,7 @@ export class Fleet {
       byHost.set(hostId, [...(byHost.get(hostId) ?? []), { type: "command", command }]);
     }
     for (const [hostId, messages] of byHost) await this.push.toHost(hostId, messages);
-    await this.announce(change.workers ?? []);
+    await this.announce(change.agents ?? []);
     await this.tell([
       ...(change.queue ?? []).map(({ queued }) => unreported(queued)),
       ...(change.settled ?? []).map(({ sent }) => sent),
@@ -98,59 +98,59 @@ export class Fleet {
     await this.tell([sent]);
   }
 
-  /** Only what a conversation shows: the commands that carry something said to the worker. */
+  /** Only what a conversation shows: the commands that carry something said to the agent. */
   private async tell(sent: Sent[]): Promise<void> {
     const now = this.now();
     await this.push.toViewers(
-      sent.filter((s) => "text" in s.command && s.command.text !== undefined).map((s) => ({ type: "sent", workerId: s.command.workerId, sent: sentView(s, now) })),
+      sent.filter((s) => "text" in s.command && s.command.text !== undefined).map((s) => ({ type: "sent", agentId: s.command.agentId, sent: sentView(s, now) })),
     );
   }
 
-  async announce(workers: Worker[]): Promise<void> {
-    if (!workers.length) return;
+  async announce(agents: Agent[]): Promise<void> {
+    if (!agents.length) return;
     const hosts = new Map((await this.store.listHosts()).map((h) => [h.id, h]));
     const now = this.now();
     await this.push.toViewers(
-      workers.map((w) => ({ type: "worker", worker: workerView(w, hosts.get(w.hostId) ?? null, now) })),
+      agents.map((w) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now) })),
     );
   }
 
   /**
-   * Stops the worker's session and retires it, releasing its name; the id of the `retire` its host is sent.
-   * Guarded: `conflicted` when the worker was written since it was read, for the caller to read it again.
+   * Stops the agent's session and retires it, releasing its name; the id of the `retire` its host is sent.
+   * Guarded: `conflicted` when the agent was written since it was read, for the caller to read it again.
    */
-  async retire(worker: Worker): Promise<string> {
+  async retire(agent: Agent): Promise<string> {
     const now = this.now();
     const at = now.toISOString();
     const commands: Command[] = [];
     const sessions: SessionWrite[] = [];
-    if (worker.session) {
-      sessions.push({ ...worker.session, workerId: worker.id, endedAt: at, ended: "stopped" });
-      commands.push({ kind: "stop", id: randomUUID(), workerId: worker.id });
+    if (agent.session) {
+      sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended: "stopped" });
+      commands.push({ kind: "stop", id: randomUUID(), agentId: agent.id });
     }
-    const retire: Command = { kind: "retire", id: randomUUID(), workerId: worker.id };
+    const retire: Command = { kind: "retire", id: randomUUID(), agentId: agent.id };
     commands.push(retire);
     await this.apply({
-      workers: [{ ...worker, state: "retired", session: null, ...afterSession(worker) }],
+      agents: [{ ...agent, state: "retired", session: null, ...afterSession(agent) }],
       sessions,
-      queue: inOrder(worker.hostId, commands, now),
-      release: worker.name,
+      queue: inOrder(agent.hostId, commands, now),
+      release: agent.name,
       guarded: true,
     });
     try {
-      await this.credentials.own.remove(worker.id, worker.ownCredentials ?? []);
+      await this.credentials.own.remove(agent.id, agent.ownCredentials ?? []);
     } catch (err) {
-      console.error(`Could not delete ${worker.id}'s own credentials:`, (err as Error).name);
+      console.error(`Could not delete ${agent.id}'s own credentials:`, (err as Error).name);
     }
     return retire.id;
   }
 
   /**
-   * Only workers on this host are touched. One the host reports that nobody
+   * Only agents on this host are touched. One the host reports that nobody
    * put there is ignored: a host runs what it was given and cannot bring a
-   * worker onto the record by claiming it, nor write into the transcript of
+   * agent onto the record by claiming it, nor write into the transcript of
    * one it was not given. Lines are stored whatever the state, so the last
-   * words of a session are kept with the rest. A retired worker's state is
+   * words of a session are kept with the rest. A retired agent's state is
    * the service's alone.
    */
   /**
@@ -187,46 +187,46 @@ export class Fleet {
   private async applyReport(hostId: string, report: Report): Promise<void> {
     const at = this.now().toISOString();
     const now = this.now();
-    // Pending before workers: a start settled by a concurrent report is then either still pending
-    // here, or settled with its worker's `begun` in one write that the workers read after sees.
+    // Pending before agents: a start settled by a concurrent report is then either still pending
+    // here, or settled with its agent's `begun` in one write that the agents read after sees.
     let pending = await this.store.pending(hostId);
     let written = await this.store.written(hostId);
-    const workers = new Map(
-      (await this.store.listWorkers()).filter((w) => w.hostId === hostId).map((w) => [w.id, w]),
+    const agents = new Map(
+      (await this.store.listAgents()).filter((w) => w.hostId === hostId).map((w) => [w.id, w]),
     );
-    const changed = new Map<string, Worker>();
+    const changed = new Map<string, Agent>();
     const sessions: SessionWrite[] = [];
     const queue: Change["queue"] = [];
     const settled: NonNullable<Change["settled"]> = [];
     const retiring = new Set<string>();
 
-    const end = (worker: Worker, ended: SessionEnding) => {
-      if (!worker.session) return;
-      sessions.push({ ...worker.session, workerId: worker.id, endedAt: at, ended });
+    const end = (agent: Agent, ended: SessionEnding) => {
+      if (!agent.session) return;
+      sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended });
       // Its text was in a session that is gone; a host that restarted cannot say so itself.
-      for (const sent of written.filter((s) => s.command.workerId === worker.id)) {
+      for (const sent of written.filter((s) => s.command.agentId === agent.id)) {
         settled.push({ hostId, sent: { ...sent, reportedAt: at, ok: false, error: NEVER_TAKEN, taken: null } });
       }
-      written = written.filter((s) => s.command.workerId !== worker.id);
-      const next: Worker = {
-        ...worker,
+      written = written.filter((s) => s.command.agentId !== agent.id);
+      const next: Agent = {
+        ...agent,
         state: ended === "stopped" ? "idle" : "interrupted",
         session: null,
         reportedAt: at,
-        ...afterSession(worker),
+        ...afterSession(agent),
       };
-      workers.set(worker.id, next);
-      changed.set(worker.id, next);
-      if (onceQuiet(next) === "retire") retiring.add(worker.id);
+      agents.set(agent.id, next);
+      changed.set(agent.id, next);
+      if (onceQuiet(next) === "retire") retiring.add(agent.id);
     };
-    const update = (worker: Worker, fields: Partial<Worker>) => {
-      const next = { ...worker, ...fields };
-      workers.set(worker.id, next);
-      changed.set(worker.id, next);
+    const update = (agent: Agent, fields: Partial<Agent>) => {
+      const next = { ...agent, ...fields };
+      agents.set(agent.id, next);
+      changed.set(agent.id, next);
     };
 
     // As they were before this report: what an earlier report confirmed.
-    const begun = new Map([...workers].map(([id, w]) => [id, w.begun ?? null]));
+    const begun = new Map([...agents].map(([id, w]) => [id, w.begun ?? null]));
 
     for (const result of report.commandResults) {
       const taken = result.ok && result.taken === false ? false : null;
@@ -242,51 +242,51 @@ export class Fleet {
       if (!queued) continue;
       pending = pending.filter((q) => q !== queued);
       const { command } = queued;
-      const worker = workers.get(command.workerId);
+      const agent = agents.get(command.agentId);
       const sent: Sent = { ...queued, reportedAt: at, ok: result.ok, error: result.error ?? null, withdrawnAt: null, taken };
       if (taken === false) written.push(sent);
-      // A start or stop is settled in the write that records what it did to its worker.
+      // A start or stop is settled in the write that records what it did to its agent.
       if (command.kind === "start" || command.kind === "stop") settled.push({ hostId, sent });
       else await this.settle(hostId, sent);
-      if (worker && worker.state !== "retired") {
+      if (agent && agent.state !== "retired") {
         // A start the host could not do is a session that died before it began.
-        if (command.kind === "start" && !result.ok && worker.session?.id === command.sessionId) {
-          end(worker, "interrupted");
+        if (command.kind === "start" && !result.ok && agent.session?.id === command.sessionId) {
+          end(agent, "interrupted");
         }
-        if (command.kind === "stop" && result.ok) end(worker, "stopped");
-        if (command.kind === "start" && result.ok && worker.session?.id === command.sessionId) {
-          update(worker, { begun: command.sessionId });
+        if (command.kind === "stop" && result.ok) end(agent, "stopped");
+        if (command.kind === "start" && result.ok && agent.session?.id === command.sessionId) {
+          update(agent, { begun: command.sessionId });
         }
       }
     }
     const offered = pending.filter((q) => !withdrawn(q, now));
 
-    for (const { id, state, sessionId, tasks = 0, told = null } of report.workers) {
-      const worker = workers.get(id);
-      if (!worker || worker.state === "retired") continue;
-      const session = worker.session;
+    for (const { id, state, sessionId, tasks = 0, told = null } of report.agents) {
+      const agent = agents.get(id);
+      if (!agent || agent.state === "retired") continue;
+      const session = agent.session;
       if (!session) {
         // Force-stopped while its host could not hear it: told to stop, once until taken.
         if (isLive(state) && !stopping(offered, id)) {
-          const stop: Queued = { command: { kind: "stop", id: randomUUID(), workerId: id }, queuedAt: at };
+          const stop: Queued = { command: { kind: "stop", id: randomUUID(), agentId: id }, queuedAt: at };
           queue.push({ hostId, queued: stop });
           offered.push(stop);
-        } else if (!isLive(state) && worker.reportedAt === null) {
-          update(worker, { reportedAt: at });
+        } else if (!isLive(state) && agent.reportedAt === null) {
+          update(agent, { reportedAt: at });
         }
         continue;
       }
       if (sessionId === session.id) {
-        if (state === "idle") end(worker, "stopped");
-        else if (state === "interrupted") end(worker, "interrupted");
-        else if (state !== worker.state || tasks !== (worker.tasks ?? 0) || told !== (worker.told ?? null) || worker.reportedAt === null) {
-          const next: Worker = { ...worker, state, tasks, told, reportedAt: at };
-          update(worker, next);
+        if (state === "idle") end(agent, "stopped");
+        else if (state === "interrupted") end(agent, "interrupted");
+        else if (state !== agent.state || tasks !== (agent.tasks ?? 0) || told !== (agent.told ?? null) || agent.reportedAt === null) {
+          const next: Agent = { ...agent, state, tasks, told, reportedAt: at };
+          update(agent, next);
           const then = onceQuiet(next);
-          if (then && quiet(next) && !quiet(worker)) {
+          if (then && quiet(next) && !quiet(agent)) {
             if (then === "retire") retiring.add(id);
             else if (!stopping(offered, id)) {
-              const stop: Queued = { command: { kind: "stop", id: randomUUID(), workerId: id }, queuedAt: at };
+              const stop: Queued = { command: { kind: "stop", id: randomUUID(), agentId: id }, queuedAt: at };
               queue.push({ hostId, queued: stop });
               offered.push(stop);
             }
@@ -299,47 +299,47 @@ export class Fleet {
       // Reports are applied as they arrive, not as they were sent: a snapshot from before an earlier
       // report's start says idle with no session, where a session that died is reported interrupted.
       if (state === "idle" && sessionId === null && begun.get(id) === session.id) continue;
-      end(worker, "interrupted");
+      end(agent, "interrupted");
     }
 
     const lines = new Map<string, TranscriptLine[]>();
-    for (const { workerId, ...line } of report.lines) {
-      if (!workers.has(workerId)) continue;
-      lines.set(workerId, [...(lines.get(workerId) ?? []), { ...line, text: cut(line.text) }]);
+    for (const { agentId, ...line } of report.lines) {
+      if (!agents.has(agentId)) continue;
+      lines.set(agentId, [...(lines.get(agentId) ?? []), { ...line, text: cut(line.text) }]);
     }
-    for (const [workerId, written] of lines) {
-      await this.store.putLines(workerId, written);
-      const worker = workers.get(workerId)!;
+    for (const [agentId, written] of lines) {
+      await this.store.putLines(agentId, written);
+      const agent = agents.get(agentId)!;
       const latest = [...written]
         .sort((a, b) => b.seq - a.seq)
         .map((line) => ({ text: activityOf(line.from, line.text), at: line.at }))
         .find((a): a is Activity => a.text !== null);
-      if (worker.state !== "retired" && latest && latest.at >= (worker.activity?.at ?? "")) update(worker, { activity: latest });
+      if (agent.state !== "retired" && latest && latest.at >= (agent.activity?.at ?? "")) update(agent, { activity: latest });
     }
 
-    // Counted on a retired worker too: its last turn's total can arrive in the report that retires it.
-    for (const { workerId, sessionId, ...reported } of report.tokens ?? []) {
-      const worker = workers.get(workerId);
-      if (!worker) continue;
-      const held = worker.sessionTokens?.[sessionId] ?? NO_TOKENS;
+    // Counted on a retired agent too: its last turn's total can arrive in the report that retires it.
+    for (const { agentId, sessionId, ...reported } of report.tokens ?? []) {
+      const agent = agents.get(agentId);
+      if (!agent) continue;
+      const held = agent.sessionTokens?.[sessionId] ?? NO_TOKENS;
       const kept = highest(held, reported);
-      if (TOKEN_FIELDS.every((f) => kept[f] === held[f]) && worker.sessionTokens?.[sessionId]) continue;
-      update(worker, { sessionTokens: { ...worker.sessionTokens, [sessionId]: kept } });
+      if (TOKEN_FIELDS.every((f) => kept[f] === held[f]) && agent.sessionTokens?.[sessionId]) continue;
+      update(agent, { sessionTokens: { ...agent.sessionTokens, [sessionId]: kept } });
     }
 
-    // Guarded, so a status said, or anything else written, since these workers were read is never put back.
-    await this.apply({ workers: [...changed.values()], sessions, queue, settled, guarded: true });
+    // Guarded, so a status said, or anything else written, since these agents were read is never put back.
+    await this.apply({ agents: [...changed.values()], sessions, queue, settled, guarded: true });
     // Read again, as what this report wrote has a new rev, and retired even if written since.
     for (const id of retiring) {
       await afresh(async () => {
-        const worker = await this.store.getWorker(id);
-        if (worker && worker.state !== "retired") await this.retire(worker);
+        const agent = await this.store.getAgent(id);
+        if (agent && agent.state !== "retired") await this.retire(agent);
       });
     }
     await this.push.toViewers(
-      [...lines].map(([workerId, written]): SocketOutbound => ({
+      [...lines].map(([agentId, written]): SocketOutbound => ({
         type: "lines",
-        workerId,
+        agentId,
         lines: written.sort((a, b) => a.seq - b.seq),
       })),
     );
@@ -348,7 +348,7 @@ export class Fleet {
 
 const NEVER_TAKEN = "Its session ended before it took the message.";
 
-/** A command as it is served, on `listWorkerCommands` and to viewers. */
+/** A command as it is served, on `listAgentCommands` and to viewers. */
 export const sentView = (sent: Sent, now: Date) => ({
   command: sent.command,
   queuedAt: sent.queuedAt,
@@ -357,17 +357,17 @@ export const sentView = (sent: Sent, now: Date) => ({
   error: sent.error,
 });
 
-const stopping = (offered: Queued[], workerId: string) =>
-  offered.some((q) => q.command.kind === "stop" && q.command.workerId === workerId);
+const stopping = (offered: Queued[], agentId: string) =>
+  offered.some((q) => q.command.kind === "stop" && q.command.agentId === agentId);
 
 const starting = (offered: Queued[], sessionId: string) =>
   offered.some((q) => q.command.kind === "start" && q.command.sessionId === sessionId);
 
-/** A worker as it is served, which `hadSession` and `begun` are not. */
-export const workerView = (worker: Worker, host: Host | null, now: Date) => {
+/** An agent as it is served, which `hadSession` and `begun` are not. */
+export const agentView = (agent: Agent, host: Host | null, now: Date) => {
   const { hadSession: _, begun: __, ownCredentials: ____, rev: ________, sessionTokens, item, role, title, label, createdBy, whenDone, documents, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
-    worker as Worker & { turn?: unknown; paged?: unknown };
+    agent as Agent & { turn?: unknown; paged?: unknown };
   const { turn: ______, paged: _______, ...rest } = served as typeof served & { turn?: unknown; paged?: unknown };
   return {
     ...rest,
@@ -379,36 +379,36 @@ export const workerView = (worker: Worker, host: Host | null, now: Date) => {
     createdBy: createdBy ?? null,
     whenDone: whenDone ?? "keep",
     documents: documents ?? [],
-    // A worker made before credentials were chosen was given today's defaults at each start.
+    // An agent made before credentials were chosen was given today's defaults at each start.
     credentials: credentials ?? null,
-    status: statusOf(worker),
+    status: statusOf(agent),
     summary: summary ?? null,
     headline: headline ?? null,
     saidAt: saidAt ?? null,
     activity: activity ?? null,
     tasks: tasks ?? 0,
-    told: worker.told ?? null,
+    told: agent.told ?? null,
     hostStatus: host ? hostStatus(host.heartbeatAt, now) : ("lost" as const),
   };
 };
 
-export const hostView = (host: Host, workers: Worker[], now: Date) => ({
+export const hostView = (host: Host, agents: Agent[], now: Date) => ({
   ...host,
   status: hostStatus(host.heartbeatAt, now),
-  available: available(host, workers),
+  available: available(host, agents),
 });
 
-/** The start of a new session, and the worker with it live, given what is attached to it. */
+/** The start of a new session, and the agent with it live, given what is attached to it. */
 export function begin(
-  worker: Worker,
+  agent: Agent,
   at: string,
   text?: string,
   attached: Attached = { context: null, documents: [], skills: [], env: {}, credentials: [], ownCredentials: [], note: null },
-): { worker: Worker; session: Session; command: Command } {
+): { agent: Agent; session: Session; command: Command } {
   const { context, documents, skills, env, credentials, ownCredentials, note } = attached;
   const session: Session = {
     id: randomUUID(),
-    workerId: worker.id,
+    agentId: agent.id,
     startedAt: at,
     endedAt: null,
     ended: null,
@@ -418,8 +418,8 @@ export function begin(
     contextNote: note,
   };
   return {
-    worker: {
-      ...worker,
+    agent: {
+      ...agent,
       state: "working",
       session: { id: session.id, startedAt: at },
       hadSession: true,
@@ -434,9 +434,9 @@ export function begin(
     command: {
       kind: "start",
       id: randomUUID(),
-      workerId: worker.id,
+      agentId: agent.id,
       sessionId: session.id,
-      resume: worker.hadSession,
+      resume: agent.hadSession,
       ...(text !== undefined && { text }),
       ...(context && { context }),
       ...(documents.length && { documents }),

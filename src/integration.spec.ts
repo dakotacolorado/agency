@@ -2,15 +2,15 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { Host } from "./domain.ts";
 import type { Command, SocketOutbound } from "./schema.ts";
 
-/** Runs against a deployed stage: `WORKER_SERVICE_URL=... WORKER_SERVICE_TOKEN=... npm test` */
+/** Runs against a running instance, never prod: `INTEGRATION_AG_URL=... INTEGRATION_AG_TOKEN=... npm test` */
 
-const url = process.env.WORKER_SERVICE_URL?.replace(/\/$/, "");
-const token = process.env.WORKER_SERVICE_TOKEN;
+const url = process.env.INTEGRATION_AG_URL?.replace(/\/$/, "");
+const token = process.env.INTEGRATION_AG_TOKEN;
 
 /**
- * Each run sends heartbeats as hosts of its own and names its workers after
+ * Each run sends heartbeats as hosts of its own and names its agents after
  * itself, so a run that dies cannot leave the next one refused as full or by
- * a name in use. A host stays listed until it is deregistered and a worker
+ * a name in use. A host stays listed until it is deregistered and an agent
  * holds its name until retired, so the run undoes both on the way out.
  */
 const run = process.env.GITHUB_RUN_ID
@@ -24,7 +24,7 @@ const EMPTY = { version: "integration", labels: [] };
 
 const heartbeat = (body: object = {}, host = hostOf("test")) => {
   sentAs.add(host);
-  return fetch(`${url}/fleet/hosts/${host}/heartbeat`, {
+  return fetch(`${url}/hosts/${host}/heartbeat`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -41,7 +41,7 @@ const beat = async (body: object, host: string) => {
 };
 
 /**
- * A host's socket, as worker-host opens it: the token in a header, which
+ * A host's socket, as agent-host opens it: the token in a header, which
  * Node's WebSocket (undici's) takes and a browser's does not. Commands are
  * kept as they arrive, for `next` to take in order.
  */
@@ -105,8 +105,8 @@ const ack = (commands: Command[]) => commands.map((c) => ({ commandId: c.id, ok:
 
 describe.skipIf(!url || !token)("deployed stage", () => {
   afterAll(async () => {
-    for (const id of made) await call("DELETE", `/fleet/workers/${id}`);
-    for (const host of sentAs) await call("DELETE", `/fleet/hosts/${host}`);
+    for (const id of made) await call("DELETE", `/agents/${id}`);
+    for (const host of sentAs) await call("DELETE", `/hosts/${host}`);
   });
 
   it("serves health without a token", async () => {
@@ -116,8 +116,8 @@ describe.skipIf(!url || !token)("deployed stage", () => {
   });
 
   it("refuses a read without the token, or with the wrong one", async () => {
-    expect((await fetch(`${url}/fleet/hosts`)).status).toBe(401);
-    expect((await call("GET", "/fleet/hosts", undefined, "wrong")).status).toBe(401);
+    expect((await fetch(`${url}/hosts`)).status).toBe(401);
+    expect((await call("GET", "/hosts", undefined, "wrong")).status).toBe(401);
   });
 
   it("accepts a heartbeat, lists the host, and says where its socket is", async () => {
@@ -126,82 +126,82 @@ describe.skipIf(!url || !token)("deployed stage", () => {
     const body = (await res.json()) as { socketUrl: string | null };
     expect(body.socketUrl).toMatch(/^wss:\/\//);
 
-    const { hosts } = (await read("/fleet/hosts")) as { hosts: Host[] };
+    const { hosts } = (await read("/hosts")) as { hosts: Host[] };
     expect(hosts.find((h) => h.id === hostOf("test"))).toMatchObject({
       version: "integration",
       labels: ["integration"],
     });
-    expect((await call("GET", `/fleet/hosts/${hostOf("never")}`)).status).toBe(404);
+    expect((await call("GET", `/hosts/${hostOf("never")}`)).status).toBe(404);
   });
 
   it("gives a page a one-time socket ticket", async () => {
-    const res = await call("POST", "/fleet/socket-tickets");
+    const res = await call("POST", "/socket-tickets");
     expect(res.status, await res.clone().text()).toBe(201);
     expect(await res.json()).toMatchObject({ ticket: expect.any(String), socketUrl: expect.stringMatching(/^wss:\/\//) });
   });
 
   it("refuses a report on the heartbeat, which goes by the socket alone", async () => {
-    expect((await heartbeat({ workers: [] })).status).toBe(400);
+    expect((await heartbeat({ agents: [] })).status).toBe(400);
   });
 
-  it("carries a worker from creation through a session to retirement, by socket", async () => {
-    const host = hostOf("workers");
+  it("carries an agent from creation through a session to retirement, by socket", async () => {
+    const host = hostOf("agents");
     const { socketUrl } = await beat({ capacity: 1 }, host);
     expect(socketUrl).toMatch(/^wss:\/\//);
 
     // Made before its host's socket is open, its create is replayed when it opens.
-    const res = await call("POST", "/fleet/workers", {
+    const res = await call("POST", "/agents", {
       name: `it-${run}`,
       hostId: host,
     });
     expect(res.status, await res.clone().text()).toBe(201);
-    const worker = (await res.json()) as { id: string; state: string; reportedAt: string | null };
-    made.add(worker.id);
-    expect(worker).toMatchObject({ state: "idle", reportedAt: null });
+    const agent = (await res.json()) as { id: string; state: string; reportedAt: string | null };
+    made.add(agent.id);
+    expect(agent).toMatchObject({ state: "idle", reportedAt: null });
 
     const socket = await hostSocket(socketUrl, host);
     try {
-      socket.report({ workers: [] });
+      socket.report({ agents: [] });
       const home = await socket.next("create");
-      expect(home).toMatchObject({ kind: "create", workerId: worker.id });
-      socket.report({ commandResults: ack([home]), workers: [{ id: worker.id, state: "idle", sessionId: null }] });
+      expect(home).toMatchObject({ kind: "create", agentId: agent.id });
+      socket.report({ commandResults: ack([home]), agents: [{ id: agent.id, state: "idle", sessionId: null }] });
       await eventually(async () => {
-        const sent = await read(`/fleet/workers/${worker.id}/commands`);
+        const sent = await read(`/agents/${agent.id}/commands`);
         expect(sent.commands[0]).toMatchObject({ delivery: "done" });
-        expect((await read(`/fleet/workers/${worker.id}`)).reportedAt).not.toBeNull();
+        expect((await read(`/agents/${agent.id}`)).reportedAt).not.toBeNull();
       });
 
-      // A message to an idle worker starts its session, pushed as it is written.
-      const told = await call("POST", `/fleet/workers/${worker.id}/messages`, { text: "Say hello." });
+      // A message to an idle agent starts its session, pushed as it is written.
+      const told = await call("POST", `/agents/${agent.id}/messages`, { text: "Say hello." });
       expect(told.status, await told.clone().text()).toBe(202);
       const start = (await socket.next("start")) as Extract<Command, { kind: "start" }>;
       expect(start).toMatchObject({ kind: "start", resume: false, text: "Say hello." });
-      // The session can reach this service as the worker, and says it waits on its own subagents.
+      // The session can reach this service as the agent, and says it waits on its own subagents.
       // The address is on record; the token comes only as the start is pushed, never in env.
-      expect(start.env).toMatchObject({ WS_URL: url });
-      expect(start.env).not.toHaveProperty("WS_TOKEN");
-      expect(start.secrets?.WS_TOKEN === token).toBe(true);
-      const paged = await fetch(`${start.env!.WS_URL}/fleet/workers/${worker.id}/status`, {
+      expect(start.env).toMatchObject({ AG_URL: url });
+      expect(start.env).not.toHaveProperty("AG_TOKEN");
+      expect(start.secrets?.AG_TOKEN === token).toBe(true);
+      const paged = await fetch(`${start.env!.AG_URL}/agents/${agent.id}/status`, {
         method: "PUT",
-        headers: { Authorization: `Bearer ${start.secrets!.WS_TOKEN}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${start.secrets!.AG_TOKEN}`, "Content-Type": "application/json" },
         body: JSON.stringify({ status: "working", summary: "Waiting on a background subagent", headline: "On a subagent" }),
       });
       expect(paged.status, await paged.clone().text()).toBe(200);
-      const titled = await fetch(`${start.env!.WS_URL}/fleet/workers/${worker.id}/title`, {
+      const titled = await fetch(`${start.env!.AG_URL}/agents/${agent.id}/title`, {
         method: "PUT",
-        headers: { Authorization: `Bearer ${start.secrets!.WS_TOKEN}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${start.secrets!.AG_TOKEN}`, "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Integration check" }),
       });
       expect(titled.status, await titled.clone().text()).toBe(200);
-      const line = { workerId: worker.id, sessionId: start.sessionId, seq: 0, at: new Date().toISOString(), from: "agent", text: "Hello." };
+      const line = { agentId: agent.id, sessionId: start.sessionId, seq: 0, at: new Date().toISOString(), from: "agent", text: "Hello." };
       socket.report({
         commandResults: ack([start]),
-        workers: [{ id: worker.id, state: "waiting", sessionId: start.sessionId, tasks: 1, told: true }],
+        agents: [{ id: agent.id, state: "waiting", sessionId: start.sessionId, tasks: 1, told: true }],
         lines: [line],
       });
       await eventually(async () => {
         // Its turn ended with a background subagent open, so it reads working, not waiting on the person.
-        expect(await read(`/fleet/workers/${worker.id}`)).toMatchObject({
+        expect(await read(`/agents/${agent.id}`)).toMatchObject({
           state: "waiting",
           status: "working",
           tasks: 1,
@@ -209,37 +209,37 @@ describe.skipIf(!url || !token)("deployed stage", () => {
           headline: "On a subagent",
           title: "Integration check",
         });
-        const { lines } = await read(`/fleet/workers/${worker.id}/transcript`);
+        const { lines } = await read(`/agents/${agent.id}/transcript`);
         expect(lines).toEqual([{ seq: 0, at: line.at, sessionId: start.sessionId, from: "agent", text: "Hello." }]);
       });
       // The subagent done and nothing paged since, it is idle: still not waiting on the person.
-      socket.report({ workers: [{ id: worker.id, state: "waiting", sessionId: start.sessionId, tasks: 0, told: true }] });
+      socket.report({ agents: [{ id: agent.id, state: "waiting", sessionId: start.sessionId, tasks: 0, told: true }] });
       await eventually(async () => {
-        expect(await read(`/fleet/workers/${worker.id}`)).toMatchObject({ status: "idle", tasks: 0, told: true });
+        expect(await read(`/agents/${agent.id}`)).toMatchObject({ status: "idle", tasks: 0, told: true });
       });
 
       // Stopped, it is idle with its session on record.
-      expect((await call("POST", `/fleet/workers/${worker.id}/stop`, {})).status).toBe(202);
+      expect((await call("POST", `/agents/${agent.id}/stop`, {})).status).toBe(202);
       const stop = await socket.next("stop");
       socket.report({ commandResults: ack([stop]) });
       await eventually(async () => {
-        expect((await read(`/fleet/workers/${worker.id}`)).state).toBe("idle");
+        expect((await read(`/agents/${agent.id}`)).state).toBe("idle");
       });
-      expect((await read(`/fleet/workers/${worker.id}/sessions`)).sessions).toMatchObject([{ id: start.sessionId, ended: "stopped" }]);
+      expect((await read(`/agents/${agent.id}/sessions`)).sessions).toMatchObject([{ id: start.sessionId, ended: "stopped" }]);
 
       // Retired, it leaves the default list.
-      expect((await call("DELETE", `/fleet/workers/${worker.id}`)).status).toBe(202);
+      expect((await call("DELETE", `/agents/${agent.id}`)).status).toBe(202);
       const retire = await socket.next("retire");
       socket.report({ commandResults: ack([retire]) });
       await eventually(async () => {
-        const sent = await read(`/fleet/workers/${worker.id}/commands`);
+        const sent = await read(`/agents/${agent.id}/commands`);
         expect(sent.commands.at(-1)).toMatchObject({ delivery: "done" });
         // Compared, not shown, so a failure does not print it.
         expect(JSON.stringify(sent).includes(token!)).toBe(false);
       });
-      made.delete(worker.id);
-      const { workers } = await read("/fleet/workers");
-      expect(workers.filter((w: { hostId: string }) => w.hostId === host)).toEqual([]);
+      made.delete(agent.id);
+      const { agents } = await read("/agents");
+      expect(agents.filter((w: { hostId: string }) => w.hostId === host)).toEqual([]);
     } finally {
       socket.close();
     }

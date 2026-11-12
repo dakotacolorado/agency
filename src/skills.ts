@@ -11,7 +11,7 @@ export interface SkillRead {
 
 /**
  * Only a client and its reference: a `SKILL.md` or `CLAUDE.md` is guidance,
- * which reaches a worker only through `global`'s votes.
+ * which reaches an agent only through `global`'s votes.
  */
 const CLIENT = /^skills\/[a-z0-9][a-z0-9-]*\/(bin|reference)(\/[A-Za-z0-9._-]+)+$/;
 const client = (path: string) => CLIENT.test(path) && !path.split("/").some((part) => part === "." || part === "..");
@@ -25,7 +25,7 @@ export const NO_SKILLS: SkillSource = { forSession: async () => ({ skills: [], n
 
 /**
  * Reads each service's `GET /skill` at the address and with the token this
- * stage has for it, so a worker's client is the one deployed where its tokens
+ * stage has for it, so an agent's client is the one deployed where its tokens
  * reach. This service's own is read in-process.
  */
 export class ServiceSkills implements SkillSource {

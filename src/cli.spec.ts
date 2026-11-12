@@ -47,30 +47,30 @@ describe("agent-service serve", () => {
     const dir = temp();
     const { url } = await serve(join(dir, "db", "as.db"), { AUTH_TOKEN: "a" });
     expect((await fetch(`${url}/health`)).status).toBe(200);
-    expect((await fetch(`${url}/fleet/hosts`, { headers: auth("wrong") })).status).toBe(401);
-    expect((await fetch(`${url}/fleet/hosts`, { headers: auth("a") })).status).toBe(200);
+    expect((await fetch(`${url}/hosts`, { headers: auth("wrong") })).status).toBe(401);
+    expect((await fetch(`${url}/hosts`, { headers: auth("a") })).status).toBe(200);
     expect(existsSync(join(dir, "db", "as.db"))).toBe(true);
   });
 
   it("says which token is missing, and answers 503 for what needs it", async () => {
     const { url, out } = await serve(join(temp(), "as.db"), {});
     expect(out()).toContain("AUTH_TOKEN and ADMIN_TOKEN not set");
-    expect((await fetch(`${url}/fleet/hosts`, { headers: auth("a") })).status).toBe(503);
+    expect((await fetch(`${url}/hosts`, { headers: auth("a") })).status).toBe(503);
   });
 
-  it("keeps hosts, workers and the commands pending for a host across a restart", async () => {
+  it("keeps hosts, agents and the commands pending for a host across a restart", async () => {
     const db = join(temp(), "as.db");
     const first = await serve(db, { AUTH_TOKEN: "a" });
-    const beat = await fetch(`${first.url}/fleet/hosts/laptop/heartbeat`, { method: "POST", headers: auth("a"), body: JSON.stringify({ version: "t", labels: [], capacity: 1 }) });
+    const beat = await fetch(`${first.url}/hosts/laptop/heartbeat`, { method: "POST", headers: auth("a"), body: JSON.stringify({ version: "t", labels: [], capacity: 1 }) });
     expect(beat.status).toBe(200);
-    const made = await fetch(`${first.url}/fleet/workers`, { method: "POST", headers: auth("a"), body: JSON.stringify({ name: "kept", hostId: "laptop", brief: "Go." }) });
+    const made = await fetch(`${first.url}/agents`, { method: "POST", headers: auth("a"), body: JSON.stringify({ name: "kept", hostId: "laptop", brief: "Go." }) });
     expect(made.status, await made.clone().text()).toBe(201);
     const { id } = (await made.json()) as { id: string };
     await stopped(first.child);
     const second = await serve(db, { AUTH_TOKEN: "a" });
-    const worker = (await (await fetch(`${second.url}/fleet/workers/${id}`, { headers: auth("a") })).json()) as { name: string; state: string };
-    expect(worker).toMatchObject({ name: "kept", state: "working" });
-    const commands = (await (await fetch(`${second.url}/fleet/workers/${id}/commands`, { headers: auth("a") })).json()) as { commands: { command: { kind: string }; delivery: string }[] };
+    const agent = (await (await fetch(`${second.url}/agents/${id}`, { headers: auth("a") })).json()) as { name: string; state: string };
+    expect(agent).toMatchObject({ name: "kept", state: "working" });
+    const commands = (await (await fetch(`${second.url}/agents/${id}/commands`, { headers: auth("a") })).json()) as { commands: { command: { kind: string }; delivery: string }[] };
     expect(commands.commands.map((c) => [c.command.kind, c.delivery])).toEqual([["create", "queued"], ["start", "queued"]]);
     const store = Store.open(db);
     expect((await store.pending("laptop")).map((q) => q.command.kind)).toEqual(["create", "start"]);
@@ -83,8 +83,8 @@ describe("agent-service serve", () => {
     writeFileSync(file, JSON.stringify({ waypoint: { url: "https://waypoint.example/", urlVar: "WAYPOINT_URL", tokenVar: "WAYPOINT_TOKEN", tokenEnv: "WP_SECRET" } }));
     const { url, out } = await serve(join(dir, "as.db"), { AUTH_TOKEN: "a", WP_SECRET: "w" }, ["--services", file]);
     expect(out()).toContain("services: waypoint");
-    const refused = await fetch(`${url}/fleet/requests`, { method: "POST", headers: auth("a"), body: JSON.stringify({ role: "implementer", brief: "x", credentials: ["nothing"] }) });
-    expect(await refused.text()).toContain("this stage has worker-service, waypoint.");
+    const refused = await fetch(`${url}/requests`, { method: "POST", headers: auth("a"), body: JSON.stringify({ role: "implementer", brief: "x", credentials: ["nothing"] }) });
+    expect(await refused.text()).toContain("this stage has agent-service, waypoint.");
   });
 
   it("refuses a services file that is not one, saying why", () => {

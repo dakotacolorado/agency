@@ -14,7 +14,7 @@ import {
   unreported,
   withdrawn,
   type Host,
-  type Worker,
+  type Agent,
 } from "./domain.ts";
 import type { Command } from "./schema.ts";
 
@@ -23,7 +23,7 @@ const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000).toISOS
 
 const host: Host = { id: "laptop", heartbeatAt: ago(0), version: null, labels: [], capacity: 2 };
 
-const worker = (fields: Partial<Worker>): Worker => ({
+const agent = (fields: Partial<Agent>): Agent => ({
   id: "w",
   name: "w",
   hostId: "laptop",
@@ -54,14 +54,14 @@ describe("a host's status", () => {
 describe("a host's places", () => {
   it("are taken by live sessions on it alone", () => {
     const session = { id: "s", startedAt: ago(0) };
-    const workers = [
-      worker({ id: "a", session, state: "working" }),
-      worker({ id: "b" }),
-      worker({ id: "c", session, hostId: "desktop" }),
+    const agents = [
+      agent({ id: "a", session, state: "working" }),
+      agent({ id: "b" }),
+      agent({ id: "c", session, hostId: "desktop" }),
     ];
-    expect(available(host, workers)).toBe(1);
-    expect(available({ ...host, capacity: 0 }, workers)).toBe(0);
-    expect(available({ ...host, capacity: null }, workers)).toBeNull();
+    expect(available(host, agents)).toBe(1);
+    expect(available({ ...host, capacity: 0 }, agents)).toBe(0);
+    expect(available({ ...host, capacity: null }, agents)).toBeNull();
   });
 
   it("are held in working and waiting", () => {
@@ -71,14 +71,14 @@ describe("a host's places", () => {
 });
 
 describe("a command", () => {
-  const message: Command = { kind: "message", id: "c", workerId: "w", text: "hi" };
-  const create: Command = { kind: "create", id: "c", workerId: "w", name: "w" };
+  const message: Command = { kind: "message", id: "c", agentId: "w", text: "hi" };
+  const create: Command = { kind: "create", id: "c", agentId: "w", name: "w" };
 
   it("is withdrawn unreported once its host would be lost, but a create or retire never is", () => {
     expect(withdrawn({ command: message, queuedAt: ago(LOST_AFTER) }, NOW)).toBe(false);
     expect(withdrawn({ command: message, queuedAt: ago(LOST_AFTER + 1) }, NOW)).toBe(true);
     expect(withdrawn({ command: create, queuedAt: ago(LOST_AFTER * 100) }, NOW)).toBe(false);
-    expect(withdrawn({ command: { kind: "retire", id: "c", workerId: "w" }, queuedAt: ago(LOST_AFTER * 100) }, NOW)).toBe(false);
+    expect(withdrawn({ command: { kind: "retire", id: "c", agentId: "w" }, queuedAt: ago(LOST_AFTER * 100) }, NOW)).toBe(false);
   });
 
   it("is delivered as its host reported it", () => {
@@ -102,7 +102,7 @@ describe("cutting a line's text", () => {
   });
 });
 
-describe("a worker's activity line", () => {
+describe("an agent's activity line", () => {
   const tool = (name: string, input: object) => activityOf("tool", `${name} ${JSON.stringify(input)}`);
 
   it("is a Bash call's description, never its command", () => {
@@ -111,7 +111,7 @@ describe("a worker's activity line", () => {
   });
 
   it("is another tool's name and target, or its name alone", () => {
-    expect(tool("Edit", { file_path: "/home/w/src/worker-service/src/fleet.ts", old_string: "a", new_string: "b" })).toBe("Edit src/fleet.ts");
+    expect(tool("Edit", { file_path: "/home/w/src/agent-service/src/fleet.ts", old_string: "a", new_string: "b" })).toBe("Edit src/fleet.ts");
     expect(tool("Agent", { description: "workplace-ui derived statuses", prompt: "long brief" })).toBe("Agent workplace-ui derived statuses");
     expect(tool("Skill", { skill: "page", args: "x" })).toBe("Skill page");
     expect(tool("WebFetch", { url: "https://example.com/a?token=s3cr3t" })).toBe("WebFetch example.com");

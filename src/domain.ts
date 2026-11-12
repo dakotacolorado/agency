@@ -8,9 +8,8 @@ import type { Command } from "./schema.ts";
 export const TEXT_LIMIT = 16384;
 
 /**
- * The most of one transcript line's text kept, in characters: well inside
- * DynamoDB's 400 KB item at four bytes each, and far past the longest reply
- * a person reads. A host cuts sooner, to fit its socket message; see `cut`.
+ * The most of one transcript line's text kept, in characters: far past the
+ * longest reply a person reads. A host cuts sooner, to fit its socket message; see `cut`.
  */
 export const LINE_LIMIT = 65536;
 
@@ -58,7 +57,7 @@ export function hostStatus(heartbeatAt: string, now: Date): HostStatus {
   return "lost";
 }
 
-/** The states of a worker with a live session. */
+/** The states of an agent with a live session. */
 export const LIVE_STATES = ["working", "waiting"] as const;
 
 export const REPORTED_STATES = ["idle", ...LIVE_STATES, "interrupted"] as const;
@@ -66,21 +65,21 @@ export const REPORTED_STATES = ["idle", ...LIVE_STATES, "interrupted"] as const;
 export type ReportedState = (typeof REPORTED_STATES)[number];
 
 /** `retired` is never reported by a host: it is the service's, set by `DELETE`. */
-export const WORKER_STATES = [...REPORTED_STATES, "retired"] as const;
+export const AGENT_STATES = [...REPORTED_STATES, "retired"] as const;
 
-export type WorkerState = (typeof WORKER_STATES)[number];
+export type AgentState = (typeof AGENT_STATES)[number];
 
 export const isLive = (state: string) => (LIVE_STATES as readonly string[]).includes(state);
 
 export type LiveState = (typeof LIVE_STATES)[number];
 
-/** What a worker, or approval-service, may say of it: see `statusOf` for what is served. */
+/** What an agent, or approval-service, may say of it: see `statusOf` for what is served. */
 export const SAID = ["working", "waiting", "review", "done"] as const;
 
 export type Said = (typeof SAID)[number];
 
 /**
- * A worker's status as served: `review` and `done` as said, `waiting` while it
+ * An agent's status as served: `review` and `done` as said, `waiting` while it
  * has said it needs the person, and otherwise, with a live session, `working`
  * while a turn or a background task of its runs and `idle` once neither does.
  */
@@ -88,14 +87,14 @@ export const STATUSES = ["working", "idle", "waiting", "review", "done"] as cons
 
 export type Status = (typeof STATUSES)[number];
 
-/** What becomes of a worker once it says it is done: it stays, its session is stopped, or it is retired. */
+/** What becomes of an agent once it says it is done: it stays, its session is stopped, or it is retired. */
 export const WHEN_DONE = ["keep", "stop", "retire"] as const;
 
 export type WhenDone = (typeof WHEN_DONE)[number];
 
 export const SUMMARY_LIMIT = 280;
 
-/** Short enough to fit on one line of a worker's card. */
+/** Short enough to fit on one line of an agent's card. */
 export const HEADLINE_LIMIT = 29;
 
 export const TITLE_LIMIT = 40;
@@ -105,7 +104,7 @@ export const LABEL_LIMIT = 40;
 /** A work item's id: a UUID, with room to spare. */
 export const ITEM_LIMIT = 64;
 
-/** Who made a worker, as the `claimed-by` header said it: a person's name or a service's. */
+/** Who made an agent, as the `claimed-by` header said it: a person's name or a service's. */
 export const MAKER_LIMIT = 200;
 
 /** Short enough for one line of a card. */
@@ -125,7 +124,7 @@ const shortened = (text: string) => {
 const tail = (path: string) => path.split("/").filter(Boolean).slice(-2).join("/");
 
 /**
- * What a transcript line says the worker is doing, for its card: never a
+ * What a transcript line says the agent is doing, for its card: never a
  * command, a tool's whole input, or anything the person said. A tool line is
  * `<tool> <input as JSON>` (see `LineReport`), its input maybe cut and so unreadable.
  */
@@ -182,11 +181,11 @@ export interface SessionRef {
   startedAt: string;
 }
 
-export interface Worker {
+export interface Agent {
   id: string;
   name: string;
   hostId: string;
-  state: WorkerState;
+  state: AgentState;
   session: SessionRef | null;
   createdAt: string;
   reportedAt: string | null;
@@ -204,7 +203,7 @@ export interface Worker {
   documents?: string[];
   /** The services each session is given, by name; absent, the stage's defaults. */
   credentials?: string[];
-  /** Of `credentials`, those given a value of the worker's own, kept in `WorkerSecrets`; never served. */
+  /** Of `credentials`, those given a value of the agent's own, kept in `AgentSecrets`; never served. */
   ownCredentials?: string[];
   /** Kept so a start knows whether to resume without reading the sessions; never served. */
   hadSession: boolean;
@@ -247,43 +246,43 @@ export const summed = (sessions: Record<string, Tokens> | undefined): Tokens =>
     NO_TOKENS,
   );
 
-/** What a worker says that outlasts its session: it is done, or its change is in review. */
+/** What an agent says that outlasts its session: it is done, or its change is in review. */
 export const keepsPastSession = (status: Said | null | undefined): status is "review" | "done" =>
   status === "review" || status === "done";
 
 /**
- * What a worker that has said it is done, or in review, keeps once its session
+ * What an agent that has said it is done, or in review, keeps once its session
  * ends, so a caller can tell finished from died; anything else it said goes
  * with the session.
  */
-export const afterSession = (worker: Worker): Pick<Worker, "status" | "summary" | "headline" | "saidAt" | "tasks" | "told"> => ({
+export const afterSession = (agent: Agent): Pick<Agent, "status" | "summary" | "headline" | "saidAt" | "tasks" | "told"> => ({
   tasks: 0,
   told: null,
-  ...(keepsPastSession(worker.status)
-    ? { status: worker.status, summary: worker.summary ?? null, headline: worker.headline ?? null, saidAt: worker.saidAt ?? null }
+  ...(keepsPastSession(agent.status)
+    ? { status: agent.status, summary: agent.summary ?? null, headline: agent.headline ?? null, saidAt: agent.saidAt ?? null }
     : { status: null }),
 });
 
 /** Neither a turn nor a background task of its is running. */
-export const quiet = (worker: Worker): boolean => worker.state !== "working" && !(worker.tasks ?? 0);
+export const quiet = (agent: Agent): boolean => agent.state !== "working" && !(agent.tasks ?? 0);
 
-export function statusOf(worker: Worker): Status | null {
-  if (keepsPastSession(worker.status)) return worker.status;
-  if (!isLive(worker.state)) return null;
-  if (worker.status === "waiting") return "waiting";
-  return quiet(worker) ? "idle" : "working";
+export function statusOf(agent: Agent): Status | null {
+  if (keepsPastSession(agent.status)) return agent.status;
+  if (!isLive(agent.state)) return null;
+  if (agent.status === "waiting") return "waiting";
+  return quiet(agent) ? "idle" : "working";
 }
 
-/** What its maker asked be done with a worker once it is quiet in `review` or `done`. */
-export function onceQuiet(worker: Worker): "stop" | "retire" | null {
-  const whenDone = worker.whenDone ?? "keep";
-  if (worker.status === "done" && whenDone !== "keep") return whenDone;
+/** What its maker asked be done with an agent once it is quiet in `review` or `done`. */
+export function onceQuiet(agent: Agent): "stop" | "retire" | null {
+  const whenDone = agent.whenDone ?? "keep";
+  if (agent.status === "done" && whenDone !== "keep") return whenDone;
   // In review it waits on approval-service, whose send-back must still reach it: stopped, never retired.
-  if (worker.status === "review" && whenDone !== "keep") return "stop";
+  if (agent.status === "review" && whenDone !== "keep") return "stop";
   return null;
 }
 
-/** Cleared by a message from the person, or a new session: what was said goes, and the worker is at work. */
+/** Cleared by a message from the person, or a new session: what was said goes, and the agent is at work. */
 export const cleared = { status: "working", summary: null, headline: null, saidAt: null } as const;
 
 export const SESSION_ENDINGS = ["stopped", "interrupted"] as const;
@@ -292,7 +291,7 @@ export type SessionEnding = (typeof SESSION_ENDINGS)[number];
 
 export interface Session {
   id: string;
-  workerId: string;
+  agentId: string;
   startedAt: string;
   endedAt: string | null;
   ended: SessionEnding | null;
@@ -306,13 +305,13 @@ export interface Session {
   contextNote: string | null;
 }
 
-/** A host's places are its sessions: a worker with none holds no place. */
-export const available = (host: Host, workers: Worker[]): number | null =>
+/** A host's places are its sessions: an agent with none holds no place. */
+export const available = (host: Host, agents: Agent[]): number | null =>
   host.capacity === null
     ? null
     : Math.max(
         0,
-        host.capacity - workers.filter((w) => w.hostId === host.id && w.session !== null).length,
+        host.capacity - agents.filter((w) => w.hostId === host.id && w.session !== null).length,
       );
 
 /**
@@ -337,9 +336,9 @@ export interface Sent extends Queued {
   reportedAt: string | null;
   ok: boolean | null;
   error: string | null;
-  /** False while its text is written to its worker's session and not yet taken; null otherwise. */
+  /** False while its text is written to its agent's session and not yet taken; null otherwise. */
   taken?: false | null;
-  /** Taken off its host's queue by the service, because its worker was force-stopped. */
+  /** Taken off its host's queue by the service, because its agent was force-stopped. */
   withdrawnAt: string | null;
 }
 
@@ -353,7 +352,7 @@ export const unreported = (queued: Queued): Sent => ({
 
 /**
  * Every command's record is deleted this long after it was queued, so a
- * worker's history is bounded by time rather than by how much it was told.
+ * agent's history is bounded by time rather than by how much it was told.
  */
 export const KEPT_FOR = 7 * 24 * 60 * 60;
 
@@ -361,7 +360,7 @@ export const expired = ({ queuedAt }: Queued, now: Date) =>
   now.getTime() - Date.parse(queuedAt) > KEPT_FOR * 1000;
 
 /**
- * Making and retiring a worker's home are offered until its host takes them,
+ * Making and retiring an agent's home are offered until its host takes them,
  * however long that is: the record already says they are so.
  */
 export const DURABLE: readonly Command["kind"][] = ["create", "retire"];

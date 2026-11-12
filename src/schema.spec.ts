@@ -73,12 +73,12 @@ async function schemas(): Promise<Record<string, JsonSchema>> {
 }
 
 describe("the line between hosts and clients", async () => {
-  const fleet = (await operations()).filter((op) => op.path.startsWith("/fleet/"));
+  const fleet = (await operations()).filter((op) => !["/health"].includes(op.path));
   const audience = (tag: string) => fleet.filter((op) => op.tags.includes(tag));
 
-  it("keeps every route under /fleet/, which the UI's CDN forwards", async () => {
+  it("keeps every route under /, which the UI's CDN forwards", async () => {
     const paths = (await operations()).map((op) => op.path);
-    expect(paths.filter((p) => p !== "/health" && !p.startsWith("/fleet/"))).toEqual([]);
+    expect(paths.filter((p) => p !== "/health" && !p.startsWith("/"))).toEqual([]);
   });
 
   it("puts every fleet operation under exactly one audience", () => {
@@ -94,7 +94,7 @@ describe("the line between hosts and clients", async () => {
   it("lets a client read without changing anything, and act without reporting state", () => {
     expect(audience(AUDIENCES.reading).every((op) => op.method === "get" && !op.requestBody)).toBe(true);
     expect(audience(AUDIENCES.acting).every((op) => op.method !== "get")).toBe(true);
-    const hostState = /#\/components\/schemas\/(Heartbeat|WorkerReport|LineReport)"/;
+    const hostState = /#\/components\/schemas\/(Heartbeat|AgentReport|LineReport)"/;
     const clients = [...audience(AUDIENCES.reading), ...audience(AUDIENCES.acting)];
     expect(clients.filter((op) => hostState.test(JSON.stringify(op.requestBody ?? {})))).toEqual([]);
   });
@@ -118,22 +118,19 @@ describe("the reference", async () => {
     expect(JSON.stringify(all).match(/"deprecated":true/g) ?? []).toEqual([]);
   });
 
-  it("serves none of the agents' model: no agents, placement, levels or tickets", () => {
-    expect(ops.filter((op) => /agent/i.test(op.path))).toEqual([]);
-    expect(Object.keys(all).filter((name) => /Agent|Placement|Refusal/.test(name))).toEqual([]);
-    const fields = Object.values(all).flatMap((schema) => Object.keys(schema.properties ?? {}));
-    expect(fields.filter((f) => /^(level|workItemId|ticketId|branch|selector|asOf)$/.test(f))).toEqual([]);
+  it("says worker nowhere: every path, operation, schema, field and description says agent", async () => {
+    expect(JSON.stringify(await openApiDocument()).match(/[^"]{0,40}worker[^"]{0,40}/gi) ?? []).toEqual([]);
   });
 
   it("answers a single read with the resource itself", () => {
     const body = (id: string, status = "200") =>
       JSON.stringify(ops.find((op) => op.operationId === id)!.responses[status]!.content!["application/json"].schema);
-    expect(body("getWorker")).toBe(JSON.stringify({ $ref: "#/components/schemas/Worker" }));
-    expect(body("createWorker", "201")).toBe(JSON.stringify({ $ref: "#/components/schemas/Worker" }));
+    expect(body("getAgent")).toBe(JSON.stringify({ $ref: "#/components/schemas/Agent" }));
+    expect(body("createAgent", "201")).toBe(JSON.stringify({ $ref: "#/components/schemas/Agent" }));
   });
 
   it("describes the socket's messages, both ways", () => {
-    for (const name of ["SocketInbound", "SocketReport", "SocketPing", "SocketOutbound", "CommandPush", "WorkerPush", "LinesPush", "HostPush", "UsagePush"]) {
+    for (const name of ["SocketInbound", "SocketReport", "SocketPing", "SocketOutbound", "CommandPush", "AgentPush", "LinesPush", "HostPush", "UsagePush"]) {
       expect(all[name], name).toBeDefined();
     }
   });
@@ -144,34 +141,34 @@ describe("the shapes", async () => {
 
   it("are the protocol's, field for field", () => {
     const fields = (name: string) => Object.keys(all[name]!.properties ?? {}).sort();
-    expect(fields("Worker")).toEqual(
+    expect(fields("Agent")).toEqual(
       [
         "createdAt", "hostId", "hostStatus", "id", "name", "reportedAt", "session", "state", "title",
         "label", "item", "role", "tokens", "createdBy", "whenDone", "documents", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told",
       ].sort(),
     );
-    expect(fields("Session")).toEqual(["context", "contextNote", "documents", "endedAt", "ended", "id", "skills", "startedAt", "workerId"].sort());
+    expect(fields("Session")).toEqual(["context", "contextNote", "documents", "endedAt", "ended", "id", "skills", "startedAt", "agentId"].sort());
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
-    expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "workerId"].sort());
-    expect(fields("WorkerReport")).toEqual(["id", "sessionId", "state", "tasks", "told"]);
+    expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
+    expect(fields("AgentReport")).toEqual(["id", "sessionId", "state", "tasks", "told"]);
     expect(fields("CommandReport")).toEqual(["commandId", "error", "ok", "taken"]);
     expect(fields("Heartbeat")).toEqual(["capacity", "labels", "version"]);
     expect(fields("HeartbeatResponse")).toEqual(["heartbeatInterval", "socketUrl"]);
-    expect(fields("SocketReport")).toEqual(["commandResults", "lines", "tokens", "type", "usage", "workers"]);
+    expect(fields("SocketReport")).toEqual(["agents", "commandResults", "lines", "tokens", "type", "usage"]);
     expect(fields("SessionTokensReport")).toEqual(
-      ["cacheCreationInputTokens", "cacheReadInputTokens", "inputTokens", "outputTokens", "sessionId", "workerId"].sort(),
+      ["cacheCreationInputTokens", "cacheReadInputTokens", "inputTokens", "outputTokens", "sessionId", "agentId"].sort(),
     );
     expect(fields("UsageReport")).toEqual(["fiveHour", "readAt", "sevenDay"]);
     expect(fields("Usage")).toEqual(["fiveHour", "readAt", "sevenDay"]);
     expect(fields("UsageWindow")).toEqual(["hostId", "readAt", "resetsAt", "utilization"]);
-    expect(fields("CreateCommand")).toEqual(["id", "kind", "name", "workerId"]);
-    expect(fields("StartCommand")).toEqual(["context", "contextUrl", "credentials", "documents", "env", "id", "kind", "ownCredentials", "resume", "secrets", "sessionId", "text", "workerId"]);
-    expect(fields("NewWorker")).toEqual(["brief", "credentials", "documents", "hostId", "item", "label", "labels", "name", "role", "whenDone"]);
+    expect(fields("CreateCommand")).toEqual(["id", "kind", "name", "agentId"].sort());
+    expect(fields("StartCommand")).toEqual(["context", "contextUrl", "credentials", "documents", "env", "id", "kind", "ownCredentials", "resume", "secrets", "sessionId", "text", "agentId"].sort());
+    expect(fields("NewAgent")).toEqual(["brief", "credentials", "documents", "hostId", "item", "label", "labels", "name", "role", "whenDone"]);
     expect(fields("Message")).toEqual(["interrupt", "text"]);
     expect(fields("SocketTicket")).toEqual(["expiresAt", "socketUrl", "ticket"]);
     expect(fields("Accepted")).toEqual(["commandId"]);
     expect(fields("SessionContext")).toEqual(["context", "documents"]);
-    expect(fields("WorkerStatus")).toEqual(["headline", "status", "summary"]);
+    expect(fields("AgentStatus")).toEqual(["headline", "status", "summary"]);
   });
 
   it("read what only grows from a cursor, never a page number", async () => {

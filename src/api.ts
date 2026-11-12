@@ -19,23 +19,26 @@ import {
   type Queued,
   type Sent,
   type WhenDone,
-  type Worker,
+  type Agent,
 } from "./domain.ts";
 import * as routes from "./schema.ts";
 import type { Command, Heartbeat, HeartbeatResponse, RequestView } from "./schema.ts";
 import { NameTaken, Stale, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
-import { Fleet, afresh, begin, hostView, inOrder, sentView, workerView } from "./fleet.ts";
+import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView } from "./fleet.ts";
 import { NO_SOCKET, Push, type Poster } from "./push.ts";
 import { CONTEXT_LIMIT, FETCH_LIMIT, NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
 import { Credentials, selfCredential, type Credential } from "./credentials.ts";
-import type { WorkerSecrets } from "./worker-secrets.ts";
+import type { AgentSecrets } from "./agent-secrets.ts";
 import { ownSkill, type Skill } from "./skill.ts";
 import { NO_SKILLS, type SkillSource } from "./skills.ts";
 import { rolesOf, type Role } from "./roles.ts";
-import { inStartOrder, nameFor, usageAdmits, type WorkerRequest } from "./admission.ts";
+import { inStartOrder, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
 
 export const SPEC_PATH = "/openapi.json";
+
+/** What answers without a token: whether it is up, and what it serves. */
+export const OPEN_PATHS = ["/health", SPEC_PATH];
 
 export interface TokenSource {
   value(): Promise<string | null>;
@@ -51,23 +54,25 @@ export interface ApiOptions {
   now?: () => Date;
   /** Posts to sockets; without one, no command reaches a host and pages poll. */
   poster?: Poster;
+  /** This service's address as agents and hosts reach it; without one, the address each request came to. */
+  publicUrl?: string | null;
   /** The socket's `wss://` address, given to hosts and pages; null where there is none. */
   socketUrl?: string | null;
   /** What every session starts with; without one, nothing is attached. */
   context?: ContextSource;
   /** The services' clients laid over the context; without one, the context's own copies stay. */
   skills?: SkillSource;
-  /** This deployment's own clients, as `GET /fleet/skill` serves them. */
+  /** This deployment's own clients, as `GET /skill` serves them. */
   skill?: () => Skill;
-  /** The services a worker may be given, by name; without them, only this one. */
+  /** The services an agent may be given, by name; without them, only this one. */
   credentials?: Record<string, Credential>;
-  /** Where a token a caller gives one worker is kept; without it, none can be given. */
-  workerSecrets?: WorkerSecrets;
+  /** Where a token a caller gives one agent is kept; without it, none can be given. */
+  agentSecrets?: AgentSecrets;
   /** A person's token: it does all the stage's token does, and may write roles. Without one, no role is written. */
   admin?: TokenSource;
 }
 
-export class WorkerServiceApi {
+export class AgentServiceApi {
   readonly hono: OpenAPIHono;
 
   private readonly store: Store;
@@ -76,6 +81,7 @@ export class WorkerServiceApi {
   private readonly now: () => Date;
   private readonly fleet: Fleet;
   private readonly socketUrl: string | null;
+  private readonly publicUrl: string | null;
 
   private readonly context: ContextSource;
   private readonly skills: SkillSource;
@@ -87,6 +93,7 @@ export class WorkerServiceApi {
     this.admin = options.admin ?? NO_TOKEN;
     this.now = options.now ?? (() => new Date());
     this.socketUrl = options.socketUrl ?? null;
+    this.publicUrl = options.publicUrl?.replace(/\/$/, "") ?? null;
     this.context = options.context ?? NO_CONTEXT;
     this.skills = options.skills ?? NO_SKILLS;
     this.skill = options.skill ?? ownSkill;
@@ -94,7 +101,7 @@ export class WorkerServiceApi {
       store,
       new Push(store, options.poster ?? NO_SOCKET),
       this.now,
-      new Credentials(options.credentials ?? { "worker-service": selfCredential(token) }, options.workerSecrets),
+      new Credentials(options.credentials ?? { "agent-service": selfCredential(token) }, options.agentSecrets),
     );
     this.hono = new OpenAPIHono({
       defaultHook: (result, c) =>
@@ -105,12 +112,18 @@ export class WorkerServiceApi {
     this.spec();
   }
 
+  /** This service's address as agents reach it: the one it was given, else the one the request came to. */
+  private origin(c: Context): string {
+    return this.publicUrl ?? new URL(c.req.url).origin;
+  }
+
   get fetch() {
     return this.hono.fetch;
   }
 
   private auth(): void {
-    this.hono.use("/fleet/*", async (c, next) => {
+    this.hono.use("/*", async (c, next) => {
+      if (OPEN_PATHS.includes(c.req.path)) return next();
       const token = await this.token.value();
       if (!token) return c.json({ error: "API token is not configured." }, 503);
       const given = c.req.header("authorization") ?? "";
@@ -149,17 +162,17 @@ export class WorkerServiceApi {
 
     app.openapi(routes.heartbeatRoute, async (c) => {
       const answer = await this.heartbeat(c.req.valid("param").id, c.req.valid("json"));
-      await this.admitting(origin(c));
+      await this.admitting(this.origin(c));
       return c.json(answer, 200);
     });
 
     app.openapi(routes.listHostsRoute, async (c) => {
       const statuses = c.req.valid("query").status?.split(",");
       const now = this.now();
-      const workers = await this.store.listWorkers();
+      const agents = await this.store.listAgents();
       const hosts = (await this.store.listHosts())
         .filter((host) => !statuses || statuses.includes(hostStatus(host.heartbeatAt, now)))
-        .map((host) => hostView(host, workers, now));
+        .map((host) => hostView(host, agents, now));
       return c.json({ hosts }, 200);
     });
 
@@ -228,7 +241,7 @@ export class WorkerServiceApi {
       const given = credentials ?? role.credentials ?? this.fleet.credentials.defaults;
       const tokens = asked.tokens ?? [];
       const ungiven = tokens.filter((t) => !given.includes(t.name)).map((t) => t.name);
-      if (ungiven.length) return c.json({ error: `A token is only for a service the worker is given; ${ungiven.join(", ")} is not among ${given.join(", ") || "none"}.` }, 400);
+      if (ungiven.length) return c.json({ error: `A token is only for a service the agent is given; ${ungiven.join(", ")} is not among ${given.join(", ") || "none"}.` }, 400);
       const own = [...(asked.credentials ?? []).flatMap((each) => (typeof each === "string" ? [] : [each])), ...tokens];
       if (new Set(own.map((each) => each.name)).size !== own.length) return c.json({ error: "Give each service's token once, in `credentials` or `tokens`." }, 400);
       const id = randomUUID();
@@ -237,7 +250,7 @@ export class WorkerServiceApi {
       } catch (err) {
         await this.fleet.credentials.own.remove(id, own.map((each) => each.name)).catch(() => {});
         console.error("Could not keep a request's own credential:", (err as Error).name);
-        return c.json({ error: `A credential of the worker's own could not be kept: ${(err as Error).message}` }, 503);
+        return c.json({ error: `A credential of the agent's own could not be kept: ${(err as Error).message}` }, 503);
       }
       await this.store.putRequest({
         id,
@@ -254,10 +267,10 @@ export class WorkerServiceApi {
         why: null,
         createdAt: this.now().toISOString(),
         startedAt: null,
-        workerId: null,
+        agentId: null,
         withdrawnAt: null,
       });
-      await this.admitting(origin(c));
+      await this.admitting(this.origin(c));
       return c.json((await this.requestViews()).find((view) => view.id === id)!, 201);
     });
 
@@ -298,20 +311,20 @@ export class WorkerServiceApi {
       }
     });
 
-    app.openapi(routes.createWorkerRoute, async (c) => {
+    app.openapi(routes.createAgentRoute, async (c) => {
       const asked = c.req.valid("json");
       const role = asked.role === undefined ? null : await this.role(asked.role);
       if (asked.role !== undefined && !role) return c.json({ error: `This stage has no role named ${asked.role}.` }, 400);
-      const made = await this.make(origin(c), { ...asked, role, createdBy: c.req.valid("header")["claimed-by"] ?? null });
+      const made = await this.make(this.origin(c), { ...asked, role, createdBy: c.req.valid("header")["claimed-by"] ?? null });
       if ("refused" in made) return c.json({ error: made.refused }, made.status);
-      return c.json(workerView(made.worker, made.host, this.now()), 201);
+      return c.json(agentView(made.agent, made.host, this.now()), 201);
     });
 
-    app.openapi(routes.listWorkersRoute, async (c) => {
+    app.openapi(routes.listAgentsRoute, async (c) => {
       const { createdBy, all, item, role } = c.req.valid("query");
       const now = this.now();
       const hosts = new Map((await this.store.listHosts()).map((h) => [h.id, h]));
-      const workers = (await this.store.listWorkers())
+      const agents = (await this.store.listAgents())
         .filter(
           (w) =>
             (createdBy === undefined || w.createdBy === createdBy) &&
@@ -320,140 +333,140 @@ export class WorkerServiceApi {
             (all === "true" || item !== undefined || w.state !== "retired"),
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .map((w) => workerView(w, hosts.get(w.hostId) ?? null, now));
-      return c.json({ workers }, 200);
+        .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now));
+      return c.json({ agents }, 200);
     });
 
-    app.openapi(routes.getWorkerRoute, async (c) => {
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      return c.json(workerView(worker, await this.store.getHost(worker.hostId), this.now()), 200);
+    app.openapi(routes.getAgentRoute, async (c) => {
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      return c.json(agentView(agent, await this.store.getHost(agent.hostId), this.now()), 200);
     });
 
-    app.openapi(routes.messageWorkerRoute, async (c) => afresh(async () => {
+    app.openapi(routes.messageAgentRoute, async (c) => afresh(async () => {
       const { text, interrupt } = c.req.valid("json");
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      if (worker.state === "retired") return c.json({ error: `${worker.name} is retired.` }, 409);
-      const ready = await this.reachable(worker);
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      const ready = await this.reachable(agent);
       if (typeof ready === "string") return c.json({ error: ready }, 409);
       const now = this.now();
-      if (worker.session) {
+      if (agent.session) {
         const id = randomUUID();
         const command: Command = interrupt
-          ? { kind: "interrupt", id, workerId: worker.id, ...(text !== undefined && { text }) }
+          ? { kind: "interrupt", id, agentId: agent.id, ...(text !== undefined && { text }) }
           : // Without interrupt, the schema requires text, which its type does not say.
-            { kind: "message", id, workerId: worker.id, text: text! };
-        // Told something, a worker waiting on the person, in review or done, is at work again.
+            { kind: "message", id, agentId: agent.id, text: text! };
+        // Told something, an agent waiting on the person, in review or done, is at work again.
         // At work from the moment it is told, as from a start: its host reports the turn once it begins.
-        const answered: Worker[] = [{ ...worker, ...cleared, state: "working" }];
-        await this.fleet.apply({ workers: answered, queue: inOrder(worker.hostId, [command], now), guarded: true });
+        const answered: Agent[] = [{ ...agent, ...cleared, state: "working" }];
+        await this.fleet.apply({ agents: answered, queue: inOrder(agent.hostId, [command], now), guarded: true });
         return c.json({ commandId: id }, 202);
       }
       if (text === undefined) {
-        return c.json({ error: `${worker.name} is ${worker.state}, with no session to interrupt.` }, 409);
+        return c.json({ error: `${agent.name} is ${agent.state}, with no session to interrupt.` }, 409);
       }
-      return this.start(c, worker, ready, text);
+      return this.start(c, agent, ready, text);
     }));
 
-    app.openapi(routes.stopWorkerRoute, async (c) => afresh(async () => {
+    app.openapi(routes.stopAgentRoute, async (c) => afresh(async () => {
       const force = c.req.valid("json")?.force === true;
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      if (!worker.session) {
-        return c.json({ error: `${worker.name} is ${worker.state}, with no session to stop.` }, 409);
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (!agent.session) {
+        return c.json({ error: `${agent.name} is ${agent.state}, with no session to stop.` }, 409);
       }
       const now = this.now();
       // A lost or deregistered host cannot be told, so its session is ended on record, as `force` does.
-      if (force || typeof (await this.reachable(worker)) === "string") {
-        await this.forceStop(worker, now);
+      if (force || typeof (await this.reachable(agent)) === "string") {
+        await this.forceStop(agent, now);
         return c.json({ commandId: null }, 202);
       }
-      const command: Command = { kind: "stop", id: randomUUID(), workerId: worker.id };
-      await this.fleet.apply({ queue: inOrder(worker.hostId, [command], now) });
+      const command: Command = { kind: "stop", id: randomUUID(), agentId: agent.id };
+      await this.fleet.apply({ queue: inOrder(agent.hostId, [command], now) });
       return c.json({ commandId: command.id }, 202);
     }));
 
-    app.openapi(routes.resumeWorkerRoute, async (c) => afresh(async () => {
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      if (worker.state === "retired") return c.json({ error: `${worker.name} is retired.` }, 409);
-      if (worker.session) {
-        return c.json({ error: `${worker.name} is ${worker.state}, in a live session already.` }, 409);
+    app.openapi(routes.resumeAgentRoute, async (c) => afresh(async () => {
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (agent.session) {
+        return c.json({ error: `${agent.name} is ${agent.state}, in a live session already.` }, 409);
       }
-      const ready = await this.reachable(worker);
+      const ready = await this.reachable(agent);
       if (typeof ready === "string") return c.json({ error: ready }, 409);
-      return this.start(c, worker, ready);
+      return this.start(c, agent, ready);
     }));
 
-    app.openapi(routes.renameWorkerRoute, async (c) => afresh(async () => {
+    app.openapi(routes.renameAgentRoute, async (c) => afresh(async () => {
       const { name, title, label } = c.req.valid("json");
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      if (worker.state === "retired") return c.json({ error: `${worker.name} is retired.` }, 409);
-      const view = async (w: Worker) => workerView(w, await this.store.getHost(w.hostId), this.now());
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      const view = async (w: Agent) => agentView(w, await this.store.getHost(w.hostId), this.now());
       const renamed = {
-        ...worker,
+        ...agent,
         ...(name !== undefined && { name }),
         ...(title !== undefined && { title }),
         ...(label !== undefined && { label }),
       };
-      const newName = name !== undefined && name !== worker.name;
-      const kept = (field: "title" | "label") => (worker[field] ?? null) === (renamed[field] ?? null);
-      if (!newName && kept("title") && kept("label")) return c.json(await view(worker), 200);
+      const newName = name !== undefined && name !== agent.name;
+      const kept = (field: "title" | "label") => (agent[field] ?? null) === (renamed[field] ?? null);
+      if (!newName && kept("title") && kept("label")) return c.json(await view(agent), 200);
       try {
         await this.fleet.apply({
-          workers: [renamed],
-          ...(newName && { claim: { name, workerId: worker.id }, release: worker.name }),
+          agents: [renamed],
+          ...(newName && { claim: { name, agentId: agent.id }, release: agent.name }),
           guarded: true,
         });
       } catch (err) {
         if (!(err instanceof NameTaken)) throw err;
-        return c.json({ error: `A worker not retired is already named ${name}.` }, 409);
+        return c.json({ error: `An agent not retired is already named ${name}.` }, 409);
       }
       return c.json(await view(renamed), 200);
     }));
 
-    app.openapi(routes.retireWorkerRoute, async (c) => afresh(async () => {
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      if (worker.state === "retired") return c.json({ error: `${worker.name} is retired already.` }, 409);
-      return c.json({ commandId: await this.retire(worker) }, 202);
+    app.openapi(routes.retireAgentRoute, async (c) => afresh(async () => {
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired already.` }, 409);
+      return c.json({ commandId: await this.retire(agent) }, 202);
     }));
 
-    // Every write of a worker read here is guarded and read again on a conflict, so it and a host's report
+    // Every write of an agent read here is guarded and read again on a conflict, so it and a host's report
     // each see the other, whichever lands first.
-    app.openapi(routes.setWorkerStatusRoute, async (c) => afresh(async () => {
+    app.openapi(routes.setAgentStatusRoute, async (c) => afresh(async () => {
       const { status, summary, headline } = c.req.valid("json");
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      if (worker.state === "retired") return c.json({ error: `${worker.name} is retired.` }, 409);
-      if (!worker.session && !keepsPastSession(status)) {
-        return c.json({ error: `${worker.name} is ${worker.state}, with no live session to be ${status}.` }, 409);
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (!agent.session && !keepsPastSession(status)) {
+        return c.json({ error: `${agent.name} is ${agent.state}, with no live session to be ${status}.` }, 409);
       }
-      const said: Worker = { ...worker, status, summary, headline: headline ?? null, saidAt: this.now().toISOString() };
+      const said: Agent = { ...agent, status, summary, headline: headline ?? null, saidAt: this.now().toISOString() };
       // Mid-turn, what its maker asked be done waits for the turn and its background tasks to end; see `Fleet.report`.
       const then = quiet(said) ? onceQuiet(said) : null;
       if (then === "retire") {
         await this.retire(said);
-        return c.json(workerView((await this.store.getWorker(worker.id))!, await this.store.getHost(worker.hostId), this.now()), 200);
+        return c.json(agentView((await this.store.getAgent(agent.id))!, await this.store.getHost(agent.hostId), this.now()), 200);
       }
-      const stop: Command[] = then === "stop" && said.session ? [{ kind: "stop", id: randomUUID(), workerId: worker.id }] : [];
-      await this.fleet.apply({ workers: [said], queue: inOrder(worker.hostId, stop, this.now()), guarded: true });
-      return c.json(workerView(said, await this.store.getHost(worker.hostId), this.now()), 200);
+      const stop: Command[] = then === "stop" && said.session ? [{ kind: "stop", id: randomUUID(), agentId: agent.id }] : [];
+      await this.fleet.apply({ agents: [said], queue: inOrder(agent.hostId, stop, this.now()), guarded: true });
+      return c.json(agentView(said, await this.store.getHost(agent.hostId), this.now()), 200);
     }));
 
-    app.openapi(routes.setWorkerTitleRoute, async (c) => afresh(async () => {
+    app.openapi(routes.setAgentTitleRoute, async (c) => afresh(async () => {
       const { title } = c.req.valid("json");
-      const worker = await this.store.getWorker(c.req.valid("param").id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      if (worker.state === "retired") return c.json({ error: `${worker.name} is retired.` }, 409);
-      if (worker.title) {
-        return c.json({ error: `${worker.name} is titled "${worker.title}" already; only the person changes it.` }, 409);
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (agent.title) {
+        return c.json({ error: `${agent.name} is titled "${agent.title}" already; only the person changes it.` }, 409);
       }
-      const titled: Worker = { ...worker, title };
-      await this.fleet.apply({ workers: [titled], guarded: true });
-      return c.json(workerView(titled, await this.store.getHost(worker.hostId), this.now()), 200);
+      const titled: Agent = { ...agent, title };
+      await this.fleet.apply({ agents: [titled], guarded: true });
+      return c.json(agentView(titled, await this.store.getHost(agent.hostId), this.now()), 200);
     }));
 
     app.openapi(routes.transcriptRoute, async (c) => {
@@ -463,24 +476,24 @@ export class WorkerServiceApi {
       if (afterSeq === undefined) {
         return c.json({ error: "after: not a cursor this route issued." }, 400);
       }
-      if (!(await this.store.getWorker(id))) return c.json({ error: "No worker has this id." }, 404);
+      if (!(await this.store.getAgent(id))) return c.json({ error: "No agent has this id." }, 404);
       const lines = await this.store.readLines(id, afterSeq, limit ?? 500);
       return c.json({ lines, next: cursorAfter(lines.at(-1)?.seq ?? afterSeq) }, 200);
     });
 
     app.openapi(routes.listSessionsRoute, async (c) => {
       const { id } = c.req.valid("param");
-      if (!(await this.store.getWorker(id))) return c.json({ error: "No worker has this id." }, 404);
+      if (!(await this.store.getAgent(id))) return c.json({ error: "No agent has this id." }, 404);
       return c.json({ sessions: await this.store.sessionsOf(id) }, 200);
     });
 
     app.openapi(routes.getSessionContextRoute, async (c) => {
       const { id, sessionId } = c.req.valid("param");
-      const worker = await this.store.getWorker(id);
-      if (!worker) return c.json({ error: "No worker has this id." }, 404);
-      const session = worker.session?.id === sessionId && (await this.store.sessionsOf(id)).find((s) => s.id === sessionId);
-      if (!session) return c.json({ error: "This session is not the worker's live one." }, 409);
-      const read = await this.attach(origin(c), worker, FETCH_LIMIT);
+      const agent = await this.store.getAgent(id);
+      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      const session = agent.session?.id === sessionId && (await this.store.sessionsOf(id)).find((s) => s.id === sessionId);
+      if (!session) return c.json({ error: "This session is not the agent's live one." }, 409);
+      const read = await this.attach(this.origin(c), agent, FETCH_LIMIT);
       await this.fleet.apply({
         sessions: [{
           ...session,
@@ -493,9 +506,9 @@ export class WorkerServiceApi {
       return c.json({ context: read.context, documents: read.documents }, 200);
     });
 
-    app.openapi(routes.listWorkerCommandsRoute, async (c) => {
+    app.openapi(routes.listAgentCommandsRoute, async (c) => {
       const { id } = c.req.valid("param");
-      if (!(await this.store.getWorker(id))) return c.json({ error: "No worker has this id." }, 404);
+      if (!(await this.store.getAgent(id))) return c.json({ error: "No agent has this id." }, 404);
       const now = this.now();
       const commands = (await this.store.sentTo(id))
         .filter((sent) => !expired(sent, now))
@@ -535,7 +548,7 @@ export class WorkerServiceApi {
     };
     await this.store.putHost(host);
     await this.fleet.push.toViewers([
-      { type: "host", host: hostView(host, await this.store.listWorkers(), this.now()) },
+      { type: "host", host: hostView(host, await this.store.listAgents(), this.now()) },
     ]);
     return { heartbeatInterval: HEARTBEAT_INTERVAL, socketUrl: this.socketUrl };
   }
@@ -566,7 +579,7 @@ export class WorkerServiceApi {
   /**
    * Starts what usage and the hosts allow of the waiting requests, in start
    * order, and says of each one left why it waits. Each is claimed before its
-   * worker is made, so two admissions running at once never start one twice.
+   * agent is made, so two admissions running at once never start one twice.
    */
   async admit(self: string): Promise<void> {
     const requests = await this.store.listRequests();
@@ -577,7 +590,7 @@ export class WorkerServiceApi {
     const starts = requests.flatMap((r) => (r.startedAt ? [Date.parse(r.startedAt)] : []));
     const admits = usageAdmits(await this.fleet.usage(), now, starts.length ? new Date(Math.max(...starts)) : null);
     let blocked = "none" in admits ? admits.none : null;
-    const waits = async (request: WorkerRequest, why: string) => {
+    const waits = async (request: AgentRequest, why: string) => {
       if (request.why === why) return;
       await this.store.putRequest({ ...request, why }).catch((err) => {
         if (!(err instanceof Stale)) throw err;
@@ -598,15 +611,15 @@ export class WorkerServiceApi {
         await waits(request, `Waits on a host: ${placed.none.replace("; nothing was made.", ".")}`);
         continue;
       }
-      let claimed: WorkerRequest;
+      let claimed: AgentRequest;
       try {
-        claimed = await this.store.putRequest({ ...request, state: "started", why: null, startedAt: now.toISOString(), workerId: request.id });
+        claimed = await this.store.putRequest({ ...request, state: "started", why: null, startedAt: now.toISOString(), agentId: request.id });
       } catch (err) {
         if (err instanceof Stale) continue;
         throw err;
       }
       const putBack = (why: string) =>
-        this.store.putRequest({ ...claimed, state: "waiting", startedAt: null, workerId: null, why });
+        this.store.putRequest({ ...claimed, state: "waiting", startedAt: null, agentId: null, why });
       const made = await this.make(self, {
         id: request.id,
         name: nameFor(request),
@@ -624,15 +637,15 @@ export class WorkerServiceApi {
       });
       // Put back to wait, saying why, for the next admission to try again.
       if ("refused" in made) await putBack(`Could not start: ${made.refused}`);
-      else if ("one" in admits) blocked = "Waits on usage: the last reading is stale, and the worker just started will give a new one.";
+      else if ("one" in admits) blocked = "Waits on usage: the last reading is stale, and the agent just started will give a new one.";
     }
   }
 
   /**
-   * Records a worker and queues its `create`, and with a brief its `start`. What is
+   * Records an agent and queues its `create`, and with a brief its `start`. What is
    * given overrides the role's, field by field, so callers that name everything keep working.
    */
-  private async make(self: string, asked: NewWorker): Promise<{ worker: Worker; host: Host } | { refused: string; status: 400 | 404 | 409 | 503 }> {
+  private async make(self: string, asked: NewAgent): Promise<{ agent: Agent; host: Host } | { refused: string; status: 400 | 404 | 409 | 503 }> {
     const { role, item, labels } = asked;
     const name = asked.name;
     const brief = asked.brief ?? role?.brief ?? undefined;
@@ -641,7 +654,7 @@ export class WorkerServiceApi {
     const documents = asked.documents ?? role?.documents ?? [];
     const given = asked.credentials ?? role?.credentials ?? undefined;
     const credentials = given?.map((each) => (typeof each === "string" ? each : each.name));
-    // A request's own tokens were kept under its id, which is the worker's, when it was made.
+    // A request's own tokens were kept under its id, which is the agent's, when it was made.
     const own = asked.kept ? [] : (given ?? []).flatMap((each) => (typeof each === "string" ? [] : [each]));
     const ownNames = asked.kept ?? own.map((each) => each.name);
     const placed = asked.hostId ?? (await this.place(labels ?? []));
@@ -660,7 +673,7 @@ export class WorkerServiceApi {
       if (full) return { refused: full, status: 409 };
     }
     const id = asked.id ?? randomUUID();
-    let worker: Worker = {
+    let agent: Agent = {
       id,
       name,
       hostId,
@@ -678,50 +691,49 @@ export class WorkerServiceApi {
       reportedAt: null,
       hadSession: false,
     };
-    const commands: Command[] = [{ kind: "create", id: randomUUID(), workerId: id, name }];
+    const commands: Command[] = [{ kind: "create", id: randomUUID(), agentId: id, name }];
     const sessions = [];
     if (brief !== undefined) {
-      const started = await this.starting(self, worker, at, brief);
+      const started = await this.starting(self, agent, at, brief);
       if ("refused" in started) return { refused: started.refused, status: 409 };
-      worker = started.worker;
+      agent = started.agent;
       sessions.push(started.session);
       commands.push(started.command);
     }
-    // Kept before the worker is recorded, so its first start, pushed as it is, finds them.
+    // Kept before the agent is recorded, so its first start, pushed as it is, finds them.
     try {
       for (const each of own) await this.fleet.credentials.own.put(id, each.name, each.token);
     } catch (err) {
       await this.fleet.credentials.own.remove(id, own.map((each) => each.name)).catch(() => {});
-      console.error("Could not keep a worker's own credential:", (err as Error).name);
-      return { refused: `A credential of the worker's own could not be kept: ${(err as Error).message}`, status: 503 };
+      console.error("Could not keep an agent's own credential:", (err as Error).name);
+      return { refused: `A credential of the agent's own could not be kept: ${(err as Error).message}`, status: 503 };
     }
     try {
       await this.fleet.apply({
-        workers: [worker],
+        agents: [agent],
         sessions,
         queue: inOrder(hostId, commands, now),
-        claim: { name, workerId: id },
+        claim: { name, agentId: id },
       });
     } catch (err) {
       await this.fleet.credentials.own.remove(id, own.map((each) => each.name)).catch(() => {});
       if (!(err instanceof NameTaken)) throw err;
-      return { refused: `A worker not retired is already named ${name}.`, status: 409 };
+      return { refused: `An agent not retired is already named ${name}.`, status: 409 };
     }
-    return { worker, host };
+    return { agent, host };
   }
 
   /**
-   * The context, and the addresses of the services the worker is given. This
-   * service's address is the one the request came to: the stack cannot tell
-   * the function its own API's URL without a cycle.
+   * The context, and the addresses of the services the agent is given, `self`
+   * this service's.
    */
-  private async attach(self: string, worker: Worker, limit?: number): Promise<Attached> {
-    const credentials = worker.credentials ?? this.fleet.credentials.defaults;
+  private async attach(self: string, agent: Agent, limit?: number): Promise<Attached> {
+    const credentials = agent.credentials ?? this.fleet.credentials.defaults;
     const skills = await this.skills.forSession(credentials);
-    const read = await this.context.forSession(worker.documents ?? [], skills.skills, limit);
+    const read = await this.context.forSession(agent.documents ?? [], skills.skills, limit);
     const notes = [...skills.notes, ...(read.note ? [read.note] : [])];
     const env = this.fleet.credentials.addresses(credentials, self);
-    return { ...read, note: notes.length ? notes.join("; ") : null, env, credentials, ownCredentials: worker.ownCredentials ?? [] };
+    return { ...read, note: notes.length ? notes.join("; ") : null, env, credentials, ownCredentials: agent.ownCredentials ?? [] };
   }
 
   /**
@@ -730,19 +742,19 @@ export class WorkerServiceApi {
    * cannot read more, and `contextUrl`, where a host that can reads the whole.
    * Refused when not even the whole can be read whole.
    */
-  private async starting(self: string, worker: Worker, at: string, text?: string): Promise<ReturnType<typeof begin> | { refused: string }> {
-    const whole = await this.attach(self, worker, FETCH_LIMIT);
+  private async starting(self: string, agent: Agent, at: string, text?: string): Promise<ReturnType<typeof begin> | { refused: string }> {
+    const whole = await this.attach(self, agent, FETCH_LIMIT);
     if (whole.cut) return { refused: `Its context cannot be given whole, so no session was started: ${whole.note}` };
     // Laid within FETCH_LIMIT and no larger than CONTEXT_LIMIT, it is what laying within CONTEXT_LIMIT gives.
     const bytes = [whole.context, ...whole.documents].reduce((n, doc) => n + (doc ? Buffer.byteLength(JSON.stringify(doc)) : 0), 0);
-    if (bytes <= CONTEXT_LIMIT) return begin(worker, at, text, whole);
-    const inline = await this.attach(self, worker);
-    const started = begin(worker, at, text, {
+    if (bytes <= CONTEXT_LIMIT) return begin(agent, at, text, whole);
+    const inline = await this.attach(self, agent);
+    const started = begin(agent, at, text, {
       ...inline,
       note: `${inline.note}, in its start; its host is to read the whole from contextUrl, and this note stays only if it did not`,
     });
     if (started.command.kind !== "start") throw new Error("begin made no start");
-    const contextUrl = `/fleet/workers/${worker.id}/sessions/${started.session.id}/context`;
+    const contextUrl = `/agents/${agent.id}/sessions/${started.session.id}/context`;
     return { ...started, command: { ...started.command, contextUrl } };
   }
 
@@ -750,14 +762,14 @@ export class WorkerServiceApi {
    * Records it retired at once, ends any session, frees its name, and queues
    * a `stop` if it had a live session and then `retire`. Returns the `retire`'s id.
    */
-  private retire(worker: Worker): Promise<string> {
-    return this.fleet.retire(worker);
+  private retire(agent: Agent): Promise<string> {
+    return this.fleet.retire(agent);
   }
 
-  /** The worker's host, or why nothing can be sent to it. */
-  private async reachable(worker: Worker): Promise<Host | string> {
-    const host = await this.store.getHost(worker.hostId);
-    return unreachable(host, worker.hostId, this.now()) ?? host!;
+  /** The agent's host, or why nothing can be sent to it. */
+  private async reachable(agent: Agent): Promise<Host | string> {
+    const host = await this.store.getHost(agent.hostId);
+    return unreachable(host, agent.hostId, this.now()) ?? host!;
   }
 
   /**
@@ -766,54 +778,54 @@ export class WorkerServiceApi {
    */
   private async place(labels: string[]): Promise<string | { none: string }> {
     const now = this.now();
-    const workers = await this.store.listWorkers();
+    const agents = await this.store.listAgents();
     const [best] = (await this.store.listHosts())
       .filter((host) => hostStatus(host.heartbeatAt, now) === "connected" && labels.every((l) => host.labels.includes(l)))
-      .map((host) => ({ id: host.id, room: available(host, workers) ?? 0 }))
+      .map((host) => ({ id: host.id, room: available(host, agents) ?? 0 }))
       .filter(({ room }) => room > 0)
       .sort((a, b) => b.room - a.room || a.id.localeCompare(b.id));
     if (best) return best.id;
     const carrying = labels.length ? `, carrying ${labels.join(", ")},` : "";
-    return { none: `No connected host${carrying} has room for a worker; nothing was made.` };
+    return { none: `No connected host${carrying} has room for an agent; nothing was made.` };
   }
 
   /** Why the host has no room for another session, or null when it has. */
   private async full(host: Host): Promise<string | null> {
-    return available(host, await this.store.listWorkers()) === 0
+    return available(host, await this.store.listAgents()) === 0
       ? `${host.id} is running all ${host.capacity} sessions it will.`
       : null;
   }
 
-  private async start(c: Context, worker: Worker, host: Host, text?: string) {
+  private async start(c: Context, agent: Agent, host: Host, text?: string) {
     const full = await this.full(host);
     if (full) return c.json({ error: full }, 409);
     const now = this.now();
-    const started = await this.starting(origin(c), worker, now.toISOString(), text);
+    const started = await this.starting(this.origin(c), agent, now.toISOString(), text);
     if ("refused" in started) return c.json({ error: started.refused }, 409);
     await this.fleet.apply({
-      workers: [started.worker],
+      agents: [started.agent],
       sessions: [started.session],
-      queue: inOrder(worker.hostId, [started.command], now),
+      queue: inOrder(agent.hostId, [started.command], now),
       guarded: true,
     });
     return c.json({ commandId: started.command.id }, 202);
   }
 
   /**
-   * Recorded at once, and everything queued for the worker but its home is
+   * Recorded at once, and everything queued for the agent but its home is
    * withdrawn. Should its host start or keep the session anyway, the next
    * report of it is answered with a `stop`.
    */
-  private async forceStop(worker: Worker, now: Date): Promise<void> {
+  private async forceStop(agent: Agent, now: Date): Promise<void> {
     const at = now.toISOString();
     await this.fleet.apply({
-      workers: [{ ...worker, state: "idle", session: null, ...afterSession(worker) }],
-      sessions: [{ ...worker.session!, workerId: worker.id, endedAt: at, ended: "stopped" }],
+      agents: [{ ...agent, state: "idle", session: null, ...afterSession(agent) }],
+      sessions: [{ ...agent.session!, agentId: agent.id, endedAt: at, ended: "stopped" }],
       guarded: true,
     });
-    for (const queued of await this.store.pending(worker.hostId)) {
-      if (queued.command.workerId !== worker.id || DURABLE.includes(queued.command.kind)) continue;
-      await this.fleet.settle(worker.hostId, { ...queued, reportedAt: null, ok: null, error: null, withdrawnAt: at });
+    for (const queued of await this.store.pending(agent.hostId)) {
+      if (queued.command.agentId !== agent.id || DURABLE.includes(queued.command.kind)) continue;
+      await this.fleet.settle(agent.hostId, { ...queued, reportedAt: null, ok: null, error: null, withdrawnAt: at });
     }
   }
 
@@ -826,18 +838,18 @@ export class WorkerServiceApi {
       openapi: "3.1.0",
       info: {
         version: "0.1.0",
-        title: "worker-service",
+        title: "agent-service",
         description:
-          "The API for workers: lasting agents, each living on one host, run in sessions. Hosts " +
+          "The API for agents: lasting agents, each living on one host, run in sessions. Hosts " +
           "send a heartbeat every 30 seconds, which keeps them `connected` and says what they " +
-          "offer. Clients read state and issue commands. Every route under `/fleet` needs the " +
+          "offer. Clients read state and issue commands. Every route under every route needs the " +
           "stage's bearer token.\n\n" +
           "Commands and reports go by WebSocket at `socketUrl` alone: a host connects with " +
           "`?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with " +
           "`?ticket=<one-time ticket>` from `createSocketTicket`. What goes up is a " +
           "`SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's " +
           "sockets get each `command` as it is queued, and a host's socket, once open, every " +
-          "command still pending for it; every viewer gets each `worker` as it changes, `lines` " +
+          "command still pending for it; every viewer gets each `agent` as it changes, `lines` " +
           "as they arrive and the `host` on each heartbeat. A command stays queued until a " +
           "report names it, so a dropped socket loses nothing: it is replayed on the next.\n\n" +
           "No body carries the server's time: a response's `Date` header is when it was made, " +
@@ -846,22 +858,18 @@ export class WorkerServiceApi {
       tags: [
         { name: routes.AUDIENCES.host, description: "Called by hosts: stay connected, say what they offer." },
         { name: routes.AUDIENCES.reading, description: "Called by clients to read state." },
-        { name: routes.AUDIENCES.acting, description: "Called by clients to create workers and send them commands." },
-        { name: routes.AUDIENCES.worker, description: "Called by a worker, from its session, to say what it is doing." },
+        { name: routes.AUDIENCES.acting, description: "Called by clients to create agents and send them commands." },
+        { name: routes.AUDIENCES.agent, description: "Called by an agent, from its session, to say what it is doing." },
         { name: "meta" },
       ],
     });
   }
 }
 
-/**
- * This service's address, as the request came to it: the stack cannot tell
- * the function its own API's URL without a cycle.
- */
-const origin = (c: Context) => new URL(c.req.url).origin;
 
-/** What a worker is made with: a `createWorker` body, its role read, or an admitted request. */
-interface NewWorker {
+
+/** What an agent is made with: a `createAgent` body, its role read, or an admitted request. */
+interface NewAgent {
   id?: string;
   name: string;
   role: Role | null;
@@ -880,7 +888,7 @@ interface NewWorker {
 
 /**
  * A cursor names the `seq` it follows. `-1` is before the first line, so a
- * read of a worker with no transcript yet still has somewhere to resume.
+ * read of an agent with no transcript yet still has somewhere to resume.
  */
 const cursorAfter = (seq: number) => Buffer.from(`sq=${seq}`).toString("base64url");
 

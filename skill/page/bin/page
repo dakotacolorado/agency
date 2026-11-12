@@ -5,32 +5,32 @@
 #   page waiting 'Which schema should the status field use?' 'Asks: status schema'
 #   page review 'PR #41 is submitted to approval-service; ticket in review' 'In review: PR #41'
 #
-# STATUS is one setWorkerStatus takes (reference/api.md); the service refuses any other.
+# STATUS is one setAgentStatus takes (reference/api.md); the service refuses any other.
 #
-# Prints the worker as worker-service now has it. Exits 1 on an HTTP error.
+# Prints the agent as agent-service now has it. Exits 1 on an HTTP error.
 #
 # The address and token come from the session's environment, which every
-# session is started with; the token is never printed. The worker is the one
-# whose folder holds CLAUDE_CONFIG_DIR (<workers>/<name>/home/.claude), by the
-# id in its worker.json.
+# session is started with; the token is never printed. The agent is the one
+# whose folder holds CLAUDE_CONFIG_DIR (<agents>/<name>/home/.claude), by the
+# id in its agent.json.
 #
-# Env: WS_URL and WS_TOKEN (set for the session); WS_WORKER_ID overrides the worker.
+# Env: AG_URL and AG_TOKEN (set for the session); AG_AGENT_ID overrides the agent.
 set -eu
 
 usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -eq 2 ] || [ $# -eq 3 ] || usage
 status=$1 summary=$2 headline=${3-}
 
-url=${WS_URL:?"page: WS_URL is not set: this session was started without worker-service's address"}
-token=${WS_TOKEN:?"page: WS_TOKEN is not set: this session was started without worker-service's token"}
+url=${AG_URL:?"page: AG_URL is not set: this session was started without agent-service's address"}
+token=${AG_TOKEN:?"page: AG_TOKEN is not set: this session was started without agent-service's token"}
 
-if [ -n "${WS_WORKER_ID-}" ]; then
-  id=$WS_WORKER_ID
+if [ -n "${AG_AGENT_ID-}" ]; then
+  id=$AG_AGENT_ID
 else
-  config=${CLAUDE_CONFIG_DIR:?"page: CLAUDE_CONFIG_DIR is not set, so which worker this is is unknown"}
-  file=$(dirname "$(dirname "$config")")/worker.json
+  config=${CLAUDE_CONFIG_DIR:?"page: CLAUDE_CONFIG_DIR is not set, so which agent this is is unknown"}
+  file=$(dirname "$(dirname "$config")")/agent.json
   id=$(sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" | head -n 1)
-  [ -n "$id" ] || { echo "page: no worker id in $file" >&2; exit 1; }
+  [ -n "$id" ] || { echo "page: no agent id in $file" >&2; exit 1; }
 fi
 
 # One line, as JSON: backslashes and quotes escaped, line breaks and tabs made spaces.
@@ -45,7 +45,7 @@ trap 'rm -f "$out"' EXIT
 # The token goes in by a header file on stdin, so it is never on a command line.
 code=$(printf 'authorization: Bearer %s\n' "$token" | curl -sS -o "$out" -w '%{http_code}' -X PUT -H @- \
   -H 'content-type: application/json' --data-binary "$body" \
-  "${url%/}/fleet/workers/$id/status")
+  "${url%/}/agents/$id/status")
 
 cat "$out"
 [ -s "$out" ] && [ "$(tail -c1 "$out")" != "" ] && echo

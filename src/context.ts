@@ -18,8 +18,7 @@ export const isGlobalTrial = (key: string) => key.startsWith(`proposal.${CONTEXT
 export const CONTEXT_LIMIT = 96 * 1024;
 
 /**
- * A context its host reads over HTTP, when it is too large for the start:
- * well inside a Lambda response's 6 MB.
+ * A context its host reads over HTTP, when it is too large for the start.
  */
 export const FETCH_LIMIT = 1024 * 1024;
 
@@ -45,7 +44,7 @@ export interface Attached extends Read {
   /** The addresses of the services it is given; their tokens go only to its host, with `credentials`. */
   env: Record<string, string>;
   credentials: string[];
-  /** Of `credentials`, those the worker has a token of its own for. */
+  /** Of `credentials`, those the agent has a token of its own for. */
   ownCredentials: string[];
 }
 
@@ -66,7 +65,7 @@ export interface ContextSource {
    * the whole is kept within `limit` bytes, `CONTEXT_LIMIT` unless said.
    */
   forSession(documents: string[], skills?: Skill[], limit?: number): Promise<Read>;
-  /** Why a worker may not be made with `documents`, in document-service's words; null when it may. */
+  /** Why an agent may not be made with `documents`, in document-service's words; null when it may. */
   refuse(documents: string[]): Promise<string | null>;
 }
 
@@ -110,7 +109,7 @@ export class ServiceContext implements ContextSource {
       return { context: null, documents: [], skills: [], note: `${CONTEXT_KEY} v${global.version} is ${bytes} bytes, over the ${limit} a start can carry`, cut: true };
     }
     // Clients first, then the documents beside global, then references with what room is left:
-    // a worker can call a service without its reference, but not without its client or its role.
+    // an agent can call a service without its reference, but not without its client or its role.
     const laid = overlay(global, skills, limit);
     const notes: string[] = [...laid.notes];
     let cut = laid.notes.length > 0;

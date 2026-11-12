@@ -3,7 +3,7 @@ import { withdrawn } from "./domain.ts";
 import { hash, same } from "./secret.ts";
 import { Credentials, selfCredential, type Credential } from "./credentials.ts";
 import { Fleet } from "./fleet.ts";
-import type { WorkerSecrets } from "./worker-secrets.ts";
+import type { AgentSecrets } from "./agent-secrets.ts";
 import { Push, type Poster } from "./push.ts";
 import { SocketInboundSchema, type SocketInbound } from "./schema.ts";
 import type { Connection, Store } from "./store.ts";
@@ -45,13 +45,13 @@ export class SocketHandler {
     token: TokenSource,
     poster: Poster,
     now: () => Date = () => new Date(),
-    credentials: Record<string, Credential> = { "worker-service": selfCredential(token) },
-    workerSecrets?: WorkerSecrets,
+    credentials: Record<string, Credential> = { "agent-service": selfCredential(token) },
+    agentSecrets?: AgentSecrets,
   ) {
     this.store = store;
     this.token = token;
     this.now = now;
-    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials, workerSecrets));
+    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials, agentSecrets));
   }
 
   async handle(event: SocketEvent): Promise<SocketResult> {
@@ -117,8 +117,8 @@ export class SocketHandler {
     if (connection.kind === "host") await this.replay(connection, message);
     if (message.type === "ping") return { statusCode: 200 };
     if (connection.kind !== "host") return refuse("Only a host's socket reports.");
-    const { workers = [], lines = [], commandResults = [], tokens = [], usage } = message;
-    await this.fleet.report(connection.hostId!, { workers, lines, commandResults, tokens });
+    const { agents = [], lines = [], commandResults = [], tokens = [], usage } = message;
+    await this.fleet.report(connection.hostId!, { agents, lines, commandResults, tokens });
     if (usage) await this.fleet.reportUsage(connection.hostId!, usage);
     return { statusCode: 200 };
   }

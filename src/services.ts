@@ -22,7 +22,7 @@ export type Services = z.infer<typeof ServicesSchema>;
  * in the repo of the host it describes.
  */
 export function credentialsOf(services: Services, token: TokenSource, env: NodeJS.ProcessEnv = process.env): Record<string, Credential> {
-  const known: Record<string, Credential> = { "worker-service": selfCredential(token) };
+  const known: Record<string, Credential> = { "agent-service": selfCredential(token) };
   for (const [name, { url, urlVar, tokenVar, tokenEnv }] of Object.entries(services)) {
     known[name] = { url: url.replace(/\/$/, ""), urlVar, tokenVar, token: fixedToken(env[tokenEnv]) };
   }

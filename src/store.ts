@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { backup, DatabaseSync } from "node:sqlite";
-import { DURABLE, KEPT_FOR, unreported, type Host, type Queued, type Sent, type Session, type Worker } from "./domain.ts";
+import { DURABLE, KEPT_FOR, unreported, type Host, type Queued, type Sent, type Session, type Agent } from "./domain.ts";
 import type { TranscriptLine, UsageWindow, UsageWindowName } from "./schema.ts";
 import type { Role } from "./roles.ts";
-import type { WorkerRequest } from "./admission.ts";
+import type { AgentRequest } from "./admission.ts";
 
 export interface Connection {
   connectionId: string;
@@ -21,16 +21,16 @@ export type SessionWrite = Omit<Session, "context" | "documents" | "skills" | "c
 
 /** What one request changes, written together or not at all. */
 export interface Change {
-  workers?: Worker[];
+  agents?: Agent[];
   /**
-   * Each worker is written on condition its record still holds the `rev` it was
+   * Each agent is written on condition its record still holds the `rev` it was
    * read with; otherwise the write fails as `Conflict`, to be read again.
    */
   guarded?: boolean;
   sessions?: SessionWrite[];
   queue?: { hostId: string; queued: Queued }[];
-  /** A name taken by a new worker; the write fails as `NameTaken` if a worker not retired has it. */
-  claim?: { name: string; workerId: string };
+  /** A name taken by a new agent; the write fails as `NameTaken` if an agent not retired has it. */
+  claim?: { name: string; agentId: string };
   release?: string;
   /** Commands taken off their host's queue in the same write, as `settle` does. */
   settled?: { hostId: string; sent: Sent }[];
@@ -41,20 +41,20 @@ export class NameTaken extends Error {}
 /** A request written since it was read. */
 export class Stale extends Error {}
 
-/** A guarded worker written since it was read: read it again and redo the change. */
+/** A guarded agent written since it was read: read it again and redo the change. */
 export class Conflict extends Error {}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS hosts (id TEXT PRIMARY KEY, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS workers (id TEXT PRIMARY KEY, rev TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS names (name TEXT PRIMARY KEY, worker_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, rev TEXT NOT NULL, record TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS names (name TEXT PRIMARY KEY, agent_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pending (
   host_id TEXT NOT NULL, id TEXT NOT NULL, queued_at TEXT NOT NULL, durable INTEGER NOT NULL, record TEXT NOT NULL,
   PRIMARY KEY (host_id, id)
 );
 CREATE TABLE IF NOT EXISTS sent (
-  worker_id TEXT NOT NULL, id TEXT NOT NULL, queued_at TEXT NOT NULL, record TEXT NOT NULL,
-  PRIMARY KEY (worker_id, id)
+  agent_id TEXT NOT NULL, id TEXT NOT NULL, queued_at TEXT NOT NULL, record TEXT NOT NULL,
+  PRIMARY KEY (agent_id, id)
 );
 CREATE INDEX IF NOT EXISTS sent_by_queued ON sent (queued_at);
 CREATE TABLE IF NOT EXISTS written (
@@ -62,12 +62,12 @@ CREATE TABLE IF NOT EXISTS written (
   PRIMARY KEY (host_id, id)
 );
 CREATE TABLE IF NOT EXISTS sessions (
-  worker_id TEXT NOT NULL, id TEXT NOT NULL, started_at TEXT NOT NULL, record TEXT NOT NULL,
-  PRIMARY KEY (worker_id, id)
+  agent_id TEXT NOT NULL, id TEXT NOT NULL, started_at TEXT NOT NULL, record TEXT NOT NULL,
+  PRIMARY KEY (agent_id, id)
 );
 CREATE TABLE IF NOT EXISTS transcript (
-  worker_id TEXT NOT NULL, seq INTEGER NOT NULL, line TEXT NOT NULL,
-  PRIMARY KEY (worker_id, seq)
+  agent_id TEXT NOT NULL, seq INTEGER NOT NULL, line TEXT NOT NULL,
+  PRIMARY KEY (agent_id, seq)
 );
 CREATE TABLE IF NOT EXISTS connections (id TEXT PRIMARY KEY, record TEXT NOT NULL, replayed_at TEXT);
 CREATE TABLE IF NOT EXISTS tickets (hash TEXT PRIMARY KEY, valid_until TEXT NOT NULL);
@@ -76,9 +76,9 @@ CREATE TABLE IF NOT EXISTS roles (name TEXT PRIMARY KEY, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS requests (
   id TEXT PRIMARY KEY, rev TEXT NOT NULL, state TEXT NOT NULL, ended_at TEXT, record TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS worker_secrets (
-  worker_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL,
-  PRIMARY KEY (worker_id, name)
+CREATE TABLE IF NOT EXISTS agent_secrets (
+  agent_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL,
+  PRIMARY KEY (agent_id, name)
 );
 `;
 
@@ -91,7 +91,7 @@ const all = <T>(rows: Row[], column = "record"): T[] => rows.map((row) => JSON.p
  * columns it is found by. Every write is one synchronous statement or
  * transaction, so none interleaves with another; the methods stay async, as
  * the code above them awaits between a read and the write made from it, and a
- * guarded write refuses one whose worker changed meanwhile.
+ * guarded write refuses one whose agent changed meanwhile.
  *
  * Sockets do not outlive the process, so connections are emptied on open.
  */
@@ -127,7 +127,7 @@ export class Store {
     return parse<Host>(this.db.prepare("SELECT record FROM hosts WHERE id = ?").get(id));
   }
 
-  /** The host's own record alone: its workers, transcripts and commands are kept apart from it. */
+  /** The host's own record alone: its agents, transcripts and commands are kept apart from it. */
   async deleteHost(id: string): Promise<void> {
     this.db.prepare("DELETE FROM hosts WHERE id = ?").run(id);
   }
@@ -136,40 +136,40 @@ export class Store {
     return all<Host>(this.db.prepare("SELECT record FROM hosts ORDER BY id").all());
   }
 
-  async getWorker(id: string): Promise<Worker | null> {
-    return this.worker(id);
+  async getAgent(id: string): Promise<Agent | null> {
+    return this.agent(id);
   }
 
-  async listWorkers(): Promise<Worker[]> {
+  async listAgents(): Promise<Agent[]> {
     return this.db
-      .prepare("SELECT rev, record FROM workers ORDER BY rowid")
+      .prepare("SELECT rev, record FROM agents ORDER BY rowid")
       .all()
-      .map((row) => ({ ...(JSON.parse(row.record as string) as Worker), rev: row.rev as string }));
+      .map((row) => ({ ...(JSON.parse(row.record as string) as Agent), rev: row.rev as string }));
   }
 
-  protected worker(id: string): Worker | null {
-    const row = this.db.prepare("SELECT rev, record FROM workers WHERE id = ?").get(id);
-    return row ? { ...(JSON.parse(row.record as string) as Worker), rev: row.rev as string } : null;
+  protected agent(id: string): Agent | null {
+    const row = this.db.prepare("SELECT rev, record FROM agents WHERE id = ?").get(id);
+    return row ? { ...(JSON.parse(row.record as string) as Agent), rev: row.rev as string } : null;
   }
 
   async commit(change: Change): Promise<void> {
     this.transaction(() => {
-      for (const { rev, ...worker } of change.workers ?? []) {
+      for (const { rev, ...agent } of change.agents ?? []) {
         if (change.guarded) {
-          const held = this.db.prepare("SELECT rev FROM workers WHERE id = ?").get(worker.id) as { rev: string } | undefined;
-          if (held?.rev !== rev) throw new Conflict(worker.id);
+          const held = this.db.prepare("SELECT rev FROM agents WHERE id = ?").get(agent.id) as { rev: string } | undefined;
+          if (held?.rev !== rev) throw new Conflict(agent.id);
         }
         this.db
-          .prepare("INSERT INTO workers (id, rev, record) VALUES (?, ?, ?) ON CONFLICT (id) DO UPDATE SET rev = excluded.rev, record = excluded.record")
-          .run(worker.id, randomUUID(), JSON.stringify(worker));
+          .prepare("INSERT INTO agents (id, rev, record) VALUES (?, ?, ?) ON CONFLICT (id) DO UPDATE SET rev = excluded.rev, record = excluded.record")
+          .run(agent.id, randomUUID(), JSON.stringify(agent));
       }
       for (const session of change.sessions ?? []) {
-        const held = parse<Session>(this.db.prepare("SELECT record FROM sessions WHERE worker_id = ? AND id = ?").get(session.workerId, session.id));
+        const held = parse<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? AND id = ?").get(session.agentId, session.id));
         const fields = Object.fromEntries(Object.entries(session).filter(([, value]) => value !== undefined));
         const merged = { context: null, documents: [], skills: [], contextNote: null, ...held, ...fields } as Session;
         this.db
-          .prepare("INSERT INTO sessions (worker_id, id, started_at, record) VALUES (?, ?, ?, ?) ON CONFLICT (worker_id, id) DO UPDATE SET record = excluded.record")
-          .run(merged.workerId, merged.id, merged.startedAt, JSON.stringify(merged));
+          .prepare("INSERT INTO sessions (agent_id, id, started_at, record) VALUES (?, ?, ?, ?) ON CONFLICT (agent_id, id) DO UPDATE SET record = excluded.record")
+          .run(merged.agentId, merged.id, merged.startedAt, JSON.stringify(merged));
       }
       for (const { hostId, queued } of change.queue ?? []) {
         this.db
@@ -180,9 +180,9 @@ export class Store {
       for (const { hostId, sent } of change.settled ?? []) this.settling(hostId, sent);
       if (change.release && change.release !== change.claim?.name) this.db.prepare("DELETE FROM names WHERE name = ?").run(change.release);
       if (change.claim) {
-        const held = this.db.prepare("SELECT worker_id FROM names WHERE name = ?").get(change.claim.name) as { worker_id: string } | undefined;
-        if (held && !(change.release === change.claim.name && held.worker_id === change.claim.workerId)) throw new NameTaken(change.claim.name);
-        this.db.prepare("INSERT OR REPLACE INTO names (name, worker_id) VALUES (?, ?)").run(change.claim.name, change.claim.workerId);
+        const held = this.db.prepare("SELECT agent_id FROM names WHERE name = ?").get(change.claim.name) as { agent_id: string } | undefined;
+        if (held && !(change.release === change.claim.name && held.agent_id === change.claim.agentId)) throw new NameTaken(change.claim.name);
+        this.db.prepare("INSERT OR REPLACE INTO names (name, agent_id) VALUES (?, ?)").run(change.claim.name, change.claim.agentId);
       }
     });
   }
@@ -198,7 +198,7 @@ export class Store {
   }
 
   /**
-   * Off the host's queue for good, and on the worker's record as delivered,
+   * Off the host's queue for good, and on the agent's record as delivered,
    * written or withdrawn; a written command is held for its host's next word.
    */
   async settle(hostId: string, sent: Sent): Promise<void> {
@@ -206,30 +206,30 @@ export class Store {
   }
 
   /** Oldest first. */
-  async sentTo(workerId: string): Promise<Sent[]> {
-    return all<Sent>(this.db.prepare("SELECT record FROM sent WHERE worker_id = ? ORDER BY queued_at, id").all(workerId)).map((sent) => ({
+  async sentTo(agentId: string): Promise<Sent[]> {
+    return all<Sent>(this.db.prepare("SELECT record FROM sent WHERE agent_id = ? ORDER BY queued_at, id").all(agentId)).map((sent) => ({
       ...sent,
       taken: sent.taken ?? null,
     }));
   }
 
   /** Oldest first. */
-  async sessionsOf(workerId: string): Promise<Session[]> {
-    return all<Session>(this.db.prepare("SELECT record FROM sessions WHERE worker_id = ? ORDER BY started_at, rowid").all(workerId));
+  async sessionsOf(agentId: string): Promise<Session[]> {
+    return all<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? ORDER BY started_at, rowid").all(agentId));
   }
 
   /** Keyed by `seq`, so a line sent again overwrites itself. */
-  async putLines(workerId: string, lines: TranscriptLine[]): Promise<void> {
+  async putLines(agentId: string, lines: TranscriptLine[]): Promise<void> {
     this.transaction(() => {
-      const put = this.db.prepare("INSERT OR REPLACE INTO transcript (worker_id, seq, line) VALUES (?, ?, ?)");
-      for (const line of lines) put.run(workerId, line.seq, JSON.stringify(line));
+      const put = this.db.prepare("INSERT OR REPLACE INTO transcript (agent_id, seq, line) VALUES (?, ?, ?)");
+      for (const line of lines) put.run(agentId, line.seq, JSON.stringify(line));
     });
   }
 
   /** At most `limit` lines after `afterSeq`, in order; a negative `afterSeq` reads from the first line. */
-  async readLines(workerId: string, afterSeq: number, limit: number): Promise<TranscriptLine[]> {
+  async readLines(agentId: string, afterSeq: number, limit: number): Promise<TranscriptLine[]> {
     return all<TranscriptLine>(
-      this.db.prepare("SELECT line FROM transcript WHERE worker_id = ? AND seq > ? ORDER BY seq LIMIT ?").all(workerId, afterSeq, limit),
+      this.db.prepare("SELECT line FROM transcript WHERE agent_id = ? AND seq > ? ORDER BY seq LIMIT ?").all(agentId, afterSeq, limit),
       "line",
     );
   }
@@ -298,23 +298,23 @@ export class Store {
     this.db.prepare("INSERT OR REPLACE INTO roles (name, record) VALUES (?, ?)").run(role.name, JSON.stringify(role));
   }
 
-  async listRequests(): Promise<WorkerRequest[]> {
+  async listRequests(): Promise<AgentRequest[]> {
     return this.db
       .prepare("SELECT rev, record FROM requests ORDER BY id")
       .all()
-      .map((row) => ({ ...(JSON.parse(row.record as string) as WorkerRequest), rev: row.rev as string }));
+      .map((row) => ({ ...(JSON.parse(row.record as string) as AgentRequest), rev: row.rev as string }));
   }
 
-  async getRequest(id: string): Promise<WorkerRequest | null> {
+  async getRequest(id: string): Promise<AgentRequest | null> {
     const row = this.db.prepare("SELECT rev, record FROM requests WHERE id = ?").get(id);
-    return row ? { ...(JSON.parse(row.record as string) as WorkerRequest), rev: row.rev as string } : null;
+    return row ? { ...(JSON.parse(row.record as string) as AgentRequest), rev: row.rev as string } : null;
   }
 
   /**
    * Written on condition its record still holds the `rev` it was read with (none, for a new one),
    * so of two writes made from one reading only the first lands; the second throws `Stale`.
    */
-  async putRequest(request: WorkerRequest): Promise<WorkerRequest> {
+  async putRequest(request: AgentRequest): Promise<AgentRequest> {
     const { rev, ...fields } = request;
     const written = { ...fields, rev: randomUUID() };
     const endedAt = request.state === "waiting" ? null : (request.withdrawnAt ?? request.startedAt ?? new Date().toISOString());
@@ -328,18 +328,18 @@ export class Store {
     });
   }
 
-  async putSecret(workerId: string, name: string, value: string): Promise<void> {
-    this.db.prepare("INSERT OR REPLACE INTO worker_secrets (worker_id, name, value) VALUES (?, ?, ?)").run(workerId, name, value);
+  async putSecret(agentId: string, name: string, value: string): Promise<void> {
+    this.db.prepare("INSERT OR REPLACE INTO agent_secrets (agent_id, name, value) VALUES (?, ?, ?)").run(agentId, name, value);
   }
 
-  async getSecret(workerId: string, name: string): Promise<string | null> {
-    const row = this.db.prepare("SELECT value FROM worker_secrets WHERE worker_id = ? AND name = ?").get(workerId, name) as { value: string } | undefined;
+  async getSecret(agentId: string, name: string): Promise<string | null> {
+    const row = this.db.prepare("SELECT value FROM agent_secrets WHERE agent_id = ? AND name = ?").get(agentId, name) as { value: string } | undefined;
     return row?.value ?? null;
   }
 
-  async removeSecrets(workerId: string, names: string[]): Promise<void> {
-    const remove = this.db.prepare("DELETE FROM worker_secrets WHERE worker_id = ? AND name = ?");
-    for (const name of names) remove.run(workerId, name);
+  async removeSecrets(agentId: string, names: string[]): Promise<void> {
+    const remove = this.db.prepare("DELETE FROM agent_secrets WHERE agent_id = ? AND name = ?");
+    for (const name of names) remove.run(agentId, name);
   }
 
   /**
@@ -361,8 +361,8 @@ export class Store {
 
   protected record(sent: Sent): void {
     this.db
-      .prepare("INSERT OR REPLACE INTO sent (worker_id, id, queued_at, record) VALUES (?, ?, ?, ?)")
-      .run(sent.command.workerId, sent.command.id, sent.queuedAt, JSON.stringify(sent));
+      .prepare("INSERT OR REPLACE INTO sent (agent_id, id, queued_at, record) VALUES (?, ?, ?, ?)")
+      .run(sent.command.agentId, sent.command.id, sent.queuedAt, JSON.stringify(sent));
   }
 
   private settling(hostId: string, sent: Sent): void {

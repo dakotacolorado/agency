@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "version": "0.1.0",
-    "title": "worker-service",
-    "description": "The API for workers: lasting agents, each living on one host, run in sessions. Hosts send a heartbeat every 30 seconds, which keeps them `connected` and says what they offer. Clients read state and issue commands. Every route under `/fleet` needs the stage's bearer token.\n\nCommands and reports go by WebSocket at `socketUrl` alone: a host connects with `?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with `?ticket=<one-time ticket>` from `createSocketTicket`. What goes up is a `SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's sockets get each `command` as it is queued, and a host's socket, once open, every command still pending for it; every viewer gets each `worker` as it changes, `lines` as they arrive and the `host` on each heartbeat. A command stays queued until a report names it, so a dropped socket loses nothing: it is replayed on the next.\n\nNo body carries the server's time: a response's `Date` header is when it was made, and so when a host's `status` was computed."
+    "title": "agent-service",
+    "description": "The API for agents: lasting agents, each living on one host, run in sessions. Hosts send a heartbeat every 30 seconds, which keeps them `connected` and says what they offer. Clients read state and issue commands. Every route under every route needs the stage's bearer token.\n\nCommands and reports go by WebSocket at `socketUrl` alone: a host connects with `?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with `?ticket=<one-time ticket>` from `createSocketTicket`. What goes up is a `SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's sockets get each `command` as it is queued, and a host's socket, once open, every command still pending for it; every viewer gets each `agent` as it changes, `lines` as they arrive and the `host` on each heartbeat. A command stays queued until a report names it, so a dropped socket loses nothing: it is replayed on the next.\n\nNo body carries the server's time: a response's `Date` header is when it was made, and so when a host's `status` was computed."
   },
   "tags": [
     {
@@ -16,11 +16,11 @@
     },
     {
       "name": "clients, acting",
-      "description": "Called by clients to create workers and send them commands."
+      "description": "Called by clients to create agents and send them commands."
     },
     {
-      "name": "workers, of themselves",
-      "description": "Called by a worker, from its session, to say what it is doing."
+      "name": "agents, of themselves",
+      "description": "Called by an agent, from its session, to say what it is doing."
     },
     {
       "name": "meta"
@@ -60,13 +60,13 @@
               "report"
             ]
           },
-          "workers": {
+          "agents": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/WorkerReport"
+              "$ref": "#/components/schemas/AgentReport"
             },
             "maxItems": 256,
-            "description": "Workers on the host and what each is doing. One not named is unchanged."
+            "description": "Agents on the host and what each is doing. One not named is unchanged."
           },
           "lines": {
             "type": "array",
@@ -99,10 +99,10 @@
         "required": [
           "type"
         ],
-        "description": "Host to service, the only way a host reports: whenever something changes, and in full (every worker, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`workerId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it.",
+        "description": "Host to service, the only way a host reports: whenever something changes, and in full (every agent, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`agentId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it.",
         "example": {
           "type": "report",
-          "workers": [
+          "agents": [
             {
               "id": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10",
               "state": "working",
@@ -113,7 +113,7 @@
           ],
           "lines": [
             {
-              "workerId": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10",
+              "agentId": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10",
               "sessionId": "9d6a1f0e-4b7c-4e21-a3f8-0c5d2e7b4a19",
               "seq": 41,
               "at": "2026-10-27T12:00:00.000Z",
@@ -129,13 +129,13 @@
           ]
         }
       },
-      "WorkerReport": {
+      "AgentReport": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "state": {
@@ -177,10 +177,10 @@
       "LineReport": {
         "type": "object",
         "properties": {
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "sessionId": {
@@ -192,7 +192,7 @@
           "seq": {
             "type": "integer",
             "minimum": 0,
-            "description": "Deduplicated by (`workerId`, `seq`), so resending is safe."
+            "description": "Deduplicated by (`agentId`, `seq`), so resending is safe."
           },
           "at": {
             "type": "string",
@@ -206,7 +206,7 @@
               "tool",
               "instruction"
             ],
-            "description": "`instruction`: a message sent to the worker."
+            "description": "`instruction`: a message sent to the agent."
           },
           "text": {
             "type": "string",
@@ -220,7 +220,7 @@
           }
         },
         "required": [
-          "workerId",
+          "agentId",
           "sessionId",
           "seq",
           "at",
@@ -247,7 +247,7 @@
           },
           "taken": {
             "type": "boolean",
-            "description": "`false` with `ok` true: a command with text, written to its worker's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled."
+            "description": "`false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled."
           }
         },
         "required": [
@@ -258,10 +258,10 @@
       "SessionTokensReport": {
         "type": "object",
         "properties": {
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "sessionId": {
@@ -296,7 +296,7 @@
           }
         },
         "required": [
-          "workerId",
+          "agentId",
           "sessionId",
           "inputTokens",
           "outputTokens",
@@ -376,7 +376,7 @@
             "$ref": "#/components/schemas/CommandPush"
           },
           {
-            "$ref": "#/components/schemas/WorkerPush"
+            "$ref": "#/components/schemas/AgentPush"
           },
           {
             "$ref": "#/components/schemas/LinesPush"
@@ -398,7 +398,7 @@
           "propertyName": "type",
           "mapping": {
             "command": "#/components/schemas/CommandPush",
-            "worker": "#/components/schemas/WorkerPush",
+            "agent": "#/components/schemas/AgentPush",
             "lines": "#/components/schemas/LinesPush",
             "sent": "#/components/schemas/SentPush",
             "host": "#/components/schemas/HostPush",
@@ -468,10 +468,10 @@
             "maxLength": 128,
             "description": "Report the command by this id once it is taken."
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "kind": {
@@ -483,17 +483,17 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among workers not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           }
         },
         "required": [
           "id",
-          "workerId",
+          "agentId",
           "kind",
           "name"
         ],
-        "description": "Make the worker's home folder."
+        "description": "Make the agent's home folder."
       },
       "StartCommand": {
         "type": "object",
@@ -504,10 +504,10 @@
             "maxLength": 128,
             "description": "Report the command by this id once it is taken."
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "kind": {
@@ -524,7 +524,7 @@
           },
           "resume": {
             "type": "boolean",
-            "description": "True to carry on the worker's last conversation (`--continue`), false to begin one."
+            "description": "True to carry on the agent's last conversation (`--continue`), false to begin one."
           },
           "text": {
             "type": "string",
@@ -569,7 +569,7 @@
               "version",
               "files"
             ],
-            "description": "Files to write into the worker's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand."
+            "description": "Files to write into the agent's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand."
           },
           "documents": {
             "type": "array",
@@ -633,7 +633,7 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "worker-service"
+              "agent-service"
             ],
             "description": "The services the session is given, by name, as kept on record. Their tokens are in `secrets`."
           },
@@ -646,21 +646,21 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "worker-service"
+              "agent-service"
             ],
-            "description": "Of `credentials`, those the worker was given a token of its own for, read in place of the shared one."
+            "description": "Of `credentials`, those the agent was given a token of its own for, read in place of the shared one."
           },
           "secrets": {
             "type": "object",
             "additionalProperties": {
               "type": "string"
             },
-            "description": "The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the worker's folder that only it can read, and the session's environment is set from that file, never from a command line."
+            "description": "The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the agent's folder that only it can read, and the session's environment is set from that file, never from a command line."
           }
         },
         "required": [
           "id",
-          "workerId",
+          "agentId",
           "kind",
           "sessionId",
           "resume"
@@ -675,10 +675,10 @@
             "maxLength": 128,
             "description": "Report the command by this id once it is taken."
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "kind": {
@@ -695,7 +695,7 @@
         },
         "required": [
           "id",
-          "workerId",
+          "agentId",
           "kind",
           "text"
         ],
@@ -710,10 +710,10 @@
             "maxLength": 128,
             "description": "Report the command by this id once it is taken."
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "kind": {
@@ -726,12 +726,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 16384,
-            "description": "Sent to the worker once the current turn has stopped."
+            "description": "Sent to the agent once the current turn has stopped."
           }
         },
         "required": [
           "id",
-          "workerId",
+          "agentId",
           "kind"
         ]
       },
@@ -744,10 +744,10 @@
             "maxLength": 128,
             "description": "Report the command by this id once it is taken."
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "kind": {
@@ -759,10 +759,10 @@
         },
         "required": [
           "id",
-          "workerId",
+          "agentId",
           "kind"
         ],
-        "description": "End the session; the worker becomes idle."
+        "description": "End the session; the agent becomes idle."
       },
       "RetireCommand": {
         "type": "object",
@@ -773,10 +773,10 @@
             "maxLength": 128,
             "description": "Report the command by this id once it is taken."
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "kind": {
@@ -788,43 +788,43 @@
         },
         "required": [
           "id",
-          "workerId",
+          "agentId",
           "kind"
         ],
-        "description": "Stop any session and take the worker off the host. Its home folder is kept."
+        "description": "Stop any session and take the agent off the host. Its home folder is kept."
       },
-      "WorkerPush": {
+      "AgentPush": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
             "enum": [
-              "worker"
+              "agent"
             ]
           },
-          "worker": {
-            "$ref": "#/components/schemas/Worker"
+          "agent": {
+            "$ref": "#/components/schemas/Agent"
           }
         },
         "required": [
           "type",
-          "worker"
+          "agent"
         ],
-        "description": "To viewers, whenever a worker changes."
+        "description": "To viewers, whenever an agent changes."
       },
-      "Worker": {
+      "Agent": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among workers not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           },
           "title": {
@@ -832,14 +832,14 @@
               "string",
               "null"
             ],
-            "description": "What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host."
+            "description": "What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host."
           },
           "label": {
             "type": [
               "string",
               "null"
             ],
-            "description": "A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none."
+            "description": "A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none."
           },
           "item": {
             "type": [
@@ -868,7 +868,7 @@
               "string",
               "null"
             ],
-            "description": "The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none."
+            "description": "The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none."
           },
           "whenDone": {
             "type": "string",
@@ -877,7 +877,7 @@
               "stop",
               "retire"
             ],
-            "description": "What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
+            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
           },
           "documents": {
             "type": "array",
@@ -963,21 +963,21 @@
               "done",
               null
             ],
-            "description": "What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person."
+            "description": "What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person."
           },
           "summary": {
             "type": [
               "string",
               "null"
             ],
-            "description": "One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person."
+            "description": "One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person."
           },
           "headline": {
             "type": [
               "string",
               "null"
             ],
-            "description": "A few words said with its `summary` and gone with it, for a list of workers. Null when none was given."
+            "description": "A few words said with its `summary` and gone with it, for a list of agents. Null when none was given."
           },
           "saidAt": {
             "type": [
@@ -1104,10 +1104,10 @@
               "lines"
             ]
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "lines": {
@@ -1119,7 +1119,7 @@
         },
         "required": [
           "type",
-          "workerId",
+          "agentId",
           "lines"
         ],
         "description": "To viewers, as lines arrive."
@@ -1130,7 +1130,7 @@
           "seq": {
             "type": "integer",
             "minimum": 0,
-            "description": "Line number per worker, from 0, continuing across its sessions."
+            "description": "Line number per agent, from 0, continuing across its sessions."
           },
           "at": {
             "type": "string",
@@ -1150,7 +1150,7 @@
               "tool",
               "instruction"
             ],
-            "description": "`instruction`: a message sent to the worker."
+            "description": "`instruction`: a message sent to the agent."
           },
           "text": {
             "type": "string",
@@ -1180,10 +1180,10 @@
               "sent"
             ]
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "sent": {
@@ -1192,10 +1192,10 @@
         },
         "required": [
           "type",
-          "workerId",
+          "agentId",
           "sent"
         ],
-        "description": "To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listWorkerCommands` says."
+        "description": "To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listAgentCommands` says."
       },
       "SentCommand": {
         "type": "object",
@@ -1217,7 +1217,7 @@
               "done",
               "rejected"
             ],
-            "description": "`queued`: not yet reported by the host. `written`: its text is in the worker's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its worker was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not."
+            "description": "`queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not."
           },
           "reportedAt": {
             "type": [
@@ -1281,7 +1281,7 @@
               "string",
               "null"
             ],
-            "description": "The worker-host build of its last heartbeat."
+            "description": "The agent-host build of its last heartbeat."
           },
           "status": {
             "type": "string",
@@ -1317,7 +1317,7 @@
             ],
             "minimum": 0,
             "maximum": 256,
-            "description": "How many more sessions it will take now: `capacity` minus its workers with a live session. Null when `capacity` is."
+            "description": "How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is."
           }
         },
         "required": [
@@ -1445,7 +1445,7 @@
         "properties": {
           "key": {
             "type": "string",
-            "description": "Whose skills these are: `worker-service`."
+            "description": "Whose skills these are: `agent-service`."
           },
           "version": {
             "type": "integer",
@@ -1462,7 +1462,7 @@
               "properties": {
                 "path": {
                   "type": "string",
-                  "description": "Under the worker's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`."
+                  "description": "Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`."
                 },
                 "content": {
                   "type": "string"
@@ -1525,7 +1525,7 @@
           "version": {
             "type": "string",
             "maxLength": 64,
-            "description": "The worker-host build that sent the heartbeat."
+            "description": "The agent-host build that sent the heartbeat."
           },
           "labels": {
             "type": "array",
@@ -1591,7 +1591,7 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
             "example": "reviewer"
           },
           "documents": {
@@ -1602,7 +1602,7 @@
               "example": "approval"
             },
             "maxItems": 8,
-            "description": "What each session of a worker made from it reads after `global`, by key, in this order."
+            "description": "What each session of an agent made from it reads after `global`, by key, in this order."
           },
           "credentials": {
             "type": [
@@ -1616,7 +1616,7 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "worker-service"
+              "agent-service"
             ],
             "description": "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`."
           },
@@ -1627,13 +1627,13 @@
               "stop",
               "retire"
             ],
-            "description": "What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
+            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
           },
           "label": {
             "type": "string",
             "minLength": 1,
             "maxLength": 40,
-            "description": "A short tag shown beside the worker's name, so sessions can be told apart.",
+            "description": "A short tag shown beside the agent's name, so sessions can be told apart.",
             "example": "approval: PR #18"
           },
           "description": {
@@ -1643,7 +1643,7 @@
             ],
             "minLength": 1,
             "maxLength": 16384,
-            "description": "What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none."
+            "description": "What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none."
           },
           "priority": {
             "type": "integer",
@@ -1658,7 +1658,7 @@
             ],
             "minLength": 1,
             "maxLength": 16384,
-            "description": "The first message of a worker made from it with no `brief` of its own; null when the caller must give one."
+            "description": "The first message of an agent made from it with no `brief` of its own; null when the caller must give one."
           },
           "updatedAt": {
             "type": [
@@ -1688,7 +1688,7 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
             "example": "reviewer"
           },
           "documents": {
@@ -1713,7 +1713,7 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "worker-service"
+              "agent-service"
             ],
             "description": "Absent, null: the stage's defaults."
           },
@@ -1730,7 +1730,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 40,
-            "description": "A short tag shown beside the worker's name, so sessions can be told apart.",
+            "description": "A short tag shown beside the agent's name, so sessions can be told apart.",
             "example": "approval: PR #18"
           },
           "description": {
@@ -1775,7 +1775,7 @@
               "example": "approval"
             },
             "maxItems": 8,
-            "description": "What each session of a worker made from it reads after `global`, by key, in this order."
+            "description": "What each session of an agent made from it reads after `global`, by key, in this order."
           },
           "credentials": {
             "type": [
@@ -1789,7 +1789,7 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "worker-service"
+              "agent-service"
             ],
             "description": "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`."
           },
@@ -1800,13 +1800,13 @@
               "stop",
               "retire"
             ],
-            "description": "What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
+            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
           },
           "label": {
             "type": "string",
             "minLength": 1,
             "maxLength": 40,
-            "description": "A short tag shown beside the worker's name, so sessions can be told apart.",
+            "description": "A short tag shown beside the agent's name, so sessions can be told apart.",
             "example": "approval: PR #18"
           },
           "description": {
@@ -1816,7 +1816,7 @@
             ],
             "minLength": 1,
             "maxLength": 16384,
-            "description": "What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none."
+            "description": "What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none."
           },
           "priority": {
             "type": "integer",
@@ -1831,23 +1831,23 @@
             ],
             "minLength": 1,
             "maxLength": 16384,
-            "description": "The first message of a worker made from it with no `brief` of its own; null when the caller must give one."
+            "description": "The first message of an agent made from it with no `brief` of its own; null when the caller must give one."
           }
         },
         "additionalProperties": false
       },
-      "WorkerRequest": {
+      "AgentRequest": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service; also the id of the worker it starts."
+            "description": "Assigned by the service; also the id of the agent it starts."
           },
           "role": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
             "example": "reviewer"
           },
           "brief": {
@@ -1864,7 +1864,7 @@
             ],
             "minLength": 1,
             "maxLength": 64,
-            "description": "A work-tracker item's id: the epic, story or task the worker was started on. Never changes.",
+            "description": "A work-tracker item's id: the epic, story or task the agent was started on. Never changes.",
             "example": "ca147da6-9a30-4d59-b508-e404d21b9dfd"
           },
           "subject": {
@@ -1914,7 +1914,7 @@
               "started",
               "withdrawn"
             ],
-            "description": "`waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start."
+            "description": "`waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start."
           },
           "why": {
             "type": [
@@ -1950,13 +1950,13 @@
             "format": "date-time",
             "example": "2026-10-27T12:00:00.000Z"
           },
-          "workerId": {
+          "agentId": {
             "type": [
               "string",
               "null"
             ],
             "format": "uuid",
-            "description": "The worker it started; null until it has.",
+            "description": "The agent it started; null until it has.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "withdrawnAt": {
@@ -1984,17 +1984,17 @@
           "position",
           "createdAt",
           "startedAt",
-          "workerId",
+          "agentId",
           "withdrawnAt"
         ]
       },
-      "NewWorkerRequest": {
+      "NewAgentRequest": {
         "type": "object",
         "properties": {
           "role": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
             "example": "reviewer"
           },
           "brief": {
@@ -2007,7 +2007,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 64,
-            "description": "A work-tracker item's id: the epic, story or task the worker was started on. Never changes.",
+            "description": "A work-tracker item's id: the epic, story or task the agent was started on. Never changes.",
             "example": "ca147da6-9a30-4d59-b508-e404d21b9dfd"
           },
           "subject": {
@@ -2015,7 +2015,7 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.",
-            "example": "dakotacolorado/worker-service#41"
+            "example": "dakotacolorado/agent-service#41"
           },
           "label": {
             "type": "string",
@@ -2060,7 +2060,7 @@
                     "token"
                   ],
                   "additionalProperties": false,
-                  "description": "A name with a token of the caller's, given this worker in place of the name's shared secret."
+                  "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
                 }
               ]
             },
@@ -2072,7 +2072,7 @@
                 "token": "…"
               }
             ],
-            "description": "In place of the role's, as `createWorker` takes them; a `{name, token}` is kept for the worker it starts from now, and deleted if it is withdrawn."
+            "description": "In place of the role's, as `createAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn."
           },
           "tokens": {
             "type": "array",
@@ -2094,11 +2094,11 @@
                 "token"
               ],
               "additionalProperties": false,
-              "description": "A name with a token of the caller's, given this worker in place of the name's shared secret."
+              "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
             },
             "minItems": 1,
             "maxItems": 16,
-            "description": "Tokens of the caller's, each given the worker in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The worker keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the worker would not be given, or one `credentials` gives a token for."
+            "description": "Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for."
           }
         },
         "required": [
@@ -2106,13 +2106,13 @@
         ],
         "additionalProperties": false
       },
-      "WorkerRequestList": {
+      "AgentRequestList": {
         "type": "object",
         "properties": {
           "requests": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/WorkerRequest"
+              "$ref": "#/components/schemas/AgentRequest"
             }
           }
         },
@@ -2120,19 +2120,19 @@
           "requests"
         ]
       },
-      "NewWorker": {
+      "NewAgent": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among workers not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           },
           "role": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the worker's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
+            "description": "The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
             "example": "reviewer"
           },
           "hostId": {
@@ -2168,7 +2168,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 64,
-            "description": "The work item it is started on, kept for its life so `listWorkers` with `item` finds it. Absent, none.",
+            "description": "The work item it is started on, kept for its life so `listAgents` with `item` finds it. Absent, none.",
             "example": "ca147da6-9a30-4d59-b508-e404d21b9dfd"
           },
           "whenDone": {
@@ -2206,7 +2206,7 @@
                     "token"
                   ],
                   "additionalProperties": false,
-                  "description": "A name with a token of the caller's, given this worker in place of the name's shared secret."
+                  "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
                 }
               ]
             },
@@ -2218,7 +2218,7 @@
                 "token": "…"
               }
             ],
-            "description": "The services each session is given an address and token for, by name: `document-service`, `work-tracker`, `worker-service`, `approval-service`, as the stage has them. A name it does not have is refused. Absent, the role's, or without one all of those. Only the names are kept on record; each token is read at each start. `{name, token}` gives this worker the caller's token in place of the name's shared one: kept in Secrets Manager, never returned by any read, and deleted when the worker is retired."
+            "description": "The services each session is given an address and token for, by name: `document-service`, `work-tracker`, `agent-service`, `approval-service`, as the stage has them. A name it does not have is refused. Absent, the role's, or without one all of those. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired."
           },
           "documents": {
             "type": "array",
@@ -2235,18 +2235,18 @@
           "name"
         ]
       },
-      "WorkerList": {
+      "AgentList": {
         "type": "object",
         "properties": {
-          "workers": {
+          "agents": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Worker"
+              "$ref": "#/components/schemas/Agent"
             }
           }
         },
         "required": [
-          "workers"
+          "agents"
         ]
       },
       "Accepted": {
@@ -2257,7 +2257,7 @@
               "string",
               "null"
             ],
-            "description": "Follow it in `listWorkerCommands`. Null when nothing was sent to the host."
+            "description": "Follow it in `listAgentCommands`. Null when nothing was sent to the host."
           }
         },
         "required": [
@@ -2289,13 +2289,13 @@
           }
         }
       },
-      "WorkerRename": {
+      "AgentRename": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among workers not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           },
           "title": {
@@ -2305,7 +2305,7 @@
             ],
             "minLength": 1,
             "maxLength": 40,
-            "description": "What the worker is there to do, in a few words.",
+            "description": "What the agent is there to do, in a few words.",
             "example": "Short status headline"
           },
           "label": {
@@ -2315,12 +2315,12 @@
             ],
             "minLength": 1,
             "maxLength": 40,
-            "description": "A short tag shown beside the worker's name, so sessions can be told apart.",
+            "description": "A short tag shown beside the agent's name, so sessions can be told apart.",
             "example": "approval: PR #18"
           }
         }
       },
-      "WorkerStatus": {
+      "AgentStatus": {
         "type": "object",
         "properties": {
           "status": {
@@ -2351,14 +2351,14 @@
         ],
         "additionalProperties": false
       },
-      "WorkerTitle": {
+      "AgentTitle": {
         "type": "object",
         "properties": {
           "title": {
             "type": "string",
             "minLength": 1,
             "maxLength": 40,
-            "description": "What the worker is there to do, in a few words.",
+            "description": "What the agent is there to do, in a few words.",
             "example": "Short status headline"
           }
         },
@@ -2415,10 +2415,10 @@
             "description": "Assigned by the service when it queues the session's `start`.",
             "example": "9d6a1f0e-4b7c-4e21-a3f8-0c5d2e7b4a19"
           },
-          "workerId": {
+          "agentId": {
             "type": "string",
             "format": "uuid",
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
           },
           "startedAt": {
@@ -2518,7 +2518,7 @@
         },
         "required": [
           "id",
-          "workerId",
+          "agentId",
           "startedAt",
           "endedAt",
           "ended",
@@ -2621,7 +2621,7 @@
           "documents"
         ]
       },
-      "WorkerCommands": {
+      "AgentCommands": {
         "type": "object",
         "properties": {
           "commands": {
@@ -2692,11 +2692,11 @@
         }
       }
     },
-    "/fleet/skill": {
+    "/skill": {
       "get": {
         "operationId": "getSkill",
-        "summary": "Read the clients workers call this deployment with",
-        "description": "The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, so a worker calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.",
+        "summary": "Read the clients agents call this deployment with",
+        "description": "The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, so an agent calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.",
         "security": [
           {
             "bearerAuth": []
@@ -2739,7 +2739,7 @@
         }
       }
     },
-    "/fleet/hosts/{id}/heartbeat": {
+    "/hosts/{id}/heartbeat": {
       "post": {
         "operationId": "heartbeat",
         "summary": "Keep the host connected, and say what it offers",
@@ -2818,7 +2818,7 @@
         }
       }
     },
-    "/fleet/hosts": {
+    "/hosts": {
       "get": {
         "operationId": "listHosts",
         "summary": "List hosts",
@@ -2889,11 +2889,11 @@
         }
       }
     },
-    "/fleet/hosts/{id}": {
+    "/hosts/{id}": {
       "delete": {
         "operationId": "deleteHost",
         "summary": "Deregister a host",
-        "description": "Deletes the host's record, which is how a host leaves `listHosts`. Its workers, their transcripts and the commands sent to them stay on record, and its workers read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.",
+        "description": "Deletes the host's record, which is how a host leaves `listHosts`. Its agents, their transcripts and the commands sent to them stay on record, and its agents read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.",
         "security": [
           {
             "bearerAuth": []
@@ -2961,11 +2961,11 @@
         }
       }
     },
-    "/fleet/roles": {
+    "/roles": {
       "get": {
         "operationId": "listRoles",
         "summary": "List roles",
-        "description": "Every role a worker can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `createRole` or `updateRole` is served as written.",
+        "description": "Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `createRole` or `updateRole` is served as written.",
         "security": [
           {
             "bearerAuth": []
@@ -3020,7 +3020,7 @@
       "post": {
         "operationId": "createRole",
         "summary": "Create a role",
-        "description": "Takes the stage's admin token. A worker made from it afterwards gets what it names; one made before keeps what it was given.",
+        "description": "Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.",
         "security": [
           {
             "bearerAuth": []
@@ -3103,7 +3103,7 @@
         }
       }
     },
-    "/fleet/roles/{name}": {
+    "/roles/{name}": {
       "get": {
         "operationId": "getRole",
         "summary": "Get one role",
@@ -3120,11 +3120,11 @@
             "schema": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,39}$",
-              "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+              "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
               "example": "reviewer"
             },
             "required": true,
-            "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
             "name": "name",
             "in": "path"
           }
@@ -3185,7 +3185,7 @@
       "patch": {
         "operationId": "updateRole",
         "summary": "Change a role",
-        "description": "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Workers made from it before keep what they were given; those made after get what it names now.",
+        "description": "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.",
         "security": [
           {
             "bearerAuth": []
@@ -3199,11 +3199,11 @@
             "schema": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,39}$",
-              "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+              "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
               "example": "reviewer"
             },
             "required": true,
-            "description": "A role's name, such as `reviewer`: what kind of worker it makes.",
+            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
             "name": "name",
             "in": "path"
           }
@@ -3282,11 +3282,11 @@
         }
       }
     },
-    "/fleet/requests": {
+    "/requests": {
       "post": {
         "operationId": "createRequest",
-        "summary": "Ask for a worker in a role, to start when usage and a host allow",
-        "description": "Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the worker it starts gives the next reading. Admitted, the worker is made from its role as `createWorker` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `workerId` names it. A request names no host or worker name.",
+        "summary": "Ask for an agent in a role, to start when usage and a host allow",
+        "description": "Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `createAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name.",
         "security": [
           {
             "bearerAuth": []
@@ -3301,20 +3301,20 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token."
+              "description": "Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token."
             },
             "required": false,
-            "description": "Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.",
+            "description": "Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.",
             "name": "claimed-by",
             "in": "header"
           }
         ],
         "requestBody": {
-          "description": "What kind of worker, and what it is for.",
+          "description": "What kind of agent, and what it is for.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewWorkerRequest"
+                "$ref": "#/components/schemas/NewAgentRequest"
               }
             }
           }
@@ -3325,13 +3325,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkerRequest"
+                  "$ref": "#/components/schemas/AgentRequest"
                 }
               }
             }
           },
           "400": {
-            "description": "The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the worker would not be given.",
+            "description": "The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3364,8 +3364,8 @@
       },
       "get": {
         "operationId": "listRequests",
-        "summary": "List requests for workers",
-        "description": "Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the worker it starts gives the next reading.",
+        "summary": "List requests for agents",
+        "description": "Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading.",
         "security": [
           {
             "bearerAuth": []
@@ -3421,7 +3421,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkerRequestList"
+                  "$ref": "#/components/schemas/AgentRequestList"
                 }
               }
             }
@@ -3459,10 +3459,10 @@
         }
       }
     },
-    "/fleet/requests/{id}": {
+    "/requests/{id}": {
       "get": {
         "operationId": "getRequest",
-        "summary": "Get one request for a worker",
+        "summary": "Get one request for an agent",
         "security": [
           {
             "bearerAuth": []
@@ -3476,10 +3476,10 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service; also the id of the worker it starts."
+              "description": "Assigned by the service; also the id of the agent it starts."
             },
             "required": true,
-            "description": "Assigned by the service; also the id of the worker it starts.",
+            "description": "Assigned by the service; also the id of the agent it starts.",
             "name": "id",
             "in": "path"
           }
@@ -3490,7 +3490,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkerRequest"
+                  "$ref": "#/components/schemas/AgentRequest"
                 }
               }
             }
@@ -3553,10 +3553,10 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service; also the id of the worker it starts."
+              "description": "Assigned by the service; also the id of the agent it starts."
             },
             "required": true,
-            "description": "Assigned by the service; also the id of the worker it starts.",
+            "description": "Assigned by the service; also the id of the agent it starts.",
             "name": "id",
             "in": "path"
           }
@@ -3567,7 +3567,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkerRequest"
+                  "$ref": "#/components/schemas/AgentRequest"
                 }
               }
             }
@@ -3625,11 +3625,11 @@
         }
       }
     },
-    "/fleet/workers": {
+    "/agents": {
       "post": {
-        "operationId": "createWorker",
-        "summary": "Create a worker on a host",
-        "description": "Records the worker `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the worker is `working` at once. Without a `hostId`, the service chooses a connected host with room.",
+        "operationId": "createAgent",
+        "summary": "Create an agent on a host",
+        "description": "Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.",
         "security": [
           {
             "bearerAuth": []
@@ -3644,20 +3644,20 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200,
-              "description": "Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token."
+              "description": "Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token."
             },
             "required": false,
-            "description": "Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.",
+            "description": "Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.",
             "name": "claimed-by",
             "in": "header"
           }
         ],
         "requestBody": {
-          "description": "Who the worker is and where it lives.",
+          "description": "Who the agent is and where it lives.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NewWorker"
+                "$ref": "#/components/schemas/NewAgent"
               }
             }
           }
@@ -3668,7 +3668,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Worker"
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }
@@ -3704,7 +3704,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: a worker not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.",
+            "description": "Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3726,9 +3726,9 @@
         }
       },
       "get": {
-        "operationId": "listWorkers",
-        "summary": "List workers",
-        "description": "Retired workers are listed only with `all=true`, or with `item`. With `createdBy`, only the workers made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.",
+        "operationId": "listAgents",
+        "summary": "List agents",
+        "description": "Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.",
         "security": [
           {
             "bearerAuth": []
@@ -3753,11 +3753,11 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 64,
-              "description": "A work-tracker item's id: the epic, story or task the worker was started on. Never changes.",
+              "description": "A work-tracker item's id: the epic, story or task the agent was started on. Never changes.",
               "example": "ca147da6-9a30-4d59-b508-e404d21b9dfd"
             },
             "required": false,
-            "description": "A work-tracker item's id: the epic, story or task the worker was started on. Never changes.",
+            "description": "A work-tracker item's id: the epic, story or task the agent was started on. Never changes.",
             "name": "item",
             "in": "query"
           },
@@ -3765,11 +3765,11 @@
             "schema": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,39}$",
-              "description": "Only the workers made from this role.",
+              "description": "Only the agents made from this role.",
               "example": "reviewer"
             },
             "required": false,
-            "description": "Only the workers made from this role.",
+            "description": "Only the agents made from this role.",
             "name": "role",
             "in": "query"
           },
@@ -3780,21 +3780,21 @@
                 "true",
                 "false"
               ],
-              "description": "`true` includes retired workers."
+              "description": "`true` includes retired agents."
             },
             "required": false,
-            "description": "`true` includes retired workers.",
+            "description": "`true` includes retired agents.",
             "name": "all",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Matching workers.",
+            "description": "Matching agents.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkerList"
+                  "$ref": "#/components/schemas/AgentList"
                 }
               }
             }
@@ -3832,10 +3832,10 @@
         }
       }
     },
-    "/fleet/workers/{id}": {
+    "/agents/{id}": {
       "get": {
-        "operationId": "getWorker",
-        "summary": "Get one worker",
+        "operationId": "getAgent",
+        "summary": "Get one agent",
         "security": [
           {
             "bearerAuth": []
@@ -3849,22 +3849,22 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "The worker.",
+            "description": "The agent.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Worker"
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }
@@ -3890,7 +3890,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3912,9 +3912,9 @@
         }
       },
       "patch": {
-        "operationId": "renameWorker",
-        "summary": "Rename a worker, or change or clear its title or label",
-        "description": "A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the worker's, or with null clears it, whether or not the worker gave it. `label` likewise.",
+        "operationId": "renameAgent",
+        "summary": "Rename an agent, or change or clear its title or label",
+        "description": "A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the agent's, or with null clears it, whether or not the agent gave it. `label` likewise.",
         "security": [
           {
             "bearerAuth": []
@@ -3928,21 +3928,21 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
         ],
         "requestBody": {
-          "description": "The worker's new name, title or label.",
+          "description": "The agent's new name, title or label.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkerRename"
+                "$ref": "#/components/schemas/AgentRename"
               }
             }
           }
@@ -3953,7 +3953,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Worker"
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }
@@ -3979,7 +3979,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3989,7 +3989,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the worker is retired, or a worker not retired already has `name`.",
+            "description": "Nothing was queued: the agent is retired, or an agent not retired already has `name`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4011,8 +4011,8 @@
         }
       },
       "delete": {
-        "operationId": "retireWorker",
-        "summary": "Retire a worker",
+        "operationId": "retireAgent",
+        "summary": "Retire an agent",
         "description": "Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.",
         "security": [
           {
@@ -4027,11 +4027,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
@@ -4068,7 +4068,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4078,7 +4078,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the worker is retired already.",
+            "description": "Nothing was queued: the agent is retired already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4100,11 +4100,11 @@
         }
       }
     },
-    "/fleet/workers/{id}/messages": {
+    "/agents/{id}/messages": {
       "post": {
-        "operationId": "messageWorker",
-        "summary": "Send a worker a message, or interrupt it",
-        "description": "To a worker with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` worker, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.",
+        "operationId": "messageAgent",
+        "summary": "Send an agent a message, or interrupt it",
+        "description": "To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.",
         "security": [
           {
             "bearerAuth": []
@@ -4118,11 +4118,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
@@ -4170,7 +4170,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4180,7 +4180,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the worker is retired, has no session to interrupt, or its host is `lost` or full.",
+            "description": "Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4202,11 +4202,11 @@
         }
       }
     },
-    "/fleet/workers/{id}/stop": {
+    "/agents/{id}/stop": {
       "post": {
-        "operationId": "stopWorker",
-        "summary": "Stop a worker's session, or force it idle",
-        "description": "Queues a `stop`; the session ends and the worker is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the worker `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.",
+        "operationId": "stopAgent",
+        "summary": "Stop an agent's session, or force it idle",
+        "description": "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.",
         "security": [
           {
             "bearerAuth": []
@@ -4220,11 +4220,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
@@ -4272,7 +4272,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4282,7 +4282,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the worker has no live session.",
+            "description": "Nothing was queued: the agent has no live session.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4304,11 +4304,11 @@
         }
       }
     },
-    "/fleet/workers/{id}/resume": {
+    "/agents/{id}/resume": {
       "post": {
-        "operationId": "resumeWorker",
-        "summary": "Start a session continuing the worker's last conversation",
-        "description": "Queues a `start` with `resume: true`, or `false` for a worker that has never had a session.",
+        "operationId": "resumeAgent",
+        "summary": "Start a session continuing the agent's last conversation",
+        "description": "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
         "security": [
           {
             "bearerAuth": []
@@ -4322,11 +4322,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
@@ -4363,7 +4363,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4373,7 +4373,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the worker is retired or has a live session, or its host is `lost` or full.",
+            "description": "Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4395,39 +4395,39 @@
         }
       }
     },
-    "/fleet/workers/{id}/status": {
+    "/agents/{id}/status": {
       "put": {
-        "operationId": "setWorkerStatus",
-        "summary": "Say whether the worker needs the person, is in review or done, and what on",
-        "description": "Called by the worker itself, from its `page` skill, and by approval-service for the worker whose change it took or shipped. `waiting` says the worker needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the worker is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).",
+        "operationId": "setAgentStatus",
+        "summary": "Say whether the agent needs the person, is in review or done, and what on",
+        "description": "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).",
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "tags": [
-          "workers, of themselves"
+          "agents, of themselves"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
         ],
         "requestBody": {
-          "description": "What the worker says of itself.",
+          "description": "What the agent says of itself.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkerStatus"
+                "$ref": "#/components/schemas/AgentStatus"
               }
             }
           }
@@ -4438,7 +4438,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Worker"
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }
@@ -4464,7 +4464,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4474,7 +4474,7 @@
             }
           },
           "409": {
-            "description": "The worker is retired, or has no live session to be `working` or `waiting`.",
+            "description": "The agent is retired, or has no live session to be `working` or `waiting`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4496,39 +4496,39 @@
         }
       }
     },
-    "/fleet/workers/{id}/title": {
+    "/agents/{id}/title": {
       "put": {
-        "operationId": "setWorkerTitle",
-        "summary": "Name the worker for its work, once",
-        "description": "Called by the worker itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `renameWorker`.",
+        "operationId": "setAgentTitle",
+        "summary": "Name the agent for its work, once",
+        "description": "Called by the agent itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `renameAgent`.",
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "tags": [
-          "workers, of themselves"
+          "agents, of themselves"
         ],
         "parameters": [
           {
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
         ],
         "requestBody": {
-          "description": "What the worker names itself.",
+          "description": "What the agent names itself.",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkerTitle"
+                "$ref": "#/components/schemas/AgentTitle"
               }
             }
           }
@@ -4539,7 +4539,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Worker"
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }
@@ -4565,7 +4565,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4575,7 +4575,7 @@
             }
           },
           "409": {
-            "description": "The worker is retired, or has a title already.",
+            "description": "The agent is retired, or has a title already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4597,10 +4597,10 @@
         }
       }
     },
-    "/fleet/workers/{id}/transcript": {
+    "/agents/{id}/transcript": {
       "get": {
         "operationId": "listTranscript",
-        "summary": "List a worker's transcript lines after a cursor, oldest first, across its sessions",
+        "summary": "List an agent's transcript lines after a cursor, oldest first, across its sessions",
         "description": "Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.",
         "security": [
           {
@@ -4615,11 +4615,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           },
@@ -4683,7 +4683,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4705,10 +4705,10 @@
         }
       }
     },
-    "/fleet/workers/{id}/sessions": {
+    "/agents/{id}/sessions": {
       "get": {
         "operationId": "listSessions",
-        "summary": "List a worker's sessions, oldest first",
+        "summary": "List an agent's sessions, oldest first",
         "security": [
           {
             "bearerAuth": []
@@ -4722,11 +4722,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
@@ -4763,7 +4763,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4785,7 +4785,7 @@
         }
       }
     },
-    "/fleet/workers/{id}/sessions/{sessionId}/context": {
+    "/agents/{id}/sessions/{sessionId}/context": {
       "get": {
         "operationId": "getSessionContext",
         "summary": "Read a live session's whole context, when its start was too large to carry it",
@@ -4803,11 +4803,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           },
@@ -4856,7 +4856,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4866,7 +4866,7 @@
             }
           },
           "409": {
-            "description": "The session is not the worker's live one.",
+            "description": "The session is not the agent's live one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4888,10 +4888,10 @@
         }
       }
     },
-    "/fleet/workers/{id}/commands": {
+    "/agents/{id}/commands": {
       "get": {
-        "operationId": "listWorkerCommands",
-        "summary": "List the commands sent to a worker, oldest first, with their delivery",
+        "operationId": "listAgentCommands",
+        "summary": "List the commands sent to an agent, oldest first, with their delivery",
         "description": "Each is kept 7 days from when it was queued, then deleted.",
         "security": [
           {
@@ -4906,11 +4906,11 @@
             "schema": {
               "type": "string",
               "format": "uuid",
-              "description": "Assigned by the service when the worker is created.",
+              "description": "Assigned by the service when the agent is created.",
               "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
             },
             "required": true,
-            "description": "Assigned by the service when the worker is created.",
+            "description": "Assigned by the service when the agent is created.",
             "name": "id",
             "in": "path"
           }
@@ -4921,7 +4921,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkerCommands"
+                  "$ref": "#/components/schemas/AgentCommands"
                 }
               }
             }
@@ -4947,7 +4947,7 @@
             }
           },
           "404": {
-            "description": "No worker has this id.",
+            "description": "No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4969,7 +4969,7 @@
         }
       }
     },
-    "/fleet/usage": {
+    "/usage": {
       "get": {
         "operationId": "getUsage",
         "summary": "Read how much of the Claude account's 5-hour and weekly allowance is used",
@@ -5016,11 +5016,11 @@
         }
       }
     },
-    "/fleet/socket-tickets": {
+    "/socket-tickets": {
       "post": {
         "operationId": "createSocketTicket",
         "summary": "Trade the bearer token for a one-time socket ticket",
-        "description": "A browser cannot set a header on a WebSocket, and a long-lived token must never go in a URL, so a page opens `<socketUrl>?ticket=<ticket>` instead. Good once, for 60 seconds. The socket then receives `SocketOutbound` messages: `worker`, `lines` and `host`.",
+        "description": "A browser cannot set a header on a WebSocket, and a long-lived token must never go in a URL, so a page opens `<socketUrl>?ticket=<ticket>` instead. Good once, for 60 seconds. The socket then receives `SocketOutbound` messages: `agent`, `lines` and `host`.",
         "security": [
           {
             "bearerAuth": []

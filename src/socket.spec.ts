@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { WorkerServiceApi } from "./api.ts";
+import { AgentServiceApi } from "./api.ts";
 import { LOST_AFTER } from "./domain.ts";
 import { FakeStore } from "./fake-store.ts";
 import type { Poster } from "./push.ts";
@@ -24,7 +24,7 @@ class FakePoster implements Poster {
 let store: FakeStore;
 let poster: FakePoster;
 let socket: SocketHandler;
-let api: WorkerServiceApi;
+let api: AgentServiceApi;
 let now: Date;
 
 beforeEach(() => {
@@ -32,7 +32,7 @@ beforeEach(() => {
   poster = new FakePoster();
   now = NOW;
   socket = new SocketHandler(store, TOKEN, poster, () => now);
-  api = new WorkerServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: "wss://socket.example/live" });
+  api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: "wss://socket.example/live" });
 });
 
 const connect = (connectionId: string, query: Record<string, string>, headers: Record<string, string> = {}) =>
@@ -57,11 +57,11 @@ const http = (method: string, path: string, body?: unknown) =>
     }),
   );
 
-const beat = () => http("POST", "/fleet/hosts/laptop/heartbeat", { version: "0.1.0", labels: [] });
+const beat = () => http("POST", "/hosts/laptop/heartbeat", { version: "0.1.0", labels: [] });
 
 const asHost = (connectionId: string) => connect(connectionId, { hostId: "laptop" }, { Authorization: "Bearer secret" });
 
-const ticket = async () => ((await (await http("POST", "/fleet/socket-tickets")).json()) as { ticket: string }).ticket;
+const ticket = async () => ((await (await http("POST", "/socket-tickets")).json()) as { ticket: string }).ticket;
 
 describe("connecting", () => {
   it("takes a host by the stage's token and its id", async () => {
@@ -108,7 +108,7 @@ describe("a host's report on its socket", () => {
   beforeEach(async () => {
     await beat();
     const made = (await (
-      await http("POST", "/fleet/workers", { name: "a", hostId: "laptop", brief: "Go." })
+      await http("POST", "/agents", { name: "a", hostId: "laptop", brief: "Go." })
     ).json()) as { id: string; session: { id: string } };
     id = made.id;
     sessionId = made.session.id;
@@ -122,33 +122,33 @@ describe("a host's report on its socket", () => {
     const commit = store.commit.bind(store);
     let lost = 0;
     store.commit = async (change) => {
-      if (change.workers?.some((w) => w.id === id) && lost++ === 0) {
+      if (change.agents?.some((w) => w.id === id) && lost++ === 0) {
         throw new Conflict(id);
       }
       return commit(change);
     };
-    const res = await send("host", { type: "report", workers: [{ id, state: "waiting", sessionId }], lines: [], commandResults: [] });
+    const res = await send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }], lines: [], commandResults: [] });
     expect(res.statusCode).toBe(200);
     expect(lost).toBe(2);
-    expect(store.workers.get(id)!.state).toBe("waiting");
+    expect(store.agents.get(id)!.state).toBe("waiting");
   });
 
   it("is applied, and pushed to viewers", async () => {
-    const line = { workerId: id, sessionId, seq: 0, at: NOW.toISOString(), from: "agent", text: "On it." };
+    const line = { agentId: id, sessionId, seq: 0, at: NOW.toISOString(), from: "agent", text: "On it." };
     const commands = store.commands.get("laptop")!.map((q) => q.command);
     await send("host", {
       type: "report",
-      workers: [{ id, state: "waiting", sessionId }],
+      agents: [{ id, state: "waiting", sessionId }],
       lines: [line],
       commandResults: commands.map((c) => ({ commandId: c.id, ok: true })),
     });
-    expect(store.workers.get(id)!.state).toBe("waiting");
+    expect(store.agents.get(id)!.state).toBe("waiting");
     expect(store.commands.get("laptop")).toEqual([]);
     expect(poster.to("page")).toEqual([
-      { type: "worker", worker: expect.objectContaining({ id, state: "waiting" }) },
+      { type: "agent", agent: expect.objectContaining({ id, state: "waiting" }) },
       // The start carried its brief, so a conversation hears it was taken.
-      { type: "sent", workerId: id, sent: expect.objectContaining({ command: expect.objectContaining({ kind: "start" }), delivery: "done" }) },
-      { type: "lines", workerId: id, lines: [{ seq: 0, at: NOW.toISOString(), sessionId, from: "agent", text: "On it." }] },
+      { type: "sent", agentId: id, sent: expect.objectContaining({ command: expect.objectContaining({ kind: "start" }), delivery: "done" }) },
+      { type: "lines", agentId: id, lines: [{ seq: 0, at: NOW.toISOString(), sessionId, from: "agent", text: "On it." }] },
     ]);
     expect(poster.to("host")).toEqual([]);
   });
@@ -156,26 +156,26 @@ describe("a host's report on its socket", () => {
   it("takes only what changed, and does not count as a heartbeat", async () => {
     const before = store.hosts.get("laptop")!.heartbeatAt;
     now = new Date(NOW.getTime() + 600_000);
-    expect(await send("host", { type: "report", workers: [{ id, state: "waiting", sessionId }] })).toEqual({ statusCode: 200 });
-    expect(store.workers.get(id)!.state).toBe("waiting");
+    expect(await send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }] })).toEqual({ statusCode: 200 });
+    expect(store.agents.get(id)!.state).toBe("waiting");
     expect(store.hosts.get("laptop")!.heartbeatAt).toBe(before);
   });
 
   it("answers a stop for a force-stopped session it still runs, on the same socket", async () => {
-    await http("POST", `/fleet/workers/${id}/stop`, { force: true });
+    await http("POST", `/agents/${id}/stop`, { force: true });
     poster.posts = [];
-    await send("host", { type: "report", workers: [{ id, state: "working", sessionId }] });
-    expect(poster.to("host")).toEqual([{ type: "command", command: { kind: "stop", id: expect.any(String), workerId: id } }]);
+    await send("host", { type: "report", agents: [{ id, state: "working", sessionId }] });
+    expect(poster.to("host")).toEqual([{ type: "command", command: { kind: "stop", id: expect.any(String), agentId: id } }]);
   });
 
   it("is refused from a page, and anything unreadable is answered with why", async () => {
-    await send("page", { type: "report", workers: [{ id, state: "idle", sessionId }] });
+    await send("page", { type: "report", agents: [{ id, state: "idle", sessionId }] });
     await send("host", "not json");
     await send("host", { type: "shout" });
-    await send("host", { type: "report", workers: [{ id, state: "asleep", sessionId }] });
+    await send("host", { type: "report", agents: [{ id, state: "asleep", sessionId }] });
     expect(poster.to("page")).toEqual([{ type: "error", error: "Only a host's socket reports." }]);
     expect(poster.to("host").map((m) => m.type)).toEqual(["error", "error", "error"]);
-    expect(store.workers.get(id)!.state).toBe("working");
+    expect(store.agents.get(id)!.state).toBe("working");
   });
 
   it("takes a ping and says nothing back", async () => {
@@ -197,7 +197,7 @@ describe("a report and a status said at once", () => {
   const make = async (whenDone: string) => {
     await beat();
     const made = (await (
-      await http("POST", "/fleet/workers", { name: "judge-1", hostId: "laptop", brief: "Rule.", whenDone })
+      await http("POST", "/agents", { name: "judge-1", hostId: "laptop", brief: "Rule.", whenDone })
     ).json()) as { id: string; session: { id: string } };
     id = made.id;
     sessionId = made.session.id;
@@ -206,17 +206,17 @@ describe("a report and a status said at once", () => {
     const commands = store.commands.get("laptop")!.map((q) => q.command);
     await send("host", {
       type: "report",
-      workers: [{ id, state: "working", sessionId }],
+      agents: [{ id, state: "working", sessionId }],
       commandResults: commands.map((c) => ({ commandId: c.id, ok: true })),
     });
   };
-  const line = (seq: number) => ({ workerId: id, sessionId, seq, at: NOW.toISOString(), from: "agent", text: "Posting the decision." });
-  const done = () => http("PUT", `/fleet/workers/${id}/status`, { status: "done", summary: "Ruled merge.", headline: "Ruled" });
-  /** Runs `between` once, after the next read of every worker and before what was read is written. */
+  const line = (seq: number) => ({ agentId: id, sessionId, seq, at: NOW.toISOString(), from: "agent", text: "Posting the decision." });
+  const done = () => http("PUT", `/agents/${id}/status`, { status: "done", summary: "Ruled merge.", headline: "Ruled" });
+  /** Runs `between` once, after the next read of every agent and before what was read is written. */
   const afterListing = (between: () => Promise<unknown>) => {
-    const list = store.listWorkers.bind(store);
+    const list = store.listAgents.bind(store);
     let ran = false;
-    store.listWorkers = async () => {
+    store.listAgents = async () => {
       const read = await list();
       if (!ran) {
         ran = true;
@@ -226,11 +226,11 @@ describe("a report and a status said at once", () => {
     };
   };
   const afterGetting = (between: () => Promise<unknown>) => {
-    const get = store.getWorker.bind(store);
+    const get = store.getAgent.bind(store);
     let ran = false;
-    store.getWorker = async (workerId) => {
-      const read = await get(workerId);
-      if (!ran && workerId === id) {
+    store.getAgent = async (agentId) => {
+      const read = await get(agentId);
+      if (!ran && agentId === id) {
         ran = true;
         await between();
       }
@@ -241,8 +241,8 @@ describe("a report and a status said at once", () => {
   it("keeps what was said between the report's read and its write", async () => {
     await make("keep");
     afterListing(async () => expect((await done()).status).toBe(200));
-    await send("host", { type: "report", workers: [{ id, state: "working", sessionId, tasks: 1 }], lines: [line(0)] });
-    expect(store.workers.get(id)).toMatchObject({
+    await send("host", { type: "report", agents: [{ id, state: "working", sessionId, tasks: 1 }], lines: [line(0)] });
+    expect(store.agents.get(id)).toMatchObject({
       state: "working",
       tasks: 1,
       status: "done",
@@ -253,34 +253,34 @@ describe("a report and a status said at once", () => {
     });
   });
 
-  it("retires a worker made to retire when done is said mid-turn, as its turn ends", async () => {
+  it("retires an agent made to retire when done is said mid-turn, as its turn ends", async () => {
     await make("retire");
     afterListing(async () => expect((await done()).status).toBe(200));
-    await send("host", { type: "report", workers: [{ id, state: "working", sessionId }], lines: [line(0)] });
-    expect(store.workers.get(id)).toMatchObject({ state: "working", status: "done" });
-    await send("host", { type: "report", workers: [{ id, state: "waiting", sessionId }] });
-    expect(store.workers.get(id)).toMatchObject({ state: "retired", status: "done" });
+    await send("host", { type: "report", agents: [{ id, state: "working", sessionId }], lines: [line(0)] });
+    expect(store.agents.get(id)).toMatchObject({ state: "working", status: "done" });
+    await send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }] });
+    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
   });
 
   it("retires it when done is said while the report of its turn's end is being written", async () => {
     await make("retire");
     afterListing(async () => expect((await done()).status).toBe(200));
-    await send("host", { type: "report", workers: [{ id, state: "waiting", sessionId }] });
-    expect(store.workers.get(id)).toMatchObject({ state: "retired", status: "done" });
+    await send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }] });
+    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
   });
 
   it("retires it when its turn's end is reported while done is being written", async () => {
     await make("retire");
-    afterGetting(() => send("host", { type: "report", workers: [{ id, state: "waiting", sessionId }] }));
+    afterGetting(() => send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }] }));
     expect((await done()).status).toBe(200);
-    expect(store.workers.get(id)).toMatchObject({ state: "retired", status: "done" });
+    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
   });
 
   it("retires it when its session ends while it reads done", async () => {
     await make("retire");
     expect((await done()).status).toBe(200);
-    await send("host", { type: "report", workers: [{ id, state: "interrupted", sessionId }] });
-    expect(store.workers.get(id)).toMatchObject({ state: "retired", status: "done" });
+    await send("host", { type: "report", agents: [{ id, state: "interrupted", sessionId }] });
+    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
   });
 });
 
@@ -291,13 +291,13 @@ describe("replaying a host's queue to a socket that connects", () => {
   beforeEach(async () => {
     await beat();
     const made = (await (
-      await http("POST", "/fleet/workers", { name: "a", hostId: "laptop", brief: "Go." })
+      await http("POST", "/agents", { name: "a", hostId: "laptop", brief: "Go." })
     ).json()) as { id: string; session: { id: string } };
     id = made.id;
     sessionId = made.session.id;
-    await http("POST", `/fleet/workers/${id}/messages`, { text: "And this." });
-    await http("POST", "/fleet/hosts/desktop/heartbeat", { version: "0.1.0" });
-    await http("POST", "/fleet/workers", { name: "b", hostId: "desktop" });
+    await http("POST", `/agents/${id}/messages`, { text: "And this." });
+    await http("POST", "/hosts/desktop/heartbeat", { version: "0.1.0" });
+    await http("POST", "/agents", { name: "b", hostId: "desktop" });
     poster.posts = [];
   });
 
@@ -309,7 +309,7 @@ describe("replaying a host's queue to a socket that connects", () => {
     expect(poster.posts).toEqual([]);
     await send("host", { type: "ping" });
     // A start goes with the tokens its record leaves out.
-    const sealed = (command: Command) => (command.kind === "start" ? { ...command, secrets: { WS_TOKEN: "secret" } } : command);
+    const sealed = (command: Command) => (command.kind === "start" ? { ...command, secrets: { AG_TOKEN: "secret" } } : command);
     expect(poster.to("host")).toEqual(store.commands.get("laptop")!.map((q) => ({ type: "command", command: sealed(q.command) })));
     expect(kinds("host")).toEqual(["create", "start", "message"]);
   });
@@ -318,7 +318,7 @@ describe("replaying a host's queue to a socket that connects", () => {
     await asHost("old");
     await send("old", { type: "ping" });
     await asHost("new");
-    await send("new", { type: "report", workers: [] });
+    await send("new", { type: "report", agents: [] });
     await send("new", { type: "ping" });
     await send("old", { type: "ping" });
     expect(kinds("old")).toEqual(["create", "start", "message"]);
@@ -327,12 +327,12 @@ describe("replaying a host's queue to a socket that connects", () => {
 
   it("leaves out what the first report names, and what its applying queues is pushed once", async () => {
     const [home] = store.commands.get("laptop")!;
-    await http("POST", `/fleet/workers/${id}/stop`, { force: true });
+    await http("POST", `/agents/${id}/stop`, { force: true });
     poster.posts = [];
     await asHost("host");
     await send("host", {
       type: "report",
-      workers: [{ id, state: "working", sessionId }],
+      agents: [{ id, state: "working", sessionId }],
       commandResults: [{ commandId: home!.command.id, ok: true }],
     });
     expect(kinds("host")).toEqual(["stop"]);
@@ -363,7 +363,7 @@ describe("a message written to a session and not yet taken", () => {
   let messageId: string;
 
   const commands = async () =>
-    ((await (await http("GET", `/fleet/workers/${id}/commands`)).json()) as {
+    ((await (await http("GET", `/agents/${id}/commands`)).json()) as {
       commands: { command: Command; delivery: string; error: string | null }[];
     }).commands;
   const message = async () => (await commands()).find((c) => c.command.id === messageId)!;
@@ -371,7 +371,7 @@ describe("a message written to a session and not yet taken", () => {
 
   beforeEach(async () => {
     await beat();
-    const made = (await (await http("POST", "/fleet/workers", { name: "a", hostId: "laptop", brief: "Go." })).json()) as {
+    const made = (await (await http("POST", "/agents", { name: "a", hostId: "laptop", brief: "Go." })).json()) as {
       id: string;
       session: { id: string };
     };
@@ -384,11 +384,11 @@ describe("a message written to a session and not yet taken", () => {
     const started = store.commands.get("laptop")!.map((q) => q.command);
     await send("host", {
       type: "report",
-      workers: [{ id, state: "working", sessionId }],
+      agents: [{ id, state: "working", sessionId }],
       commandResults: started.map((c) => ({ commandId: c.id, ok: true })),
     });
     poster.posts = [];
-    const res = await http("POST", `/fleet/workers/${id}/messages`, { text: "use main" });
+    const res = await http("POST", `/agents/${id}/messages`, { text: "use main" });
     messageId = ((await res.json()) as { commandId: string }).commandId;
   });
 
@@ -397,7 +397,7 @@ describe("a message written to a session and not yet taken", () => {
       expect(poster.to(viewer).filter((m) => m.type === "sent")).toEqual([
         {
           type: "sent",
-          workerId: id,
+          agentId: id,
           sent: expect.objectContaining({ command: expect.objectContaining({ id: messageId, text: "use main" }), delivery: "queued" }),
         },
       ]);
@@ -429,7 +429,7 @@ describe("a message written to a session and not yet taken", () => {
 
   it("is rejected when its session ends, even if its host cannot say so", async () => {
     await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: true, taken: false }] });
-    await send("host", { type: "report", workers: [{ id, state: "interrupted", sessionId: null }] });
+    await send("host", { type: "report", agents: [{ id, state: "interrupted", sessionId: null }] });
     expect(await message()).toMatchObject({ delivery: "rejected", error: "Its session ended before it took the message." });
     expect(sentPushes().at(-1)).toMatchObject({ sent: { delivery: "rejected" } });
     expect(await store.written("laptop")).toEqual([]);
@@ -441,11 +441,11 @@ describe("a message written to a session and not yet taken", () => {
   });
 
   it("names its command on the line its session took it as", async () => {
-    const line = { workerId: id, sessionId, seq: 0, at: NOW.toISOString(), from: "instruction", text: "use main", commandId: messageId };
+    const line = { agentId: id, sessionId, seq: 0, at: NOW.toISOString(), from: "instruction", text: "use main", commandId: messageId };
     await send("host", { type: "report", lines: [line] });
-    const { workerId: _, ...served } = line;
-    expect(poster.to("page").find((m) => m.type === "lines")).toEqual({ type: "lines", workerId: id, lines: [served] });
-    const transcript = (await (await http("GET", `/fleet/workers/${id}/transcript`)).json()) as { lines: unknown[] };
+    const { agentId: _, ...served } = line;
+    expect(poster.to("page").find((m) => m.type === "lines")).toEqual({ type: "lines", agentId: id, lines: [served] });
+    const transcript = (await (await http("GET", `/agents/${id}/transcript`)).json()) as { lines: unknown[] };
     expect(transcript.lines).toEqual([served]);
   });
 });
@@ -456,7 +456,7 @@ describe("the account's usage, as hosts report it", () => {
     ...(fiveHour !== undefined && { fiveHour: { utilization: fiveHour, resetsAt: "2026-10-27T15:00:00.000Z" } }),
     ...(sevenDay !== undefined && { sevenDay: { utilization: sevenDay, resetsAt: "2026-11-01T00:00:00.000Z" } }),
   });
-  const usage = async () => (await http("GET", "/fleet/usage")).json();
+  const usage = async () => (await http("GET", "/usage")).json();
   const asOtherHost = (connectionId: string) =>
     connect(connectionId, { hostId: "desktop" }, { Authorization: "Bearer secret" });
 
@@ -467,7 +467,7 @@ describe("the account's usage, as hosts report it", () => {
   });
 
   it("reads empty, every field null, before any host reports it", async () => {
-    const res = await http("GET", "/fleet/usage");
+    const res = await http("GET", "/usage");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ readAt: null, fiveHour: null, sevenDay: null });
   });
@@ -522,7 +522,7 @@ describe("the account's usage, as hosts report it", () => {
   });
 });
 
-describe("the tokens a worker's sessions used, as its host reports them", () => {
+describe("the tokens an agent's sessions used, as its host reports them", () => {
   let id: string;
   let sessionId: string;
   const totals = (input: number, output: number, write: number, read: number) => ({
@@ -531,15 +531,15 @@ describe("the tokens a worker's sessions used, as its host reports them", () => 
     cacheCreationInputTokens: write,
     cacheReadInputTokens: read,
   });
-  const tokensOf = async (workerId = id) =>
-    ((await (await http("GET", `/fleet/workers/${workerId}`)).json()) as { tokens: unknown }).tokens;
-  const report = (session: string, counts: ReturnType<typeof totals>, workerId = id) =>
-    send("host", { type: "report", tokens: [{ workerId, sessionId: session, ...counts }] });
+  const tokensOf = async (agentId = id) =>
+    ((await (await http("GET", `/agents/${agentId}`)).json()) as { tokens: unknown }).tokens;
+  const report = (session: string, counts: ReturnType<typeof totals>, agentId = id) =>
+    send("host", { type: "report", tokens: [{ agentId, sessionId: session, ...counts }] });
 
   beforeEach(async () => {
     await beat();
     const made = (await (
-      await http("POST", "/fleet/workers", { name: "a", hostId: "laptop", brief: "Go.", item: "ca147da6" })
+      await http("POST", "/agents", { name: "a", hostId: "laptop", brief: "Go.", item: "ca147da6" })
     ).json()) as { id: string; session: { id: string } };
     id = made.id;
     sessionId = made.session.id;
@@ -566,19 +566,19 @@ describe("the tokens a worker's sessions used, as its host reports them", () => 
     expect(await tokensOf()).toEqual(totals(12, 250, 3100, 50000));
   });
 
-  it("is kept on a retired worker, and listed with it by item", async () => {
+  it("is kept on a retired agent, and listed with it by item", async () => {
     await report(sessionId, totals(5, 6, 7, 8));
-    expect((await http("DELETE", `/fleet/workers/${id}`)).status).toBe(202);
+    expect((await http("DELETE", `/agents/${id}`)).status).toBe(202);
     await report(sessionId, totals(9, 10, 11, 12));
-    const listed = (await (await http("GET", "/fleet/workers?item=ca147da6")).json()) as {
-      workers: { id: string; state: string; tokens: unknown }[];
+    const listed = (await (await http("GET", "/agents?item=ca147da6")).json()) as {
+      agents: { id: string; state: string; tokens: unknown }[];
     };
-    expect(listed.workers).toMatchObject([{ id, state: "retired", tokens: totals(9, 10, 11, 12) }]);
+    expect(listed.agents).toMatchObject([{ id, state: "retired", tokens: totals(9, 10, 11, 12) }]);
   });
 
-  it("ignores totals for a worker on another host", async () => {
-    await http("POST", "/fleet/hosts/desktop/heartbeat", { version: "0.1.0", labels: [] });
-    const other = (await (await http("POST", "/fleet/workers", { name: "b", hostId: "desktop" })).json()) as { id: string };
+  it("ignores totals for an agent on another host", async () => {
+    await http("POST", "/hosts/desktop/heartbeat", { version: "0.1.0", labels: [] });
+    const other = (await (await http("POST", "/agents", { name: "b", hostId: "desktop" })).json()) as { id: string };
     await report(sessionId, totals(1, 1, 1, 1), other.id);
     expect(await tokensOf(other.id)).toEqual(totals(0, 0, 0, 0));
   });

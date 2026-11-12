@@ -19,6 +19,8 @@ Options:
   --host <addr>       address to listen on (default 127.0.0.1, or AGENT_SERVICE_HOST)
   --port <n>          port (default 4600, or AGENT_SERVICE_PORT)
   --db <path>         the SQLite file (default ~/.local/share/agent-service/agent-service.db, or AGENT_SERVICE_DB)
+  --public-url <url>  this service's address as agents and hosts reach it, such as its Tailscale
+                      HTTPS one (or AGENT_SERVICE_URL); without it, the address each request came to
   --services <file>   the other services a session may be given, as JSON (or AGENT_SERVICE_SERVICES):
                       {"<name>": {"url", "urlVar", "tokenVar", "tokenEnv"}}, each token read from
                       this process's variable tokenEnv
@@ -38,6 +40,7 @@ const { values, positionals } = parseArgs({
     port: { type: "string" },
     db: { type: "string" },
     services: { type: "string" },
+    "public-url": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -87,7 +90,8 @@ if (servicesFile) {
   }
 }
 
-const running: Running = start({ db: path, token: env.AUTH_TOKEN || null, adminToken: env.ADMIN_TOKEN || null, services });
+const publicUrl = values["public-url"] ?? env.AGENT_SERVICE_URL ?? null;
+const running: Running = start({ db: path, token: env.AUTH_TOKEN || null, adminToken: env.ADMIN_TOKEN || null, services, publicUrl });
 const server = serve({ fetch: running.api.fetch, hostname: host, port }, (info) => {
   const missing = [!env.AUTH_TOKEN && "AUTH_TOKEN", !env.ADMIN_TOKEN && "ADMIN_TOKEN"].filter(Boolean);
   process.stdout.write(
