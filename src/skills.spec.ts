@@ -4,7 +4,7 @@ import { readSkill, SKILL_DIR } from "./skill.ts";
 import { ServiceSkills } from "./skills.ts";
 
 const service = (url: string | null, value: string | null = "t"): Credential => ({ url, urlVar: "U", tokenVar: "T", token: { value: async () => value } });
-const OWN = { key: "worker-service", version: 9, commit: "own", files: [{ path: "skills/page/bin/page", content: "#!/bin/sh", executable: true }] };
+const OWN = { key: "agent-service", version: 9, commit: "own", files: [{ path: "skills/page/bin/page", content: "#!/bin/sh", executable: true }] };
 const WT = { key: "work-tracker", version: 53, commit: "abc", files: [{ path: "skills/work-tracker/bin/wt", content: "#!/bin/sh", executable: true }] };
 
 function skills(answers: Record<string, () => Response>, seen: string[] = []) {
@@ -12,14 +12,14 @@ function skills(answers: Record<string, () => Response>, seen: string[] = []) {
     seen.push(`${url} ${new Headers(init?.headers).get("authorization")}`);
     return (answers[String(url)] ?? (() => new Response("{}", { status: 404 })))();
   }) as typeof globalThis.fetch;
-  const known = { "worker-service": service(null), "work-tracker": service("https://wt.beta/"), "document-service": service("https://ds.beta", null) };
+  const known = { "agent-service": service(null), "work-tracker": service("https://wt.beta/"), "document-service": service("https://ds.beta", null) };
   return new ServiceSkills(known, () => OWN, fetch);
 }
 
 describe("each service's skill, for a start", () => {
   it("is read from the service at this stage's address and token, and this service's from itself", async () => {
     const seen: string[] = [];
-    const read = await skills({ "https://wt.beta/skill": () => Response.json(WT) }, seen).forSession(["worker-service", "work-tracker"]);
+    const read = await skills({ "https://wt.beta/skill": () => Response.json(WT) }, seen).forSession(["agent-service", "work-tracker"]);
     expect(read).toEqual({ skills: [OWN, WT], notes: [] });
     expect(seen).toEqual(["https://wt.beta/skill Bearer t"]);
   });

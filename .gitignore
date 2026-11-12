@@ -1,5 +1,4 @@
 node_modules/
-cdk.out/
 dist/
 *.tsbuildinfo
 .DS_Store
@@ -20,3 +19,4 @@ TRAIN.md
 .fix-log.txt
 .integrator-prompt.md
 .integrator-log.txt
+.agent-service-dev.db*

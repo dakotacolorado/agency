@@ -2,13 +2,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { KEPT_FOR, type Host, type Queued, type Worker } from "./domain.ts";
+import { KEPT_FOR, type Host, type Queued, type Agent } from "./domain.ts";
 import { Conflict, NameTaken, Stale, Store } from "./store.ts";
-import type { WorkerRequest } from "./admission.ts";
+import type { AgentRequest } from "./admission.ts";
 
 const AT = "2026-10-27T12:00:00.000Z";
 const host: Host = { id: "laptop", heartbeatAt: AT, version: null, labels: [], capacity: 2 };
-const worker = (fields: Partial<Worker> = {}): Worker => ({
+const agent = (fields: Partial<Agent> = {}): Agent => ({
   id: "w",
   name: "a",
   hostId: "laptop",
@@ -20,10 +20,10 @@ const worker = (fields: Partial<Worker> = {}): Worker => ({
   ...fields,
 });
 const queued = (id: string, kind: "create" | "message" = "message", queuedAt = AT): Queued => ({
-  command: kind === "create" ? { kind, id, workerId: "w", name: "a" } : { kind, id, workerId: "w", text: "hi" },
+  command: kind === "create" ? { kind, id, agentId: "w", name: "a" } : { kind, id, agentId: "w", text: "hi" },
   queuedAt,
 });
-const request = (fields: Partial<WorkerRequest> = {}): WorkerRequest => ({
+const request = (fields: Partial<AgentRequest> = {}): AgentRequest => ({
   id: "r",
   role: "implementer",
   brief: null,
@@ -38,7 +38,7 @@ const request = (fields: Partial<WorkerRequest> = {}): WorkerRequest => ({
   why: null,
   createdAt: AT,
   startedAt: null,
-  workerId: null,
+  agentId: null,
   withdrawnAt: null,
   ...fields,
 });
@@ -64,13 +64,13 @@ const reopen = () => {
 };
 
 describe("a restart", () => {
-  it("keeps hosts, workers, their sessions, transcripts, roles, requests, usage and every command still pending", async () => {
+  it("keeps hosts, agents, their sessions, transcripts, roles, requests, usage and every command still pending", async () => {
     await store.putHost(host);
     await store.commit({
-      workers: [worker({ state: "working", session: { id: "s", startedAt: AT } })],
-      sessions: [{ id: "s", workerId: "w", startedAt: AT, endedAt: null, ended: null }],
+      agents: [agent({ state: "working", session: { id: "s", startedAt: AT } })],
+      sessions: [{ id: "s", agentId: "w", startedAt: AT, endedAt: null, ended: null }],
       queue: [{ hostId: "laptop", queued: queued("c1", "create") }, { hostId: "laptop", queued: queued("c2") }],
-      claim: { name: "a", workerId: "w" },
+      claim: { name: "a", agentId: "w" },
     });
     await store.putLines("w", [{ seq: 0, at: AT, sessionId: "s", from: "agent" as const, text: "Hello." }]);
     await store.putUsage("fiveHour", { utilization: 0.5, resetsAt: AT, readAt: AT, hostId: "laptop" });
@@ -79,7 +79,7 @@ describe("a restart", () => {
     await store.putConnection({ connectionId: "c", kind: "host", hostId: "laptop", connectedAt: AT });
     reopen();
     expect(await store.listHosts()).toEqual([host]);
-    expect(await store.getWorker("w")).toMatchObject({ state: "working", session: { id: "s" } });
+    expect(await store.getAgent("w")).toMatchObject({ state: "working", session: { id: "s" } });
     expect((await store.sessionsOf("w")).map((s) => s.id)).toEqual(["s"]);
     expect(await store.readLines("w", -1, 10)).toEqual([{ seq: 0, at: AT, sessionId: "s", from: "agent" as const, text: "Hello." }]);
     expect((await store.pending("laptop")).map((q) => q.command.id)).toEqual(["c1", "c2"]);
@@ -87,7 +87,7 @@ describe("a restart", () => {
     expect((await store.usage()).fiveHour?.utilization).toBe(0.5);
     expect((await store.listRequests()).map((r) => r.id)).toEqual(["r"]);
     expect(await store.getSecret("w", "waypoint")).toBe("s3cret");
-    await expect(store.commit({ claim: { name: "a", workerId: "other" } })).rejects.toBeInstanceOf(NameTaken);
+    await expect(store.commit({ claim: { name: "a", agentId: "other" } })).rejects.toBeInstanceOf(NameTaken);
     // A socket does not outlive the process that held it.
     expect(await store.connections()).toEqual([]);
   });
@@ -95,35 +95,35 @@ describe("a restart", () => {
 
 describe("a change", () => {
   it("is refused whole when the name is taken, and writes nothing", async () => {
-    await store.commit({ claim: { name: "a", workerId: "w" } });
-    await expect(store.commit({ workers: [worker({ id: "x" })], claim: { name: "a", workerId: "x" } })).rejects.toBeInstanceOf(NameTaken);
-    expect(await store.getWorker("x")).toBeNull();
+    await store.commit({ claim: { name: "a", agentId: "w" } });
+    await expect(store.commit({ agents: [agent({ id: "x" })], claim: { name: "a", agentId: "x" } })).rejects.toBeInstanceOf(NameTaken);
+    expect(await store.getAgent("x")).toBeNull();
   });
 
   it("frees a released name for the next to claim it", async () => {
-    await store.commit({ claim: { name: "a", workerId: "w" } });
-    await store.commit({ claim: { name: "b", workerId: "w" }, release: "a" });
-    await store.commit({ claim: { name: "a", workerId: "x" } });
+    await store.commit({ claim: { name: "a", agentId: "w" } });
+    await store.commit({ claim: { name: "b", agentId: "w" }, release: "a" });
+    await store.commit({ claim: { name: "a", agentId: "x" } });
   });
 
-  it("guarded, is refused as a conflict when a worker was written since it was read", async () => {
-    await store.commit({ workers: [worker()], guarded: true });
-    const read = (await store.getWorker("w"))!;
-    await store.commit({ workers: [{ ...read, state: "working" }], guarded: true });
-    await expect(store.commit({ workers: [{ ...read, state: "interrupted" }], guarded: true })).rejects.toBeInstanceOf(Conflict);
-    expect((await store.getWorker("w"))!.state).toBe("working");
+  it("guarded, is refused as a conflict when an agent was written since it was read", async () => {
+    await store.commit({ agents: [agent()], guarded: true });
+    const read = (await store.getAgent("w"))!;
+    await store.commit({ agents: [{ ...read, state: "working" }], guarded: true });
+    await expect(store.commit({ agents: [{ ...read, state: "interrupted" }], guarded: true })).rejects.toBeInstanceOf(Conflict);
+    expect((await store.getAgent("w"))!.state).toBe("working");
   });
 
-  it("guarded, refuses a new worker that another write made first", async () => {
-    await store.commit({ workers: [worker()] });
-    await expect(store.commit({ workers: [worker()], guarded: true })).rejects.toBeInstanceOf(Conflict);
+  it("guarded, refuses a new agent that another write made first", async () => {
+    await store.commit({ agents: [agent()] });
+    await expect(store.commit({ agents: [agent()], guarded: true })).rejects.toBeInstanceOf(Conflict);
   });
 
   it("writes only a session's ending over what it began with", async () => {
     const context = { key: "global", version: 3 };
-    await store.commit({ sessions: [{ id: "s", workerId: "w", startedAt: AT, endedAt: null, ended: null, context, documents: [], skills: [], contextNote: null }] });
-    await store.commit({ sessions: [{ id: "s", workerId: "w", startedAt: AT, endedAt: AT, ended: "stopped" }] });
-    expect(await store.sessionsOf("w")).toEqual([{ id: "s", workerId: "w", startedAt: AT, endedAt: AT, ended: "stopped", context, documents: [], skills: [], contextNote: null }]);
+    await store.commit({ sessions: [{ id: "s", agentId: "w", startedAt: AT, endedAt: null, ended: null, context, documents: [], skills: [], contextNote: null }] });
+    await store.commit({ sessions: [{ id: "s", agentId: "w", startedAt: AT, endedAt: AT, ended: "stopped" }] });
+    expect(await store.sessionsOf("w")).toEqual([{ id: "s", agentId: "w", startedAt: AT, endedAt: AT, ended: "stopped", context, documents: [], skills: [], contextNote: null }]);
   });
 });
 

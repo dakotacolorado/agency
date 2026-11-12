@@ -19,7 +19,7 @@ import {
   TEXT_LIMIT,
   TITLE_LIMIT,
   WHEN_DONE,
-  WORKER_STATES,
+  AGENT_STATES,
 } from "./domain.ts";
 import { FRESH_FOR_MS, REQUEST_STATES, STALE_UNDER, USAGE_LIMIT } from "./admission.ts";
 
@@ -33,9 +33,9 @@ const HostId = z
 // Ids are left unnamed in the document: a named schema made nullable loses its
 // null on the way to openapi 3.1, and a generated client would then never see it.
 
-const WorkerId = z
+const AgentId = z
   .uuid()
-  .describe("Assigned by the service when the worker is created.")
+  .describe("Assigned by the service when the agent is created.")
   .openapi({ example: "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10" });
 
 const SessionId = z
@@ -43,25 +43,25 @@ const SessionId = z
   .describe("Assigned by the service when it queues the session's `start`.")
   .openapi({ example: "9d6a1f0e-4b7c-4e21-a3f8-0c5d2e7b4a19" });
 
-const WorkerName = z
+const AgentName = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]{0,39}$/)
-  .describe("Unique among workers not retired. Names its home folder and tmux session on its host.")
+  .describe("Unique among agents not retired. Names its home folder and tmux session on its host.")
   .openapi({ example: "frontend-1" });
 
-const WorkerTitle = z
+const AgentTitle = z
   .string()
   .trim()
   .min(1)
   .max(TITLE_LIMIT)
-  .describe("What the worker is there to do, in a few words.")
+  .describe("What the agent is there to do, in a few words.")
   .openapi({ example: "Short status headline" });
 
 /** As document-service keys them. */
 const DocumentKey = z.string().regex(/^[a-z0-9][a-z0-9.-]{0,99}$/).openapi({ example: "approval" });
 
 const Documents = z
-  .array(DocumentKey.refine((key) => key !== "global", "global is given to every worker"))
+  .array(DocumentKey.refine((key) => key !== "global", "global is given to every agent"))
   .max(8)
   .refine((keys) => new Set(keys).size === keys.length, "Name each document once.")
   .refine((keys) => keys.filter((key) => key.startsWith("proposal.global.")).length <= 1, "Name one proposal.global document at most.")
@@ -82,11 +82,11 @@ const CredentialNames = z
   .array(CredentialName)
   .max(16)
   .refine((names) => new Set(names).size === names.length, "Name each credential once.")
-  .openapi({ example: ["work-tracker", "worker-service"] });
+  .openapi({ example: ["work-tracker", "agent-service"] });
 
 const OwnToken = z
   .strictObject({ name: CredentialName, token: z.string().min(1).max(4096) })
-  .describe("A name with a token of the caller's, given this worker in place of the name's shared secret.");
+  .describe("A name with a token of the caller's, given this agent in place of the name's shared secret.");
 
 const Credentials = z
   .array(z.union([CredentialName, OwnToken]))
@@ -100,8 +100,8 @@ const Credentials = z
 const WhenDone = z
   .enum(WHEN_DONE)
   .describe(
-    "What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; " +
-      "`stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, " +
+    "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; " +
+      "`stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, " +
       "`stop` and `retire` both only stop its session, so a send-back can still start it again.",
   );
 
@@ -109,21 +109,21 @@ const ItemId = z
   .string()
   .min(1)
   .max(ITEM_LIMIT)
-  .describe("A work-tracker item's id: the epic, story or task the worker was started on. Never changes.")
+  .describe("A work-tracker item's id: the epic, story or task the agent was started on. Never changes.")
   .openapi({ example: "ca147da6-9a30-4d59-b508-e404d21b9dfd" });
 
-const WorkerLabel = z
+const AgentLabel = z
   .string()
   .trim()
   .min(1)
   .max(LABEL_LIMIT)
-  .describe("A short tag shown beside the worker's name, so sessions can be told apart.")
+  .describe("A short tag shown beside the agent's name, so sessions can be told apart.")
   .openapi({ example: "approval: PR #18" });
 
 const RoleName = z
   .string()
   .regex(/^[a-z][a-z0-9-]{0,39}$/)
-  .describe("A role's name, such as `reviewer`: what kind of worker it makes.")
+  .describe("A role's name, such as `reviewer`: what kind of agent it makes.")
   .openapi({ example: "reviewer" });
 
 /** Hono reads headers lower-cased, so the key must be too. */
@@ -135,14 +135,14 @@ const ClaimHeader = z.object({
     .max(MAKER_LIMIT)
     .optional()
     .describe(
-      "Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded " +
+      "Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded " +
         "as `createdBy`, as said and not checked, since every caller holds the same token.",
     ),
 });
 
 /**
  * Opaque: carried to the host as it came, and never read, trimmed or filled
- * in here. What a worker should be told is for whoever tells it.
+ * in here. What an agent should be told is for whoever tells it.
  */
 const Text = z
   .string()
@@ -182,11 +182,11 @@ const Seq = z
   .number()
   .int()
   .min(0)
-  .describe("Line number per worker, from 0, continuing across its sessions.");
+  .describe("Line number per agent, from 0, continuing across its sessions.");
 
 const From = z
   .enum(["agent", "tool", "instruction"])
-  .describe("`instruction`: a message sent to the worker.");
+  .describe("`instruction`: a message sent to the agent.");
 
 const CUT =
   "A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: " +
@@ -212,9 +212,9 @@ export const TranscriptLineSchema = z
 
 export const LineReportSchema = z
   .object({
-    workerId: WorkerId,
+    agentId: AgentId,
     sessionId: SessionId,
-    seq: Seq.describe("Deduplicated by (`workerId`, `seq`), so resending is safe."),
+    seq: Seq.describe("Deduplicated by (`agentId`, `seq`), so resending is safe."),
     at: Instant,
     from: From,
     text: z
@@ -227,9 +227,9 @@ export const LineReportSchema = z
   })
   .openapi("LineReport");
 
-export const WorkerReportSchema = z
+export const AgentReportSchema = z
   .object({
-    id: WorkerId,
+    id: AgentId,
     state: z
       .enum(REPORTED_STATES)
       .describe(
@@ -259,7 +259,7 @@ export const WorkerReportSchema = z
           "end begins does. Absent from a host that does not say, read as unknown.",
       ),
   })
-  .openapi("WorkerReport");
+  .openapi("AgentReport");
 
 const TokenCount = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 
@@ -277,7 +277,7 @@ export const TokensSchema = z
 
 export const SessionTokensReportSchema = z
   .object({
-    workerId: WorkerId,
+    agentId: AgentId,
     sessionId: SessionId,
     ...tokenFields,
   })
@@ -298,7 +298,7 @@ export const CommandReportSchema = z
       .boolean()
       .optional()
       .describe(
-        "`false` with `ok` true: a command with text, written to its worker's session but not yet " +
+        "`false` with `ok` true: a command with text, written to its agent's session but not yet " +
           "taken by it. The command is off the queue (`written`), and its host reports it once more, " +
           "`ok` true once the session takes it, false if it never will. Absent or true: settled.",
       ),
@@ -306,10 +306,10 @@ export const CommandReportSchema = z
   .openapi("CommandReport");
 
 const reports = {
-  workers: z
-    .array(WorkerReportSchema)
+  agents: z
+    .array(AgentReportSchema)
     .max(256)
-    .describe("Workers on the host and what each is doing. One not named is unchanged."),
+    .describe("Agents on the host and what each is doing. One not named is unchanged."),
   lines: z
     .array(LineReportSchema)
     .max(1000)
@@ -327,7 +327,7 @@ const reports = {
     .describe("Running token totals of sessions whose count has grown since it was last reported."),
 };
 
-const exampleWorker = "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10";
+const exampleAgent = "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10";
 const exampleSession = "9d6a1f0e-4b7c-4e21-a3f8-0c5d2e7b4a19";
 
 /** What a host reports, on its socket alone; see `SocketReport`. */
@@ -338,7 +338,7 @@ export type Report = z.infer<typeof ReportSchema>;
 // Strict, so a host still sending reports here is refused rather than silently dropped.
 export const HeartbeatSchema = z
   .strictObject({
-    version: z.string().max(64).describe("The worker-host build that sent the heartbeat."),
+    version: z.string().max(64).describe("The agent-host build that sent the heartbeat."),
     labels: Labels.optional().describe(
       "What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host).",
     ),
@@ -356,14 +356,14 @@ export type Heartbeat = z.infer<typeof HeartbeatSchema>;
 
 const commandBase = {
   id: z.string().min(1).max(128).describe("Report the command by this id once it is taken."),
-  workerId: WorkerId,
+  agentId: AgentId,
 };
 
 export const CommandSchema = z
   .discriminatedUnion("kind", [
     z
-      .object({ ...commandBase, kind: z.literal("create"), name: WorkerName })
-      .describe("Make the worker's home folder.")
+      .object({ ...commandBase, kind: z.literal("create"), name: AgentName })
+      .describe("Make the agent's home folder.")
       .openapi("CreateCommand"),
     z
       .object({
@@ -372,10 +372,10 @@ export const CommandSchema = z
         sessionId: SessionId,
         resume: z
           .boolean()
-          .describe("True to carry on the worker's last conversation (`--continue`), false to begin one."),
+          .describe("True to carry on the agent's last conversation (`--continue`), false to begin one."),
         text: Text.optional().describe("The session's first message, when it has one."),
         context: ContextSchema.optional().describe(
-          "Files to write into the worker's own Claude Code folder before it starts, replacing the last " +
+          "Files to write into the agent's own Claude Code folder before it starts, replacing the last " +
             "context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the " +
             "last context and documents written stand.",
         ),
@@ -403,7 +403,7 @@ export const CommandSchema = z
           "The services the session is given, by name, as kept on record. Their tokens are in `secrets`.",
         ),
         ownCredentials: CredentialNames.optional().describe(
-          "Of `credentials`, those the worker was given a token of its own for, read in place of the shared one.",
+          "Of `credentials`, those the agent was given a token of its own for, read in place of the shared one.",
         ),
         secrets: z
           .record(z.string(), z.string())
@@ -411,7 +411,7 @@ export const CommandSchema = z
           .describe(
             "The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and " +
               "never stored, so a listed or replayed command holds none and a rotated secret reaches the next " +
-              "start. The host writes them to a file in the worker's folder that only it can read, and the " +
+              "start. The host writes them to a file in the agent's folder that only it can read, and the " +
               "session's environment is set from that file, never from a command line.",
           ),
       })
@@ -424,16 +424,16 @@ export const CommandSchema = z
       .object({
         ...commandBase,
         kind: z.literal("interrupt"),
-        text: Text.optional().describe("Sent to the worker once the current turn has stopped."),
+        text: Text.optional().describe("Sent to the agent once the current turn has stopped."),
       })
       .openapi("InterruptCommand"),
     z
       .object({ ...commandBase, kind: z.literal("stop") })
-      .describe("End the session; the worker becomes idle.")
+      .describe("End the session; the agent becomes idle.")
       .openapi("StopCommand"),
     z
       .object({ ...commandBase, kind: z.literal("retire") })
-      .describe("Stop any session and take the worker off the host. Its home folder is kept.")
+      .describe("Stop any session and take the agent off the host. Its home folder is kept.")
       .openapi("RetireCommand"),
   ])
   .openapi("Command");
@@ -466,22 +466,22 @@ const HostStatus = z
       `most ${2 * HEARTBEAT_INTERVAL} seconds. \`disconnected\`: at most ${LOST_AFTER}. \`lost\`: longer.`,
   );
 
-export const WorkerSchema = z
+export const AgentSchema = z
   .object({
-    id: WorkerId,
-    name: WorkerName,
+    id: AgentId,
+    name: AgentName,
     title: z
       .string()
       .nullable()
       .describe(
-        "What the worker named itself for its work, with `setWorkerTitle`, or the person with " +
-          "`renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names " +
+        "What the agent named itself for its work, with `setAgentTitle`, or the person with " +
+          "`renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names " +
           "nothing on its host.",
       ),
     label: z
       .string()
       .nullable()
-      .describe("A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none."),
+      .describe("A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none."),
     item: ItemId.nullable().describe("The work item it was started on, as given when it was made; null for none."),
     role: RoleName.nullable().describe("The role it was made from, as given when it was made; null for one made without."),
     tokens: TokensSchema.describe(
@@ -491,7 +491,7 @@ export const WorkerSchema = z
     createdBy: z
       .string()
       .nullable()
-      .describe("The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none."),
+      .describe("The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none."),
     whenDone: WhenDone,
     documents: z.array(z.string()).describe("What each session is given after `global`, by key."),
     credentials: z
@@ -503,7 +503,7 @@ export const WorkerSchema = z
       ),
     hostId: HostId,
     state: z
-      .enum(WORKER_STATES)
+      .enum(AGENT_STATES)
       .describe(
         "`idle`: has a home and no live session. `working`, `waiting`: a live session, " +
           "in a turn or between turns, as its host last reported it (`working` too from the moment a " +
@@ -526,25 +526,25 @@ export const WorkerSchema = z
         "What it is doing, as its host sees its turns and as it last said. `working`: a turn of " +
           "its, or a background task or subagent it started, is running. `idle`: its session is live " +
           "and neither is, as after it replied; this never needs the person. `waiting`: it said with " +
-          "`setWorkerStatus` that it needs the person, and stays so until the person messages it " +
+          "`setAgentStatus` that it needs the person, and stays so until the person messages it " +
           "(a turn it begins by itself does not end it). `review`: its change is submitted to " +
-          "approval-service, said by the worker or by approval-service, and it waits on the reviewer " +
+          "approval-service, said by the agent or by approval-service, and it waits on the reviewer " +
           "until the change ships or is sent back. `done`: it finished what it was made for, or its " +
           "change shipped. `review` and `done` are kept once its session ends, and no turn changes " +
-          "them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without " +
+          "them; only a message from the person, or `setAgentStatus`, does. Otherwise null without " +
           "a live session. Only `waiting` should notify the person.",
       ),
     summary: z
       .string()
       .nullable()
       .describe(
-        "One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while " +
+        "One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while " +
           "`waiting` what it needs from the person. Cleared by a message from the person.",
       ),
     headline: z
       .string()
       .nullable()
-      .describe("A few words said with its `summary` and gone with it, for a list of workers. Null when none was given."),
+      .describe("A few words said with its `summary` and gone with it, for a list of agents. Null when none was given."),
     saidAt: Instant.nullable().describe("When `summary` was said; null when there is none."),
     activity: z
       .object({
@@ -575,12 +575,12 @@ export const WorkerSchema = z
       "Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.",
     ),
   })
-  .openapi("Worker");
+  .openapi("Agent");
 
 export const SessionSchema = z
   .object({
     id: SessionId,
-    workerId: WorkerId,
+    agentId: AgentId,
     startedAt: Instant.describe("When its `start` was queued."),
     endedAt: Instant.nullable(),
     ended: z
@@ -610,14 +610,14 @@ export const HostSchema = z
   .object({
     id: HostId,
     heartbeatAt: Instant,
-    version: z.string().nullable().describe("The worker-host build of its last heartbeat."),
+    version: z.string().nullable().describe("The agent-host build of its last heartbeat."),
     status: HostStatus,
     labels: z.array(Label).describe("As the host last declared them."),
     capacity: Capacity.nullable().describe(
       "How many sessions the host will run at once; null if it has never said.",
     ),
     available: Capacity.nullable().describe(
-      "How many more sessions it will take now: `capacity` minus its workers with a live " +
+      "How many more sessions it will take now: `capacity` minus its agents with a live " +
         "session. Null when `capacity` is.",
     ),
   })
@@ -636,7 +636,7 @@ const FAILS = {
   503: json(ErrorSchema, "No API token is configured."),
 };
 
-const NO_WORKER = { 404: json(ErrorSchema, "No worker has this id.") };
+const NO_AGENT = { 404: json(ErrorSchema, "No agent has this id.") };
 
 const NO_HOST = { 404: json(ErrorSchema, "No host has this id.") };
 
@@ -647,7 +647,7 @@ export const AcceptedSchema = z
     commandId: z
       .string()
       .nullable()
-      .describe("Follow it in `listWorkerCommands`. Null when nothing was sent to the host."),
+      .describe("Follow it in `listAgentCommands`. Null when nothing was sent to the host."),
   })
   .openapi("Accepted");
 
@@ -658,10 +658,10 @@ export const SentCommandSchema = z
     delivery: z
       .enum(DELIVERIES)
       .describe(
-        "`queued`: not yet reported by the host. `written`: its text is in the worker's session, which " +
+        "`queued`: not yet reported by the host. `written`: its text is in the agent's session, which " +
           "has not yet taken it (it takes it at its next step); a session that ends first makes it " +
           "`rejected`. `withdrawn`: never to be sent, because it went " +
-          `unreported for ${LOST_AFTER} seconds (\`create\` and \`retire\` excepted) or its worker ` +
+          `unreported for ${LOST_AFTER} seconds (\`create\` and \`retire\` excepted) or its agent ` +
           "was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.",
       ),
     reportedAt: Instant.nullable().describe("When the host last reported it; null until then."),
@@ -702,7 +702,7 @@ export const UsageReportSchema = z
     sevenDay: UsageWindowReportSchema.optional().describe("The weekly window; absent when the event did not carry it."),
   })
   .describe(
-    "The Claude account's usage, as a session's latest `rate_limit_event` gave it. Every worker " +
+    "The Claude account's usage, as a session's latest `rate_limit_event` gave it. Every agent " +
       "shares one account, so each window keeps the newest reading by `readAt` from any host, and " +
       "an older one is ignored.",
   )
@@ -737,7 +737,7 @@ export type Usage = z.infer<typeof UsageSchema>;
 export const SocketReportSchema = z
   .object({
     type: z.literal("report"),
-    workers: reports.workers.optional(),
+    agents: reports.agents.optional(),
     lines: reports.lines.optional(),
     commandResults: reports.commandResults.optional(),
     tokens: reports.tokens.optional(),
@@ -747,18 +747,18 @@ export const SocketReportSchema = z
   })
   .describe(
     "Host to service, the only way a host reports: whenever something changes, and in full " +
-      "(every worker, every line and result not yet sent) whenever its socket connects. Pushed " +
-      "on to viewers. Idempotent: lines by (`workerId`, `seq`), results by `commandId`. Does " +
+      "(every agent, every line and result not yet sent) whenever its socket connects. Pushed " +
+      "on to viewers. Idempotent: lines by (`agentId`, `seq`), results by `commandId`. Does " +
       "not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at " +
       "most, so lines that would not fit go in the reports after it.",
   )
   .openapi("SocketReport", {
     example: {
       type: "report",
-      workers: [{ id: exampleWorker, state: "working", sessionId: exampleSession, tasks: 1, told: true }],
+      agents: [{ id: exampleAgent, state: "working", sessionId: exampleSession, tasks: 1, told: true }],
       lines: [
         {
-          workerId: exampleWorker,
+          agentId: exampleAgent,
           sessionId: exampleSession,
           seq: 41,
           at: "2026-10-27T12:00:00.000Z",
@@ -795,19 +795,19 @@ export const SocketOutboundSchema = z
       )
       .openapi("CommandPush"),
     z
-      .object({ type: z.literal("worker"), worker: WorkerSchema })
-      .describe("To viewers, whenever a worker changes.")
-      .openapi("WorkerPush"),
+      .object({ type: z.literal("agent"), agent: AgentSchema })
+      .describe("To viewers, whenever an agent changes.")
+      .openapi("AgentPush"),
     z
-      .object({ type: z.literal("lines"), workerId: WorkerId, lines: z.array(TranscriptLineSchema) })
+      .object({ type: z.literal("lines"), agentId: AgentId, lines: z.array(TranscriptLineSchema) })
       .describe("To viewers, as lines arrive.")
       .openapi("LinesPush"),
     z
-      .object({ type: z.literal("sent"), workerId: WorkerId, sent: SentCommandSchema })
+      .object({ type: z.literal("sent"), agentId: AgentId, sent: SentCommandSchema })
       .describe(
         "To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is " +
           "queued, and each time its `delivery` changes, " +
-          "but for a time-based `withdrawn`, which a read of `listWorkerCommands` says.",
+          "but for a time-based `withdrawn`, which a read of `listAgentCommands` says.",
       )
       .openapi("SentPush"),
     z
@@ -839,7 +839,7 @@ export const AUDIENCES = {
   host: "hosts",
   reading: "clients, reading",
   acting: "clients, acting",
-  worker: "workers, of themselves",
+  agent: "agents, of themselves",
 } as const;
 
 type Unaudienced = Omit<RouteConfig, "tags" | "security">;
@@ -852,8 +852,8 @@ const forClientReading = <R extends Unaudienced & { method: "get" }>(route: R) =
   createRoute({ ...route, ...secured, tags: [AUDIENCES.reading] });
 const forClientActing = <R extends Unaudienced & { method: "post" | "patch" | "delete" }>(route: R) =>
   createRoute({ ...route, ...secured, tags: [AUDIENCES.acting] });
-const forWorker = <R extends Unaudienced & { method: "put" }>(route: R) =>
-  createRoute({ ...route, ...secured, tags: [AUDIENCES.worker] });
+const forAgent = <R extends Unaudienced & { method: "put" }>(route: R) =>
+  createRoute({ ...route, ...secured, tags: [AUDIENCES.agent] });
 
 export const healthRoute = createRoute({
   method: "get",
@@ -866,7 +866,7 @@ export const healthRoute = createRoute({
 
 export const heartbeatRoute = forHost({
   method: "post",
-  path: "/fleet/hosts/{id}/heartbeat",
+  path: "/hosts/{id}/heartbeat",
   operationId: "heartbeat",
   summary: "Keep the host connected, and say what it offers",
   description:
@@ -885,7 +885,7 @@ export const heartbeatRoute = forHost({
 
 export const listHostsRoute = forClientReading({
   method: "get",
-  path: "/fleet/hosts",
+  path: "/hosts",
   operationId: "listHosts",
   summary: "List hosts",
   description:
@@ -909,36 +909,36 @@ export const listHostsRoute = forClientReading({
 
 export const deleteHostRoute = forClientActing({
   method: "delete",
-  path: "/fleet/hosts/{id}",
+  path: "/hosts/{id}",
   operationId: "deleteHost",
   summary: "Deregister a host",
   description:
-    "Deletes the host's record, which is how a host leaves `listHosts`. Its workers, their " +
-    "transcripts and the commands sent to them stay on record, and its workers read as on a " +
+    "Deletes the host's record, which is how a host leaves `listHosts`. Its agents, their " +
+    "transcripts and the commands sent to them stay on record, and its agents read as on a " +
     "`lost` host. The next heartbeat from this id registers it again, and its socket is sent " +
     "whatever is still queued for it.",
   request: { params: z.object({ id: HostId }) },
   responses: { 204: { description: "Deregistered." }, ...NO_HOST, ...FAILS },
 });
 
-export const createWorkerRoute = forClientActing({
+export const createAgentRoute = forClientActing({
   method: "post",
-  path: "/fleet/workers",
-  operationId: "createWorker",
-  summary: "Create a worker on a host",
+  path: "/agents",
+  operationId: "createAgent",
+  summary: "Create an agent on a host",
   description:
-    "Records the worker `idle` and queues `create` for its host, which makes its home. With a " +
-    "`brief`, also queues a `start` whose first message is the brief, and the worker is `working` " +
+    "Records the agent `idle` and queues `create` for its host, which makes its home. With a " +
+    "`brief`, also queues a `start` whose first message is the brief, and the agent is `working` " +
     "at once. Without a `hostId`, the service chooses a connected host with room.",
   request: {
     headers: ClaimHeader,
     body: json(
       z
         .object({
-          name: WorkerName,
+          name: AgentName,
           role: RoleName.optional().describe(
             "The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` " +
-              "are the worker's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
+              "are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
           ),
           hostId: HostId.optional().describe(
             "Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), " +
@@ -946,31 +946,31 @@ export const createWorkerRoute = forClientActing({
           ),
           labels: Labels.optional().describe("Without `hostId`, what the host it is placed on must all carry."),
           brief: Text.optional().describe("The first session's first message. Absent, the role's, if it has one; otherwise no session starts."),
-          label: WorkerLabel.optional().describe("Absent, the role's, or without one none."),
+          label: AgentLabel.optional().describe("Absent, the role's, or without one none."),
           item: ItemId.optional().describe(
-            "The work item it is started on, kept for its life so `listWorkers` with `item` finds it. Absent, none.",
+            "The work item it is started on, kept for its life so `listAgents` with `item` finds it. Absent, none.",
           ),
           whenDone: WhenDone.optional().describe("Absent, the role's, or without one `keep`."),
           credentials: Credentials.optional().describe(
             "The services each session is given an address and token for, by name: `document-service`, " +
-              "`work-tracker`, `worker-service`, `approval-service`, as the stage has them. A name it does not have is refused. " +
+              "`work-tracker`, `agent-service`, `approval-service`, as the stage has them. A name it does not have is refused. " +
               "Absent, the role's, or without one all of those. Only the names are kept on record; each token is read at each start. " +
-              "`{name, token}` gives this worker the caller's token in place of the name's shared one: kept in " +
-              "Secrets Manager, never returned by any read, and deleted when the worker is retired.",
+              "`{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart " +
+              "from its record, never returned by any read, and deleted when the agent is retired.",
           ),
           documents: Documents.optional().describe(
             "Read after `global` at each start, at their latest version. A key document-service does not " +
               "know is refused here, in its words. Absent, the role's, or without one only `global`.",
           ),
         })
-        .openapi("NewWorker"),
-      "Who the worker is and where it lives.",
+        .openapi("NewAgent"),
+      "Who the agent is and where it lives.",
     ),
   },
   responses: {
-    201: json(WorkerSchema, "Created; its `create` is queued for the host."),
+    201: json(AgentSchema, "Created; its `create` is queued for the host."),
     404: json(ErrorSchema, "No host has the id `hostId`."),
-    ...REFUSED("a worker not retired already has `name`, the host is `lost`, or it is full and a `brief` was given."),
+    ...REFUSED("an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given."),
     ...FAILS,
     503: json(ErrorSchema, "No API token is configured, or no `hostId` was given and no connected host fits and has room."),
     400: json(
@@ -980,13 +980,13 @@ export const createWorkerRoute = forClientActing({
   },
 });
 
-export const listWorkersRoute = forClientReading({
+export const listAgentsRoute = forClientReading({
   method: "get",
-  path: "/fleet/workers",
-  operationId: "listWorkers",
-  summary: "List workers",
+  path: "/agents",
+  operationId: "listAgents",
+  summary: "List agents",
   description:
-    "Retired workers are listed only with `all=true`, or with `item`. With `createdBy`, only the workers " +
+    "Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents " +
     "made by that `claimed-by`, so a service can list its own. With `item`, only those started on that " +
     "work item, retired ones included, so what they used is still there once they have gone. With `role`, only " +
     "those made from that role.",
@@ -994,40 +994,40 @@ export const listWorkersRoute = forClientReading({
     query: z.object({
       createdBy: z.string().min(1).max(MAKER_LIMIT).optional(),
       item: ItemId.optional(),
-      role: RoleName.optional().describe("Only the workers made from this role."),
-      all: z.enum(["true", "false"]).optional().describe("`true` includes retired workers."),
+      role: RoleName.optional().describe("Only the agents made from this role."),
+      all: z.enum(["true", "false"]).optional().describe("`true` includes retired agents."),
     }),
   },
   responses: {
-    200: json(z.object({ workers: z.array(WorkerSchema) }).openapi("WorkerList"), "Matching workers."),
+    200: json(z.object({ agents: z.array(AgentSchema) }).openapi("AgentList"), "Matching agents."),
     ...FAILS,
   },
 });
 
-export const getWorkerRoute = forClientReading({
+export const getAgentRoute = forClientReading({
   method: "get",
-  path: "/fleet/workers/{id}",
-  operationId: "getWorker",
-  summary: "Get one worker",
-  request: { params: z.object({ id: WorkerId }) },
-  responses: { 200: json(WorkerSchema, "The worker."), ...NO_WORKER, ...FAILS },
+  path: "/agents/{id}",
+  operationId: "getAgent",
+  summary: "Get one agent",
+  request: { params: z.object({ id: AgentId }) },
+  responses: { 200: json(AgentSchema, "The agent."), ...NO_AGENT, ...FAILS },
 });
 
-const workerParam = { params: z.object({ id: WorkerId }) };
+const agentParam = { params: z.object({ id: AgentId }) };
 
-export const messageWorkerRoute = forClientActing({
+export const messageAgentRoute = forClientActing({
   method: "post",
-  path: "/fleet/workers/{id}/messages",
-  operationId: "messageWorker",
-  summary: "Send a worker a message, or interrupt it",
+  path: "/agents/{id}/messages",
+  operationId: "messageAgent",
+  summary: "Send an agent a message, or interrupt it",
   description:
-    "To a worker with a live session, `text` is a `message`, delivered at its next turn; with " +
+    "To an agent with a live session, `text` is a `message`, delivered at its next turn; with " +
     "`interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` " +
-    "it only interrupts. To an `idle` or `interrupted` worker, it queues a `start` with `text` as " +
+    "it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as " +
     "its first message, resuming its last conversation if it has had one. 202 means queued, not " +
     "delivered.",
   request: {
-    ...workerParam,
+    ...agentParam,
     body: {
       ...json(
         z
@@ -1047,25 +1047,25 @@ export const messageWorkerRoute = forClientActing({
   },
   responses: {
     202: json(AcceptedSchema, "Queued, and not yet delivered."),
-    ...NO_WORKER,
-    ...REFUSED("the worker is retired, has no session to interrupt, or its host is `lost` or full."),
+    ...NO_AGENT,
+    ...REFUSED("the agent is retired, has no session to interrupt, or its host is `lost` or full."),
     ...FAILS,
   },
 });
 
-export const stopWorkerRoute = forClientActing({
+export const stopAgentRoute = forClientActing({
   method: "post",
-  path: "/fleet/workers/{id}/stop",
-  operationId: "stopWorker",
-  summary: "Stop a worker's session, or force it idle",
+  path: "/agents/{id}/stop",
+  operationId: "stopAgent",
+  summary: "Stop an agent's session, or force it idle",
   description:
-    "Queues a `stop`; the session ends and the worker is `idle` once its host reports doing it. " +
+    "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. " +
     "When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session " +
-    "is ended and the worker `idle` at once, and everything queued for it but `create` is withdrawn; " +
+    "is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; " +
     "nothing is sent. If its host later reports that session still running, it is sent a `stop`. " +
     "A caller need not send `force`: the service decides it from the host.",
   request: {
-    ...workerParam,
+    ...agentParam,
     body: {
       ...json(
         z
@@ -1080,86 +1080,86 @@ export const stopWorkerRoute = forClientActing({
   },
   responses: {
     202: json(AcceptedSchema, "The `stop` is queued; ended on record (its host `lost`, or `force`), and `commandId` is null."),
-    ...NO_WORKER,
-    ...REFUSED("the worker has no live session."),
+    ...NO_AGENT,
+    ...REFUSED("the agent has no live session."),
     ...FAILS,
   },
 });
 
-export const resumeWorkerRoute = forClientActing({
+export const resumeAgentRoute = forClientActing({
   method: "post",
-  path: "/fleet/workers/{id}/resume",
-  operationId: "resumeWorker",
-  summary: "Start a session continuing the worker's last conversation",
-  description: "Queues a `start` with `resume: true`, or `false` for a worker that has never had a session.",
-  request: workerParam,
+  path: "/agents/{id}/resume",
+  operationId: "resumeAgent",
+  summary: "Start a session continuing the agent's last conversation",
+  description: "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
+  request: agentParam,
   responses: {
     202: json(AcceptedSchema, "The `start` is queued."),
-    ...NO_WORKER,
-    ...REFUSED("the worker is retired or has a live session, or its host is `lost` or full."),
+    ...NO_AGENT,
+    ...REFUSED("the agent is retired or has a live session, or its host is `lost` or full."),
     ...FAILS,
   },
 });
 
-export const renameWorkerRoute = forClientActing({
+export const renameAgentRoute = forClientActing({
   method: "patch",
-  path: "/fleet/workers/{id}",
-  operationId: "renameWorker",
-  summary: "Rename a worker, or change or clear its title or label",
+  path: "/agents/{id}",
+  operationId: "renameAgent",
+  summary: "Rename an agent, or change or clear its title or label",
   description:
     "A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the " +
-    "folder and session it made under the name it was created with. `title` replaces the worker's, " +
-    "or with null clears it, whether or not the worker gave it. `label` likewise.",
+    "folder and session it made under the name it was created with. `title` replaces the agent's, " +
+    "or with null clears it, whether or not the agent gave it. `label` likewise.",
   request: {
-    ...workerParam,
+    ...agentParam,
     body: json(
       z
         .object({
-          name: WorkerName.optional(),
-          title: WorkerTitle.nullable().optional(),
-          label: WorkerLabel.nullable().optional(),
+          name: AgentName.optional(),
+          title: AgentTitle.nullable().optional(),
+          label: AgentLabel.nullable().optional(),
         })
         .refine(
           (body) => body.name !== undefined || body.title !== undefined || body.label !== undefined,
           "Give a name, a title, a label or any of them.",
         )
-        .openapi("WorkerRename"),
-      "The worker's new name, title or label.",
+        .openapi("AgentRename"),
+      "The agent's new name, title or label.",
     ),
   },
   responses: {
-    200: json(WorkerSchema, "Renamed."),
-    ...NO_WORKER,
-    ...REFUSED("the worker is retired, or a worker not retired already has `name`."),
+    200: json(AgentSchema, "Renamed."),
+    ...NO_AGENT,
+    ...REFUSED("the agent is retired, or an agent not retired already has `name`."),
     ...FAILS,
   },
 });
 
-export const retireWorkerRoute = forClientActing({
+export const retireAgentRoute = forClientActing({
   method: "delete",
-  path: "/fleet/workers/{id}",
-  operationId: "retireWorker",
-  summary: "Retire a worker",
+  path: "/agents/{id}",
+  operationId: "retireAgent",
+  summary: "Retire an agent",
   description:
     "Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had " +
     "a live session and then `retire`, which is offered until its host takes it. Its transcript, " +
     "sessions and home folder are kept.",
-  request: workerParam,
+  request: agentParam,
   responses: {
     202: json(AcceptedSchema, "Retired; `commandId` is the `retire`'s."),
-    ...NO_WORKER,
-    ...REFUSED("the worker is retired already."),
+    ...NO_AGENT,
+    ...REFUSED("the agent is retired already."),
     ...FAILS,
   },
 });
 
 export const transcriptRoute = forClientReading({
   method: "get",
-  path: "/fleet/workers/{id}/transcript",
+  path: "/agents/{id}/transcript",
   operationId: "listTranscript",
-  summary: "List a worker's transcript lines after a cursor, oldest first, across its sessions",
+  summary: "List an agent's transcript lines after a cursor, oldest first, across its sessions",
   description: "Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.",
-  request: { ...workerParam, query: z.object(page) },
+  request: { ...agentParam, query: z.object(page) },
   responses: {
     200: json(
       z
@@ -1170,20 +1170,20 @@ export const transcriptRoute = forClientReading({
         .openapi("Transcript"),
       "Lines after the cursor.",
     ),
-    ...NO_WORKER,
+    ...NO_AGENT,
     ...FAILS,
   },
 });
 
 export const listSessionsRoute = forClientReading({
   method: "get",
-  path: "/fleet/workers/{id}/sessions",
+  path: "/agents/{id}/sessions",
   operationId: "listSessions",
-  summary: "List a worker's sessions, oldest first",
-  request: workerParam,
+  summary: "List an agent's sessions, oldest first",
+  request: agentParam,
   responses: {
     200: json(z.object({ sessions: z.array(SessionSchema) }).openapi("SessionList"), "Every session."),
-    ...NO_WORKER,
+    ...NO_AGENT,
     ...FAILS,
   },
 });
@@ -1197,53 +1197,53 @@ export const SessionContextSchema = z
 
 export const getSessionContextRoute = forHost({
   method: "get",
-  path: "/fleet/workers/{id}/sessions/{sessionId}/context",
+  path: "/agents/{id}/sessions/{sessionId}/context",
   operationId: "getSessionContext",
   summary: "Read a live session's whole context, when its start was too large to carry it",
   description:
     "Read at the moment it is asked, as a start's is, and recorded on the session in place of what its " +
     "start carried, so the session's `contextNote` says what it was given.",
-  request: { params: z.object({ id: WorkerId, sessionId: SessionId }) },
+  request: { params: z.object({ id: AgentId, sessionId: SessionId }) },
   responses: {
     200: json(SessionContextSchema, "Its context and documents."),
-    ...NO_WORKER,
-    409: json(ErrorSchema, "The session is not the worker's live one."),
+    ...NO_AGENT,
+    409: json(ErrorSchema, "The session is not the agent's live one."),
     ...FAILS,
   },
 });
 
-export const listWorkerCommandsRoute = forClientReading({
+export const listAgentCommandsRoute = forClientReading({
   method: "get",
-  path: "/fleet/workers/{id}/commands",
-  operationId: "listWorkerCommands",
-  summary: "List the commands sent to a worker, oldest first, with their delivery",
+  path: "/agents/{id}/commands",
+  operationId: "listAgentCommands",
+  summary: "List the commands sent to an agent, oldest first, with their delivery",
   description: `Each is kept ${KEPT_FOR / 86400} days from when it was queued, then deleted.`,
-  request: workerParam,
+  request: agentParam,
   responses: {
     200: json(
-      z.object({ commands: z.array(SentCommandSchema) }).openapi("WorkerCommands"),
+      z.object({ commands: z.array(SentCommandSchema) }).openapi("AgentCommands"),
       "Every command kept.",
     ),
-    ...NO_WORKER,
+    ...NO_AGENT,
     ...FAILS,
   },
 });
 
-export const setWorkerStatusRoute = forWorker({
+export const setAgentStatusRoute = forAgent({
   method: "put",
-  path: "/fleet/workers/{id}/status",
-  operationId: "setWorkerStatus",
-  summary: "Say whether the worker needs the person, is in review or done, and what on",
+  path: "/agents/{id}/status",
+  operationId: "setAgentStatus",
+  summary: "Say whether the agent needs the person, is in review or done, and what on",
   description:
-    "Called by the worker itself, from its `page` skill, and by approval-service for the worker whose change it " +
-    "took or shipped. `waiting` says the worker needs the person; it stands until the person messages it. `working` " +
+    "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it " +
+    "took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` " +
     "only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change " +
     "is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. " +
-    "Not sent to its host. Once the worker is in `review` or `done` and no turn or background task of its runs, " +
+    "Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, " +
     "`whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is " +
     "stopped, never retired, so a send-back reaches it).",
   request: {
-    ...workerParam,
+    ...agentParam,
     body: json(
       z
         .strictObject({
@@ -1266,41 +1266,41 @@ export const setWorkerStatusRoute = forWorker({
               `The summary in a few words a person can scan in a list, e.g. "Needs merge OK". Omitted, it is null.`,
             ),
         })
-        .openapi("WorkerStatus"),
-      "What the worker says of itself.",
+        .openapi("AgentStatus"),
+      "What the agent says of itself.",
     ),
   },
   responses: {
-    200: json(WorkerSchema, "Recorded."),
-    ...NO_WORKER,
-    409: json(ErrorSchema, "The worker is retired, or has no live session to be `working` or `waiting`."),
+    200: json(AgentSchema, "Recorded."),
+    ...NO_AGENT,
+    409: json(ErrorSchema, "The agent is retired, or has no live session to be `working` or `waiting`."),
     ...FAILS,
   },
 });
 
-export const setWorkerTitleRoute = forWorker({
+export const setAgentTitleRoute = forAgent({
   method: "put",
-  path: "/fleet/workers/{id}/title",
-  operationId: "setWorkerTitle",
-  summary: "Name the worker for its work, once",
+  path: "/agents/{id}/title",
+  operationId: "setAgentTitle",
+  summary: "Name the agent for its work, once",
   description:
-    "Called by the worker itself, early in its first session, once it knows what it is there to do. " +
-    "Set once: after that only the person changes it, with `renameWorker`.",
+    "Called by the agent itself, early in its first session, once it knows what it is there to do. " +
+    "Set once: after that only the person changes it, with `renameAgent`.",
   request: {
-    ...workerParam,
-    body: json(z.strictObject({ title: WorkerTitle }).openapi("WorkerTitle"), "What the worker names itself."),
+    ...agentParam,
+    body: json(z.strictObject({ title: AgentTitle }).openapi("AgentTitle"), "What the agent names itself."),
   },
   responses: {
-    200: json(WorkerSchema, "Recorded."),
-    ...NO_WORKER,
-    409: json(ErrorSchema, "The worker is retired, or has a title already."),
+    200: json(AgentSchema, "Recorded."),
+    ...NO_AGENT,
+    409: json(ErrorSchema, "The agent is retired, or has a title already."),
     ...FAILS,
   },
 });
 
 export const getUsageRoute = forClientReading({
   method: "get",
-  path: "/fleet/usage",
+  path: "/usage",
   operationId: "getUsage",
   summary: "Read how much of the Claude account's 5-hour and weekly allowance is used",
   description:
@@ -1315,18 +1315,18 @@ export const getUsageRoute = forClientReading({
 const Priority = z.number().int().min(0).max(1000);
 
 const RoleFields = {
-  documents: Documents.describe("What each session of a worker made from it reads after `global`, by key, in this order."),
+  documents: Documents.describe("What each session of an agent made from it reads after `global`, by key, in this order."),
   credentials: CredentialNames.nullable().describe(
     "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these " +
       "a token of its own, by naming it in `credentials` as `{name, token}`.",
   ),
   whenDone: WhenDone,
-  label: WorkerLabel,
+  label: AgentLabel,
   description: Text.nullable().describe(
-    "What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.",
+    "What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.",
   ),
   priority: Priority.describe("Of two requests waiting to start, the higher starts first."),
-  brief: Text.nullable().describe("The first message of a worker made from it with no `brief` of its own; null when the caller must give one."),
+  brief: Text.nullable().describe("The first message of an agent made from it with no `brief` of its own; null when the caller must give one."),
 };
 
 export const RoleSchema = z
@@ -1345,11 +1345,11 @@ const roleParam = { params: z.object({ name: RoleName }) };
 
 export const listRolesRoute = forClientReading({
   method: "get",
-  path: "/fleet/roles",
+  path: "/roles",
   operationId: "listRoles",
   summary: "List roles",
   description:
-    "Every role a worker can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, " +
+    "Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, " +
     "`conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written " +
     "with `createRole` or `updateRole` is served as written.",
   responses: { 200: json(z.object({ roles: z.array(RoleSchema) }).openapi("RoleList"), "The roles."), ...FAILS },
@@ -1357,7 +1357,7 @@ export const listRolesRoute = forClientReading({
 
 export const getRoleRoute = forClientReading({
   method: "get",
-  path: "/fleet/roles/{name}",
+  path: "/roles/{name}",
   operationId: "getRole",
   summary: "Get one role",
   request: roleParam,
@@ -1366,10 +1366,10 @@ export const getRoleRoute = forClientReading({
 
 export const createRoleRoute = forClientActing({
   method: "post",
-  path: "/fleet/roles",
+  path: "/roles",
   operationId: "createRole",
   summary: "Create a role",
-  description: "Takes the stage's admin token. A worker made from it afterwards gets what it names; one made before keeps what it was given.",
+  description: "Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.",
   request: {
     body: json(
       z
@@ -1398,11 +1398,11 @@ export const createRoleRoute = forClientActing({
 
 export const updateRoleRoute = forClientActing({
   method: "patch",
-  path: "/fleet/roles/{name}",
+  path: "/roles/{name}",
   operationId: "updateRole",
   summary: "Change a role",
   description:
-    "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Workers made from it " +
+    "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it " +
     "before keep what they were given; those made after get what it names now.",
   request: {
     ...roleParam,
@@ -1426,7 +1426,7 @@ export const updateRoleRoute = forClientActing({
 
 // --- requests ---------------------------------------------------------------
 
-const RequestId = z.uuid().describe("Assigned by the service; also the id of the worker it starts.");
+const RequestId = z.uuid().describe("Assigned by the service; also the id of the agent it starts.");
 
 const Subject = z
   .string()
@@ -1434,7 +1434,7 @@ const Subject = z
   .min(1)
   .max(200)
   .describe("What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.")
-  .openapi({ example: "dakotacolorado/worker-service#41" });
+  .openapi({ example: "dakotacolorado/agent-service#41" });
 
 const ADMISSION =
   `A request starts once both usage windows read under ${USAGE_LIMIT * 100}% (from a reading under ` +
@@ -1443,7 +1443,7 @@ const ADMISSION =
   "runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which " +
   "is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, " +
   `still admits one request at a time while both windows read under ${Math.round(STALE_UNDER * 100)}%: one starts once none ` +
-  `has since that reading, or none in the last ${FRESH_FOR_MS / 60_000} minutes, so the worker it starts gives the next reading.`;
+  `has since that reading, or none in the last ${FRESH_FOR_MS / 60_000} minutes, so the agent it starts gives the next reading.`;
 
 export const RequestSchema = z
   .object({
@@ -1458,30 +1458,30 @@ export const RequestSchema = z
     requester: z.string().nullable().describe("The `claimed-by` header it was made with, unverified; null for none."),
     state: z
       .enum(REQUEST_STATES)
-      .describe("`waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start."),
+      .describe("`waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start."),
     why: z.string().nullable().describe("While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting."),
     priority: Priority.describe("Its role's, now."),
     position: z.number().int().min(1).nullable().describe("Where it stands among those waiting, 1 starting next; null once it is not waiting."),
     createdAt: Instant,
     startedAt: Instant.nullable(),
-    workerId: WorkerId.nullable().describe("The worker it started; null until it has."),
+    agentId: AgentId.nullable().describe("The agent it started; null until it has."),
     withdrawnAt: Instant.nullable(),
   })
-  .openapi("WorkerRequest");
+  .openapi("AgentRequest");
 
 const NO_REQUEST = { 404: json(ErrorSchema, "No request has this id.") };
 
 export const createRequestRoute = forClientActing({
   method: "post",
-  path: "/fleet/requests",
+  path: "/requests",
   operationId: "createRequest",
-  summary: "Ask for a worker in a role, to start when usage and a host allow",
+  summary: "Ask for an agent in a role, to start when usage and a host allow",
   description:
     "Records the request `waiting`, then admits what it can at once. " +
     ADMISSION +
-    " Admitted, the worker is made from its role as `createWorker` with `role` would, with this request's id as its " +
+    " Admitted, the agent is made from its role as `createAgent` with `role` would, with this request's id as its " +
     "own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's " +
-    "choosing; `workerId` names it. A request names no host or worker name.",
+    "choosing; `agentId` names it. A request names no host or agent name.",
   request: {
     headers: ClaimHeader,
     body: json(
@@ -1491,10 +1491,10 @@ export const createRequestRoute = forClientActing({
           brief: Text.optional().describe("The first message. Absent, the role's own; a role without one needs it."),
           item: ItemId.optional(),
           subject: Subject.optional(),
-          label: WorkerLabel.optional().describe("Absent, the role's."),
+          label: AgentLabel.optional().describe("Absent, the role's."),
           labels: Labels.optional().describe("What the host it is placed on must all carry. Absent, none."),
           credentials: Credentials.optional().describe(
-            "In place of the role's, as `createWorker` takes them; a `{name, token}` is kept for the worker it " +
+            "In place of the role's, as `createAgent` takes them; a `{name, token}` is kept for the agent it " +
               "starts from now, and deleted if it is withdrawn.",
           ),
           tokens: z
@@ -1504,29 +1504,29 @@ export const createRequestRoute = forClientActing({
             .refine((given) => new Set(given.map((t) => t.name)).size === given.length, "Name each token once.")
             .optional()
             .describe(
-              "Tokens of the caller's, each given the worker in place of that service's shared secret, for services it " +
-                "is given anyway: its role's, or `credentials`. The worker keeps its role's services, so a caller with " +
+              "Tokens of the caller's, each given the agent in place of that service's shared secret, for services it " +
+                "is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with " +
                 "a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service " +
-                "the worker would not be given, or one `credentials` gives a token for.",
+                "the agent would not be given, or one `credentials` gives a token for.",
             ),
         })
-        .openapi("NewWorkerRequest"),
-      "What kind of worker, and what it is for.",
+        .openapi("NewAgentRequest"),
+      "What kind of agent, and what it is for.",
     ),
   },
   responses: {
     201: json(RequestSchema, "Recorded, and `started` if it was admitted at once."),
     ...FAILS,
-    400: json(ErrorSchema, "The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the worker would not be given."),
+    400: json(ErrorSchema, "The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given."),
     503: json(ErrorSchema, "No API token is configured, or a token of its own could not be kept."),
   },
 });
 
 export const listRequestsRoute = forClientReading({
   method: "get",
-  path: "/fleet/requests",
+  path: "/requests",
   operationId: "listRequests",
-  summary: "List requests for workers",
+  summary: "List requests for agents",
   description:
     "Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting " +
     "first in that order and then the rest newest first. " +
@@ -1538,21 +1538,21 @@ export const listRequestsRoute = forClientReading({
       item: ItemId.optional().describe("Only those for this work item."),
     }),
   },
-  responses: { 200: json(z.object({ requests: z.array(RequestSchema) }).openapi("WorkerRequestList"), "The requests."), ...FAILS },
+  responses: { 200: json(z.object({ requests: z.array(RequestSchema) }).openapi("AgentRequestList"), "The requests."), ...FAILS },
 });
 
 export const getRequestRoute = forClientReading({
   method: "get",
-  path: "/fleet/requests/{id}",
+  path: "/requests/{id}",
   operationId: "getRequest",
-  summary: "Get one request for a worker",
+  summary: "Get one request for an agent",
   request: { params: z.object({ id: RequestId }) },
   responses: { 200: json(RequestSchema, "The request."), ...NO_REQUEST, ...FAILS },
 });
 
 export const withdrawRequestRoute = forClientActing({
   method: "delete",
-  path: "/fleet/requests/{id}",
+  path: "/requests/{id}",
   operationId: "withdrawRequest",
   summary: "Withdraw a waiting request, so it never starts",
   request: { params: z.object({ id: RequestId }) },
@@ -1568,13 +1568,13 @@ export const TICKET_TTL = 60;
 
 export const socketTicketRoute = forClientActing({
   method: "post",
-  path: "/fleet/socket-tickets",
+  path: "/socket-tickets",
   operationId: "createSocketTicket",
   summary: "Trade the bearer token for a one-time socket ticket",
   description:
     "A browser cannot set a header on a WebSocket, and a long-lived token must never go in a " +
     `URL, so a page opens \`<socketUrl>?ticket=<ticket>\` instead. Good once, for ${TICKET_TTL} ` +
-    "seconds. The socket then receives `SocketOutbound` messages: `worker`, `lines` and `host`.",
+    "seconds. The socket then receives `SocketOutbound` messages: `agent`, `lines` and `host`.",
   responses: {
     201: json(
       z
@@ -1595,17 +1595,17 @@ export type TranscriptLine = z.infer<typeof TranscriptLineSchema>;
 export type RoleView = z.infer<typeof RoleSchema>;
 export type RequestView = z.infer<typeof RequestSchema>;
 export type LineReport = z.infer<typeof LineReportSchema>;
-export type WorkerReport = z.infer<typeof WorkerReportSchema>;
+export type AgentReport = z.infer<typeof AgentReportSchema>;
 export type CommandReport = z.infer<typeof CommandReportSchema>;
 
 export const SkillSchema = z
   .object({
-    key: z.string().describe("Whose skills these are: `worker-service`."),
+    key: z.string().describe("Whose skills these are: `agent-service`."),
     version: z.number().int().describe("The deployed tree's commit count, 0 when deployed from outside git."),
     commit: z.string().describe("The deployed commit, ending `-dirty` when deployed with uncommitted changes."),
     files: z.array(
       z.object({
-        path: z.string().describe("Under the worker's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`."),
+        path: z.string().describe("Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`."),
         content: z.string(),
         executable: z.boolean(),
       }),
@@ -1615,12 +1615,12 @@ export const SkillSchema = z
 
 export const getSkillRoute = forClientReading({
   method: "get",
-  path: "/fleet/skill",
+  path: "/skill",
   operationId: "getSkill",
-  summary: "Read the clients workers call this deployment with",
+  summary: "Read the clients agents call this deployment with",
   description:
     "The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. " +
     "Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, " +
-    "so a worker calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.",
+    "so an agent calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.",
   responses: { 200: json(SkillSchema, "The skills' files."), 401: FAILS[401], 503: FAILS[503] },
 });

@@ -1,10 +1,10 @@
-# worker-service
+# agent-service
 
 > Version 0.1.0
 
-The API for workers: lasting agents, each living on one host, run in sessions. Hosts send a heartbeat every 30 seconds, which keeps them `connected` and says what they offer. Clients read state and issue commands. Every route under `/fleet` needs the stage's bearer token.
+The API for agents: lasting agents, each living on one host, run in sessions. Hosts send a heartbeat every 30 seconds, which keeps them `connected` and says what they offer. Clients read state and issue commands. Every route under every route needs the stage's bearer token.
 
-Commands and reports go by WebSocket at `socketUrl` alone: a host connects with `?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with `?ticket=<one-time ticket>` from `createSocketTicket`. What goes up is a `SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's sockets get each `command` as it is queued, and a host's socket, once open, every command still pending for it; every viewer gets each `worker` as it changes, `lines` as they arrive and the `host` on each heartbeat. A command stays queued until a report names it, so a dropped socket loses nothing: it is replayed on the next.
+Commands and reports go by WebSocket at `socketUrl` alone: a host connects with `?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with `?ticket=<one-time ticket>` from `createSocketTicket`. What goes up is a `SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's sockets get each `command` as it is queued, and a host's socket, once open, every command still pending for it; every viewer gets each `agent` as it changes, `lines` as they arrive and the `host` on each heartbeat. A command stays queued until a report names it, so a dropped socket loses nothing: it is replayed on the next.
 
 No body carries the server's time: a response's `Date` header is when it was made, and so when a host's `status` was computed.
 
@@ -14,34 +14,34 @@ No body carries the server's time: a response's `Date` header is when it was mad
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | [/health](#gethealth) | Health check |
-| GET | [/fleet/skill](#getfleetskill) | Read the clients workers call this deployment with |
-| POST | [/fleet/hosts/{id}/heartbeat](#postfleethostsidheartbeat) | Keep the host connected, and say what it offers |
-| GET | [/fleet/hosts](#getfleethosts) | List hosts |
-| DELETE | [/fleet/hosts/{id}](#deletefleethostsid) | Deregister a host |
-| GET | [/fleet/roles](#getfleetroles) | List roles |
-| POST | [/fleet/roles](#postfleetroles) | Create a role |
-| GET | [/fleet/roles/{name}](#getfleetrolesname) | Get one role |
-| PATCH | [/fleet/roles/{name}](#patchfleetrolesname) | Change a role |
-| POST | [/fleet/requests](#postfleetrequests) | Ask for a worker in a role, to start when usage and a host allow |
-| GET | [/fleet/requests](#getfleetrequests) | List requests for workers |
-| GET | [/fleet/requests/{id}](#getfleetrequestsid) | Get one request for a worker |
-| DELETE | [/fleet/requests/{id}](#deletefleetrequestsid) | Withdraw a waiting request, so it never starts |
-| POST | [/fleet/workers](#postfleetworkers) | Create a worker on a host |
-| GET | [/fleet/workers](#getfleetworkers) | List workers |
-| GET | [/fleet/workers/{id}](#getfleetworkersid) | Get one worker |
-| PATCH | [/fleet/workers/{id}](#patchfleetworkersid) | Rename a worker, or change or clear its title or label |
-| DELETE | [/fleet/workers/{id}](#deletefleetworkersid) | Retire a worker |
-| POST | [/fleet/workers/{id}/messages](#postfleetworkersidmessages) | Send a worker a message, or interrupt it |
-| POST | [/fleet/workers/{id}/stop](#postfleetworkersidstop) | Stop a worker's session, or force it idle |
-| POST | [/fleet/workers/{id}/resume](#postfleetworkersidresume) | Start a session continuing the worker's last conversation |
-| PUT | [/fleet/workers/{id}/status](#putfleetworkersidstatus) | Say whether the worker needs the person, is in review or done, and what on |
-| PUT | [/fleet/workers/{id}/title](#putfleetworkersidtitle) | Name the worker for its work, once |
-| GET | [/fleet/workers/{id}/transcript](#getfleetworkersidtranscript) | List a worker's transcript lines after a cursor, oldest first, across its sessions |
-| GET | [/fleet/workers/{id}/sessions](#getfleetworkersidsessions) | List a worker's sessions, oldest first |
-| GET | [/fleet/workers/{id}/sessions/{sessionId}/context](#getfleetworkersidsessionssessionidcontext) | Read a live session's whole context, when its start was too large to carry it |
-| GET | [/fleet/workers/{id}/commands](#getfleetworkersidcommands) | List the commands sent to a worker, oldest first, with their delivery |
-| GET | [/fleet/usage](#getfleetusage) | Read how much of the Claude account's 5-hour and weekly allowance is used |
-| POST | [/fleet/socket-tickets](#postfleetsocket-tickets) | Trade the bearer token for a one-time socket ticket |
+| GET | [/skill](#getskill) | Read the clients agents call this deployment with |
+| POST | [/hosts/{id}/heartbeat](#posthostsidheartbeat) | Keep the host connected, and say what it offers |
+| GET | [/hosts](#gethosts) | List hosts |
+| DELETE | [/hosts/{id}](#deletehostsid) | Deregister a host |
+| GET | [/roles](#getroles) | List roles |
+| POST | [/roles](#postroles) | Create a role |
+| GET | [/roles/{name}](#getrolesname) | Get one role |
+| PATCH | [/roles/{name}](#patchrolesname) | Change a role |
+| POST | [/requests](#postrequests) | Ask for an agent in a role, to start when usage and a host allow |
+| GET | [/requests](#getrequests) | List requests for agents |
+| GET | [/requests/{id}](#getrequestsid) | Get one request for an agent |
+| DELETE | [/requests/{id}](#deleterequestsid) | Withdraw a waiting request, so it never starts |
+| POST | [/agents](#postagents) | Create an agent on a host |
+| GET | [/agents](#getagents) | List agents |
+| GET | [/agents/{id}](#getagentsid) | Get one agent |
+| PATCH | [/agents/{id}](#patchagentsid) | Rename an agent, or change or clear its title or label |
+| DELETE | [/agents/{id}](#deleteagentsid) | Retire an agent |
+| POST | [/agents/{id}/messages](#postagentsidmessages) | Send an agent a message, or interrupt it |
+| POST | [/agents/{id}/stop](#postagentsidstop) | Stop an agent's session, or force it idle |
+| POST | [/agents/{id}/resume](#postagentsidresume) | Start a session continuing the agent's last conversation |
+| PUT | [/agents/{id}/status](#putagentsidstatus) | Say whether the agent needs the person, is in review or done, and what on |
+| PUT | [/agents/{id}/title](#putagentsidtitle) | Name the agent for its work, once |
+| GET | [/agents/{id}/transcript](#getagentsidtranscript) | List an agent's transcript lines after a cursor, oldest first, across its sessions |
+| GET | [/agents/{id}/sessions](#getagentsidsessions) | List an agent's sessions, oldest first |
+| GET | [/agents/{id}/sessions/{sessionId}/context](#getagentsidsessionssessionidcontext) | Read a live session's whole context, when its start was too large to carry it |
+| GET | [/agents/{id}/commands](#getagentsidcommands) | List the commands sent to an agent, oldest first, with their delivery |
+| GET | [/usage](#getusage) | Read how much of the Claude account's 5-hour and weekly allowance is used |
+| POST | [/socket-tickets](#postsocket-tickets) | Trade the bearer token for a one-time socket ticket |
 
 ## Reference Table
 
@@ -49,8 +49,8 @@ No body carries the server's time: a response's `Date` header is when it was mad
 | --- | --- | --- |
 | bearerAuth | [#/components/securitySchemes/bearerAuth](#componentssecurityschemesbearerauth) |  |
 | SocketInbound | [#/components/schemas/SocketInbound](#componentsschemassocketinbound) |  |
-| SocketReport | [#/components/schemas/SocketReport](#componentsschemassocketreport) | Host to service, the only way a host reports: whenever something changes, and in full (every worker, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`workerId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it. |
-| WorkerReport | [#/components/schemas/WorkerReport](#componentsschemasworkerreport) |  |
+| SocketReport | [#/components/schemas/SocketReport](#componentsschemassocketreport) | Host to service, the only way a host reports: whenever something changes, and in full (every agent, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`agentId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it. |
+| AgentReport | [#/components/schemas/AgentReport](#componentsschemasagentreport) |  |
 | LineReport | [#/components/schemas/LineReport](#componentsschemaslinereport) |  |
 | CommandReport | [#/components/schemas/CommandReport](#componentsschemascommandreport) |  |
 | SessionTokensReport | [#/components/schemas/SessionTokensReport](#componentsschemassessiontokensreport) | A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice. |
@@ -60,18 +60,18 @@ No body carries the server's time: a response's `Date` header is when it was mad
 | SocketOutbound | [#/components/schemas/SocketOutbound](#componentsschemassocketoutbound) |  |
 | CommandPush | [#/components/schemas/CommandPush](#componentsschemascommandpush) | To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), since API Gateway takes no post to a socket still in `$connect`, and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`. |
 | Command | [#/components/schemas/Command](#componentsschemascommand) |  |
-| CreateCommand | [#/components/schemas/CreateCommand](#componentsschemascreatecommand) | Make the worker's home folder. |
+| CreateCommand | [#/components/schemas/CreateCommand](#componentsschemascreatecommand) | Make the agent's home folder. |
 | StartCommand | [#/components/schemas/StartCommand](#componentsschemasstartcommand) |  |
 | MessageCommand | [#/components/schemas/MessageCommand](#componentsschemasmessagecommand) | Deliver `text` at the session's next turn. |
 | InterruptCommand | [#/components/schemas/InterruptCommand](#componentsschemasinterruptcommand) |  |
-| StopCommand | [#/components/schemas/StopCommand](#componentsschemasstopcommand) | End the session; the worker becomes idle. |
-| RetireCommand | [#/components/schemas/RetireCommand](#componentsschemasretirecommand) | Stop any session and take the worker off the host. Its home folder is kept. |
-| WorkerPush | [#/components/schemas/WorkerPush](#componentsschemasworkerpush) | To viewers, whenever a worker changes. |
-| Worker | [#/components/schemas/Worker](#componentsschemasworker) |  |
+| StopCommand | [#/components/schemas/StopCommand](#componentsschemasstopcommand) | End the session; the agent becomes idle. |
+| RetireCommand | [#/components/schemas/RetireCommand](#componentsschemasretirecommand) | Stop any session and take the agent off the host. Its home folder is kept. |
+| AgentPush | [#/components/schemas/AgentPush](#componentsschemasagentpush) | To viewers, whenever an agent changes. |
+| Agent | [#/components/schemas/Agent](#componentsschemasagent) |  |
 | Tokens | [#/components/schemas/Tokens](#componentsschemastokens) | Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows. |
 | LinesPush | [#/components/schemas/LinesPush](#componentsschemaslinespush) | To viewers, as lines arrive. |
 | TranscriptLine | [#/components/schemas/TranscriptLine](#componentsschemastranscriptline) |  |
-| SentPush | [#/components/schemas/SentPush](#componentsschemassentpush) | To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listWorkerCommands` says. |
+| SentPush | [#/components/schemas/SentPush](#componentsschemassentpush) | To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listAgentCommands` says. |
 | SentCommand | [#/components/schemas/SentCommand](#componentsschemassentcommand) |  |
 | HostPush | [#/components/schemas/HostPush](#componentsschemashostpush) | To viewers, on every heartbeat. |
 | Host | [#/components/schemas/Host](#componentsschemashost) |  |
@@ -88,23 +88,23 @@ No body carries the server's time: a response's `Date` header is when it was mad
 | Role | [#/components/schemas/Role](#componentsschemasrole) |  |
 | NewRole | [#/components/schemas/NewRole](#componentsschemasnewrole) |  |
 | RoleChange | [#/components/schemas/RoleChange](#componentsschemasrolechange) |  |
-| WorkerRequest | [#/components/schemas/WorkerRequest](#componentsschemasworkerrequest) |  |
-| NewWorkerRequest | [#/components/schemas/NewWorkerRequest](#componentsschemasnewworkerrequest) |  |
-| WorkerRequestList | [#/components/schemas/WorkerRequestList](#componentsschemasworkerrequestlist) |  |
-| NewWorker | [#/components/schemas/NewWorker](#componentsschemasnewworker) |  |
-| WorkerList | [#/components/schemas/WorkerList](#componentsschemasworkerlist) |  |
+| AgentRequest | [#/components/schemas/AgentRequest](#componentsschemasagentrequest) |  |
+| NewAgentRequest | [#/components/schemas/NewAgentRequest](#componentsschemasnewagentrequest) |  |
+| AgentRequestList | [#/components/schemas/AgentRequestList](#componentsschemasagentrequestlist) |  |
+| NewAgent | [#/components/schemas/NewAgent](#componentsschemasnewagent) |  |
+| AgentList | [#/components/schemas/AgentList](#componentsschemasagentlist) |  |
 | Accepted | [#/components/schemas/Accepted](#componentsschemasaccepted) |  |
 | Message | [#/components/schemas/Message](#componentsschemasmessage) |  |
 | Stop | [#/components/schemas/Stop](#componentsschemasstop) |  |
-| WorkerRename | [#/components/schemas/WorkerRename](#componentsschemasworkerrename) |  |
-| WorkerStatus | [#/components/schemas/WorkerStatus](#componentsschemasworkerstatus) |  |
-| WorkerTitle | [#/components/schemas/WorkerTitle](#componentsschemasworkertitle) |  |
+| AgentRename | [#/components/schemas/AgentRename](#componentsschemasagentrename) |  |
+| AgentStatus | [#/components/schemas/AgentStatus](#componentsschemasagentstatus) |  |
+| AgentTitle | [#/components/schemas/AgentTitle](#componentsschemasagenttitle) |  |
 | Transcript | [#/components/schemas/Transcript](#componentsschemastranscript) |  |
 | Cursor | [#/components/schemas/Cursor](#componentsschemascursor) | Pass as `after` to read what follows. Unchanged when nothing does yet. |
 | SessionList | [#/components/schemas/SessionList](#componentsschemassessionlist) |  |
 | Session | [#/components/schemas/Session](#componentsschemassession) |  |
 | SessionContext | [#/components/schemas/SessionContext](#componentsschemassessioncontext) |  |
-| WorkerCommands | [#/components/schemas/WorkerCommands](#componentsschemasworkercommands) |  |
+| AgentCommands | [#/components/schemas/AgentCommands](#componentsschemasagentcommands) |  |
 | SocketTicket | [#/components/schemas/SocketTicket](#componentsschemassocketticket) |  |
 
 ## Path Details
@@ -136,16 +136,16 @@ No body carries the server's time: a response's `Date` header is when it was mad
 
 ***
 
-### [GET]/fleet/skill
+### [GET]/skill
 
 - Summary  
-  Read the clients workers call this deployment with
+  Read the clients agents call this deployment with
 
 - Operation id  
   getSkill
 
 - Description  
-  The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, so a worker calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.
+  The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, so an agent calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.
 
 - Tags  
   clients, reading
@@ -161,14 +161,14 @@ No body carries the server's time: a response's `Date` header is when it was mad
 
 ```typescript
 {
-  // Whose skills these are: `worker-service`.
+  // Whose skills these are: `agent-service`.
   key: string
   // The deployed tree's commit count, 0 when deployed from outside git.
   version: integer
   // The deployed commit, ending `-dirty` when deployed with uncommitted changes.
   commit: string
   files: {
-    // Under the worker's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`.
+    // Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`.
     path: string
     content: string
     executable: boolean
@@ -198,7 +198,7 @@ No body carries the server's time: a response's `Date` header is when it was mad
 
 ***
 
-### [POST]/fleet/hosts/{id}/heartbeat
+### [POST]/hosts/{id}/heartbeat
 
 - Summary  
   Keep the host connected, and say what it offers
@@ -229,7 +229,7 @@ What the host is and offers.
 
 ```typescript
 {
-  // The worker-host build that sent the heartbeat.
+  // The agent-host build that sent the heartbeat.
   version: string //maxLength: 64
   labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
   // How many sessions the host will run at once. Absent, capacity is unknown.
@@ -284,7 +284,7 @@ What the host is and offers.
 
 ***
 
-### [GET]/fleet/hosts
+### [GET]/hosts
 
 - Summary  
   List hosts
@@ -320,14 +320,14 @@ status?: string //pattern: ^(connected|disconnected|lost)(,(connected|disconnect
   hosts: {
     id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
     heartbeatAt: string //format: date-time
-    // The worker-host build of its last heartbeat.
+    // The agent-host build of its last heartbeat.
     version: string | null
     // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
     status: enum[connected, disconnected, lost]
     labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
     // How many sessions the host will run at once; null if it has never said.
     capacity: integer | null //minimum: 0 //maximum: 256
-    // How many more sessions it will take now: `capacity` minus its workers with a live session. Null when `capacity` is.
+    // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
     available: integer | null //minimum: 0 //maximum: 256
   }[]
 }
@@ -365,7 +365,7 @@ status?: string //pattern: ^(connected|disconnected|lost)(,(connected|disconnect
 
 ***
 
-### [DELETE]/fleet/hosts/{id}
+### [DELETE]/hosts/{id}
 
 - Summary  
   Deregister a host
@@ -374,7 +374,7 @@ status?: string //pattern: ^(connected|disconnected|lost)(,(connected|disconnect
   deleteHost
 
 - Description  
-  Deletes the host's record, which is how a host leaves `listHosts`. Its workers, their transcripts and the commands sent to them stay on record, and its workers read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.
+  Deletes the host's record, which is how a host leaves `listHosts`. Its agents, their transcripts and the commands sent to them stay on record, and its agents read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.
 
 - Tags  
   clients, acting
@@ -434,7 +434,7 @@ id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
 
 ***
 
-### [GET]/fleet/roles
+### [GET]/roles
 
 - Summary  
   List roles
@@ -443,7 +443,7 @@ id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
   listRoles
 
 - Description  
-  Every role a worker can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `createRole` or `updateRole` is served as written.
+  Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `createRole` or `updateRole` is served as written.
 
 - Tags  
   clients, reading
@@ -460,20 +460,20 @@ id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
 ```typescript
 {
   roles: {
-    // A role's name, such as `reviewer`: what kind of worker it makes.
+    // A role's name, such as `reviewer`: what kind of agent it makes.
     name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
     documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
     // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
     credentials: array | null //maxItems: 16
-    // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
     whenDone: enum[keep, stop, retire]
-    // A short tag shown beside the worker's name, so sessions can be told apart.
+    // A short tag shown beside the agent's name, so sessions can be told apart.
     label: string //minLength: 1 //maxLength: 40
-    // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+    // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
     description: string | null //minLength: 1 //maxLength: 16384
     // Of two requests waiting to start, the higher starts first.
     priority: integer //minimum: 0 //maximum: 1000
-    // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+    // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
     brief: string | null //minLength: 1 //maxLength: 16384
     // When it was last written; null for a role as the stage was seeded with it.
     updatedAt: string | null //format: date-time
@@ -513,7 +513,7 @@ id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
 
 ***
 
-### [POST]/fleet/roles
+### [POST]/roles
 
 - Summary  
   Create a role
@@ -522,7 +522,7 @@ id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
   createRole
 
 - Description  
-  Takes the stage's admin token. A worker made from it afterwards gets what it names; one made before keeps what it was given.
+  Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.
 
 - Tags  
   clients, acting
@@ -538,14 +538,14 @@ The role.
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // Absent, null: the stage's defaults.
   credentials?: array | null //maxItems: 16
   // Absent, `keep`.
   whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label: string //minLength: 1 //maxLength: 40
   // Absent, null.
   description?: string | null //minLength: 1 //maxLength: 16384
@@ -564,20 +564,20 @@ The role.
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label: string //minLength: 1 //maxLength: 40
-  // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
   description: string | null //minLength: 1 //maxLength: 16384
   // Of two requests waiting to start, the higher starts first.
   priority: integer //minimum: 0 //maximum: 1000
-  // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
   brief: string | null //minLength: 1 //maxLength: 16384
   // When it was last written; null for a role as the stage was seeded with it.
   updatedAt: string | null //format: date-time
@@ -636,7 +636,7 @@ The role.
 
 ***
 
-### [GET]/fleet/roles/{name}
+### [GET]/roles/{name}
 
 - Summary  
   Get one role
@@ -653,8 +653,8 @@ The role.
 #### Parameters(Path)
 
 ```typescript
-// A role's name, such as `reviewer`: what kind of worker it makes.
-// A role's name, such as `reviewer`: what kind of worker it makes.
+// A role's name, such as `reviewer`: what kind of agent it makes.
+// A role's name, such as `reviewer`: what kind of agent it makes.
 name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
 ```
 
@@ -666,20 +666,20 @@ name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label: string //minLength: 1 //maxLength: 40
-  // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
   description: string | null //minLength: 1 //maxLength: 16384
   // Of two requests waiting to start, the higher starts first.
   priority: integer //minimum: 0 //maximum: 1000
-  // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
   brief: string | null //minLength: 1 //maxLength: 16384
   // When it was last written; null for a role as the stage was seeded with it.
   updatedAt: string | null //format: date-time
@@ -728,7 +728,7 @@ name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
 
 ***
 
-### [PATCH]/fleet/roles/{name}
+### [PATCH]/roles/{name}
 
 - Summary  
   Change a role
@@ -737,7 +737,7 @@ name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   updateRole
 
 - Description  
-  Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Workers made from it before keep what they were given; those made after get what it names now.
+  Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.
 
 - Tags  
   clients, acting
@@ -748,8 +748,8 @@ name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
 #### Parameters(Path)
 
 ```typescript
-// A role's name, such as `reviewer`: what kind of worker it makes.
-// A role's name, such as `reviewer`: what kind of worker it makes.
+// A role's name, such as `reviewer`: what kind of agent it makes.
+// A role's name, such as `reviewer`: what kind of agent it makes.
 name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
 ```
 
@@ -764,15 +764,15 @@ What changes.
   documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials?: array | null //maxItems: 16
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label?: string //minLength: 1 //maxLength: 40
-  // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
   description?: string | null //minLength: 1 //maxLength: 16384
   // Of two requests waiting to start, the higher starts first.
   priority?: integer //minimum: 0 //maximum: 1000
-  // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
   brief?: string | null //minLength: 1 //maxLength: 16384
 }
 ```
@@ -785,20 +785,20 @@ What changes.
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label: string //minLength: 1 //maxLength: 40
-  // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
   description: string | null //minLength: 1 //maxLength: 16384
   // Of two requests waiting to start, the higher starts first.
   priority: integer //minimum: 0 //maximum: 1000
-  // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
   brief: string | null //minLength: 1 //maxLength: 16384
   // When it was last written; null for a role as the stage was seeded with it.
   updatedAt: string | null //format: date-time
@@ -857,16 +857,16 @@ What changes.
 
 ***
 
-### [POST]/fleet/requests
+### [POST]/requests
 
 - Summary  
-  Ask for a worker in a role, to start when usage and a host allow
+  Ask for an agent in a role, to start when usage and a host allow
 
 - Operation id  
   createRequest
 
 - Description  
-  Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the worker it starts gives the next reading. Admitted, the worker is made from its role as `createWorker` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `workerId` names it. A request names no host or worker name.
+  Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `createAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name.
 
 - Tags  
   clients, acting
@@ -877,36 +877,36 @@ What changes.
 #### Headers
 
 ```typescript
-// Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
-// Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
+// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
+// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
 claimed-by?: string //minLength: 1 //maxLength: 200
 ```
 
 #### RequestBody
 
-What kind of worker, and what it is for.
+What kind of agent, and what it is for.
 
 - application/json
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // The first message. Absent, the role's own; a role without one needs it.
   brief?: string //minLength: 1 //maxLength: 16384
-  // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
   item?: string //minLength: 1 //maxLength: 64
   // What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.
   subject?: string //minLength: 1 //maxLength: 200
   // Absent, the role's.
   label?: string //minLength: 1 //maxLength: 40
   labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this worker in place of the name's shared secret.
+  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
 {
      name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
      token: string //minLength: 1 //maxLength: 4096
    })[] //maxItems: 16
-  // A name with a token of the caller's, given this worker in place of the name's shared secret.
+  // A name with a token of the caller's, given this agent in place of the name's shared secret.
   tokens: {
     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
     token: string //minLength: 1 //maxLength: 4096
@@ -922,13 +922,13 @@ What kind of worker, and what it is for.
 
 ```typescript
 {
-  // Assigned by the service; also the id of the worker it starts.
+  // Assigned by the service; also the id of the agent it starts.
   id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // The first message; null to start on the role's own.
   brief: string | null
-  // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
   item: string | null //minLength: 1 //maxLength: 64
   // What it is for when that is no work item; null for none.
   subject: string | null
@@ -939,7 +939,7 @@ What kind of worker, and what it is for.
   credentials: array | null
   // The `claimed-by` header it was made with, unverified; null for none.
   requester: string | null
-  // `waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start.
+  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
   state: enum[waiting, started, withdrawn]
   // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
   why: string | null
@@ -949,13 +949,13 @@ What kind of worker, and what it is for.
   position: integer | null //minimum: 1
   createdAt: string //format: date-time
   startedAt: string | null //format: date-time
-  // The worker it started; null until it has.
-  workerId: string | null //format: uuid
+  // The agent it started; null until it has.
+  agentId: string | null //format: uuid
   withdrawnAt: string | null //format: date-time
 }
 ```
 
-- 400 The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the worker would not be given.
+- 400 The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.
 
 `application/json`
 
@@ -987,16 +987,16 @@ What kind of worker, and what it is for.
 
 ***
 
-### [GET]/fleet/requests
+### [GET]/requests
 
 - Summary  
-  List requests for workers
+  List requests for agents
 
 - Operation id  
   listRequests
 
 - Description  
-  Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the worker it starts gives the next reading.
+  Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading.
 
 - Tags  
   clients, reading
@@ -1033,13 +1033,13 @@ item?: string //minLength: 1 //maxLength: 64
 ```typescript
 {
   requests: {
-    // Assigned by the service; also the id of the worker it starts.
+    // Assigned by the service; also the id of the agent it starts.
     id: string //format: uuid
-    // A role's name, such as `reviewer`: what kind of worker it makes.
+    // A role's name, such as `reviewer`: what kind of agent it makes.
     role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
     // The first message; null to start on the role's own.
     brief: string | null
-    // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+    // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
     item: string | null //minLength: 1 //maxLength: 64
     // What it is for when that is no work item; null for none.
     subject: string | null
@@ -1050,7 +1050,7 @@ item?: string //minLength: 1 //maxLength: 64
     credentials: array | null
     // The `claimed-by` header it was made with, unverified; null for none.
     requester: string | null
-    // `waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start.
+    // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
     state: enum[waiting, started, withdrawn]
     // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
     why: string | null
@@ -1060,8 +1060,8 @@ item?: string //minLength: 1 //maxLength: 64
     position: integer | null //minimum: 1
     createdAt: string //format: date-time
     startedAt: string | null //format: date-time
-    // The worker it started; null until it has.
-    workerId: string | null //format: uuid
+    // The agent it started; null until it has.
+    agentId: string | null //format: uuid
     withdrawnAt: string | null //format: date-time
   }[]
 }
@@ -1099,10 +1099,10 @@ item?: string //minLength: 1 //maxLength: 64
 
 ***
 
-### [GET]/fleet/requests/{id}
+### [GET]/requests/{id}
 
 - Summary  
-  Get one request for a worker
+  Get one request for an agent
 
 - Operation id  
   getRequest
@@ -1116,8 +1116,8 @@ item?: string //minLength: 1 //maxLength: 64
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service; also the id of the worker it starts.
-// Assigned by the service; also the id of the worker it starts.
+// Assigned by the service; also the id of the agent it starts.
+// Assigned by the service; also the id of the agent it starts.
 id: string //format: uuid
 ```
 
@@ -1129,13 +1129,13 @@ id: string //format: uuid
 
 ```typescript
 {
-  // Assigned by the service; also the id of the worker it starts.
+  // Assigned by the service; also the id of the agent it starts.
   id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // The first message; null to start on the role's own.
   brief: string | null
-  // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
   item: string | null //minLength: 1 //maxLength: 64
   // What it is for when that is no work item; null for none.
   subject: string | null
@@ -1146,7 +1146,7 @@ id: string //format: uuid
   credentials: array | null
   // The `claimed-by` header it was made with, unverified; null for none.
   requester: string | null
-  // `waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start.
+  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
   state: enum[waiting, started, withdrawn]
   // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
   why: string | null
@@ -1156,8 +1156,8 @@ id: string //format: uuid
   position: integer | null //minimum: 1
   createdAt: string //format: date-time
   startedAt: string | null //format: date-time
-  // The worker it started; null until it has.
-  workerId: string | null //format: uuid
+  // The agent it started; null until it has.
+  agentId: string | null //format: uuid
   withdrawnAt: string | null //format: date-time
 }
 ```
@@ -1204,7 +1204,7 @@ id: string //format: uuid
 
 ***
 
-### [DELETE]/fleet/requests/{id}
+### [DELETE]/requests/{id}
 
 - Summary  
   Withdraw a waiting request, so it never starts
@@ -1221,8 +1221,8 @@ id: string //format: uuid
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service; also the id of the worker it starts.
-// Assigned by the service; also the id of the worker it starts.
+// Assigned by the service; also the id of the agent it starts.
+// Assigned by the service; also the id of the agent it starts.
 id: string //format: uuid
 ```
 
@@ -1234,13 +1234,13 @@ id: string //format: uuid
 
 ```typescript
 {
-  // Assigned by the service; also the id of the worker it starts.
+  // Assigned by the service; also the id of the agent it starts.
   id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // The first message; null to start on the role's own.
   brief: string | null
-  // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
   item: string | null //minLength: 1 //maxLength: 64
   // What it is for when that is no work item; null for none.
   subject: string | null
@@ -1251,7 +1251,7 @@ id: string //format: uuid
   credentials: array | null
   // The `claimed-by` header it was made with, unverified; null for none.
   requester: string | null
-  // `waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start.
+  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
   state: enum[waiting, started, withdrawn]
   // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
   why: string | null
@@ -1261,8 +1261,8 @@ id: string //format: uuid
   position: integer | null //minimum: 1
   createdAt: string //format: date-time
   startedAt: string | null //format: date-time
-  // The worker it started; null until it has.
-  workerId: string | null //format: uuid
+  // The agent it started; null until it has.
+  agentId: string | null //format: uuid
   withdrawnAt: string | null //format: date-time
 }
 ```
@@ -1319,16 +1319,16 @@ id: string //format: uuid
 
 ***
 
-### [POST]/fleet/workers
+### [POST]/agents
 
 - Summary  
-  Create a worker on a host
+  Create an agent on a host
 
 - Operation id  
-  createWorker
+  createAgent
 
 - Description  
-  Records the worker `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the worker is `working` at once. Without a `hostId`, the service chooses a connected host with room.
+  Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.
 
 - Tags  
   clients, acting
@@ -1339,22 +1339,22 @@ id: string //format: uuid
 #### Headers
 
 ```typescript
-// Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
-// Who is making the worker: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
+// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
+// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
 claimed-by?: string //minLength: 1 //maxLength: 200
 ```
 
 #### RequestBody
 
-Who the worker is and where it lives.
+Who the agent is and where it lives.
 
 - application/json
 
 ```typescript
 {
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the worker's, each unless given here, which overrides the role's. A role this stage does not have is refused.
+  // The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.
   role?: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`.
   hostId?: string //pattern: ^[A-Za-z0-9._-]{1,64}$
@@ -1363,11 +1363,11 @@ Who the worker is and where it lives.
   brief?: string //minLength: 1 //maxLength: 16384
   // Absent, the role's, or without one none.
   label?: string //minLength: 1 //maxLength: 40
-  // The work item it is started on, kept for its life so `listWorkers` with `item` finds it. Absent, none.
+  // The work item it is started on, kept for its life so `listAgents` with `item` finds it. Absent, none.
   item?: string //minLength: 1 //maxLength: 64
   // Absent, the role's, or without one `keep`.
   whenDone?: enum[keep, stop, retire]
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this worker in place of the name's shared secret.
+  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
 {
      name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
      token: string //minLength: 1 //maxLength: 4096
@@ -1384,13 +1384,13 @@ Who the worker is and where it lives.
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
+  // Assigned by the service when the agent is created.
   id: string //format: uuid
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
   title: string | null
-  // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
   label: string | null
   // The work item it was started on, as given when it was made; null for none.
   item: string | null //minLength: 1 //maxLength: 64
@@ -1407,9 +1407,9 @@ Who the worker is and where it lives.
     // Input tokens read from the prompt cache.
     cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
   }
-  // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
   createdBy: string | null
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
   documents: string[]
   // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -1422,11 +1422,11 @@ Who the worker is and where it lives.
   createdAt: string //format: date-time
   // When its host last reported a change to it; null until its host first reports it.
   reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
   status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
   summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
   headline: string | null
   // When `summary` was said; null when there is none.
   saidAt: string | null //format: date-time
@@ -1471,7 +1471,7 @@ Who the worker is and where it lives.
 }
 ```
 
-- 409 Nothing was queued: a worker not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.
+- 409 Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.
 
 `application/json`
 
@@ -1493,16 +1493,16 @@ Who the worker is and where it lives.
 
 ***
 
-### [GET]/fleet/workers
+### [GET]/agents
 
 - Summary  
-  List workers
+  List agents
 
 - Operation id  
-  listWorkers
+  listAgents
 
 - Description  
-  Retired workers are listed only with `all=true`, or with `item`. With `createdBy`, only the workers made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
+  Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
 
 - Tags  
   clients, reading
@@ -1517,39 +1517,39 @@ createdBy?: string //minLength: 1 //maxLength: 200
 ```
 
 ```typescript
-// A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
-// A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+// A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
+// A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
 item?: string //minLength: 1 //maxLength: 64
 ```
 
 ```typescript
-// Only the workers made from this role.
-// Only the workers made from this role.
+// Only the agents made from this role.
+// Only the agents made from this role.
 role?: string //pattern: ^[a-z][a-z0-9-]{0,39}$
 ```
 
 ```typescript
-// `true` includes retired workers.
-// `true` includes retired workers.
+// `true` includes retired agents.
+// `true` includes retired agents.
 all?: enum[true, false]
 ```
 
 #### Responses
 
-- 200 Matching workers.
+- 200 Matching agents.
 
 `application/json`
 
 ```typescript
 {
-  workers: {
-    // Assigned by the service when the worker is created.
+  agents: {
+    // Assigned by the service when the agent is created.
     id: string //format: uuid
-    // Unique among workers not retired. Names its home folder and tmux session on its host.
+    // Unique among agents not retired. Names its home folder and tmux session on its host.
     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-    // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+    // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
     title: string | null
-    // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+    // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
     label: string | null
     // The work item it was started on, as given when it was made; null for none.
     item: string | null //minLength: 1 //maxLength: 64
@@ -1566,9 +1566,9 @@ all?: enum[true, false]
       // Input tokens read from the prompt cache.
       cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
     }
-    // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+    // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
     createdBy: string | null
-    // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
     whenDone: enum[keep, stop, retire]
     documents: string[]
     // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -1581,11 +1581,11 @@ all?: enum[true, false]
     createdAt: string //format: date-time
     // When its host last reported a change to it; null until its host first reports it.
     reportedAt: string | null //format: date-time
-    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
     status: enum[working, idle, waiting, review, done, ] | null
-    // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+    // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
     summary: string | null
-    // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+    // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
     headline: string | null
     // When `summary` was said; null when there is none.
     saidAt: string | null //format: date-time
@@ -1633,13 +1633,13 @@ all?: enum[true, false]
 
 ***
 
-### [GET]/fleet/workers/{id}
+### [GET]/agents/{id}
 
 - Summary  
-  Get one worker
+  Get one agent
 
 - Operation id  
-  getWorker
+  getAgent
 
 - Tags  
   clients, reading
@@ -1650,26 +1650,26 @@ all?: enum[true, false]
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
 #### Responses
 
-- 200 The worker.
+- 200 The agent.
 
 `application/json`
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
+  // Assigned by the service when the agent is created.
   id: string //format: uuid
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
   title: string | null
-  // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
   label: string | null
   // The work item it was started on, as given when it was made; null for none.
   item: string | null //minLength: 1 //maxLength: 64
@@ -1686,9 +1686,9 @@ id: string //format: uuid
     // Input tokens read from the prompt cache.
     cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
   }
-  // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
   createdBy: string | null
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
   documents: string[]
   // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -1701,11 +1701,11 @@ id: string //format: uuid
   createdAt: string //format: date-time
   // When its host last reported a change to it; null until its host first reports it.
   reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
   status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
   summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
   headline: string | null
   // When `summary` was said; null when there is none.
   saidAt: string | null //format: date-time
@@ -1740,7 +1740,7 @@ id: string //format: uuid
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -1762,16 +1762,16 @@ id: string //format: uuid
 
 ***
 
-### [PATCH]/fleet/workers/{id}
+### [PATCH]/agents/{id}
 
 - Summary  
-  Rename a worker, or change or clear its title or label
+  Rename an agent, or change or clear its title or label
 
 - Operation id  
-  renameWorker
+  renameAgent
 
 - Description  
-  A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the worker's, or with null clears it, whether or not the worker gave it. `label` likewise.
+  A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the agent's, or with null clears it, whether or not the agent gave it. `label` likewise.
 
 - Tags  
   clients, acting
@@ -1782,24 +1782,24 @@ id: string //format: uuid
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
 #### RequestBody
 
-The worker's new name, title or label.
+The agent's new name, title or label.
 
 - application/json
 
 ```typescript
 {
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name?: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker is there to do, in a few words.
+  // What the agent is there to do, in a few words.
   title?: string | null //minLength: 1 //maxLength: 40
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label?: string | null //minLength: 1 //maxLength: 40
 }
 ```
@@ -1812,13 +1812,13 @@ The worker's new name, title or label.
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
+  // Assigned by the service when the agent is created.
   id: string //format: uuid
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
   title: string | null
-  // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
   label: string | null
   // The work item it was started on, as given when it was made; null for none.
   item: string | null //minLength: 1 //maxLength: 64
@@ -1835,9 +1835,9 @@ The worker's new name, title or label.
     // Input tokens read from the prompt cache.
     cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
   }
-  // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
   createdBy: string | null
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
   documents: string[]
   // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -1850,11 +1850,11 @@ The worker's new name, title or label.
   createdAt: string //format: date-time
   // When its host last reported a change to it; null until its host first reports it.
   reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
   status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
   summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
   headline: string | null
   // When `summary` was said; null when there is none.
   saidAt: string | null //format: date-time
@@ -1889,7 +1889,7 @@ The worker's new name, title or label.
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -1899,7 +1899,7 @@ The worker's new name, title or label.
 }
 ```
 
-- 409 Nothing was queued: the worker is retired, or a worker not retired already has `name`.
+- 409 Nothing was queued: the agent is retired, or an agent not retired already has `name`.
 
 `application/json`
 
@@ -1921,13 +1921,13 @@ The worker's new name, title or label.
 
 ***
 
-### [DELETE]/fleet/workers/{id}
+### [DELETE]/agents/{id}
 
 - Summary  
-  Retire a worker
+  Retire an agent
 
 - Operation id  
-  retireWorker
+  retireAgent
 
 - Description  
   Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
@@ -1941,8 +1941,8 @@ The worker's new name, title or label.
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -1954,7 +1954,7 @@ id: string //format: uuid
 
 ```typescript
 {
-  // Follow it in `listWorkerCommands`. Null when nothing was sent to the host.
+  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
   commandId: string | null
 }
 ```
@@ -1979,7 +1979,7 @@ id: string //format: uuid
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -1989,7 +1989,7 @@ id: string //format: uuid
 }
 ```
 
-- 409 Nothing was queued: the worker is retired already.
+- 409 Nothing was queued: the agent is retired already.
 
 `application/json`
 
@@ -2011,16 +2011,16 @@ id: string //format: uuid
 
 ***
 
-### [POST]/fleet/workers/{id}/messages
+### [POST]/agents/{id}/messages
 
 - Summary  
-  Send a worker a message, or interrupt it
+  Send an agent a message, or interrupt it
 
 - Operation id  
-  messageWorker
+  messageAgent
 
 - Description  
-  To a worker with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` worker, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.
+  To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.
 
 - Tags  
   clients, acting
@@ -2031,8 +2031,8 @@ id: string //format: uuid
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -2061,7 +2061,7 @@ What to tell it.
 
 ```typescript
 {
-  // Follow it in `listWorkerCommands`. Null when nothing was sent to the host.
+  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
   commandId: string | null
 }
 ```
@@ -2086,7 +2086,7 @@ What to tell it.
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2096,7 +2096,7 @@ What to tell it.
 }
 ```
 
-- 409 Nothing was queued: the worker is retired, has no session to interrupt, or its host is `lost` or full.
+- 409 Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.
 
 `application/json`
 
@@ -2118,16 +2118,16 @@ What to tell it.
 
 ***
 
-### [POST]/fleet/workers/{id}/stop
+### [POST]/agents/{id}/stop
 
 - Summary  
-  Stop a worker's session, or force it idle
+  Stop an agent's session, or force it idle
 
 - Operation id  
-  stopWorker
+  stopAgent
 
 - Description  
-  Queues a `stop`; the session ends and the worker is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the worker `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.
+  Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.
 
 - Tags  
   clients, acting
@@ -2138,8 +2138,8 @@ What to tell it.
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -2164,7 +2164,7 @@ Optional. Absent, the host is asked to stop it.
 
 ```typescript
 {
-  // Follow it in `listWorkerCommands`. Null when nothing was sent to the host.
+  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
   commandId: string | null
 }
 ```
@@ -2189,7 +2189,7 @@ Optional. Absent, the host is asked to stop it.
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2199,7 +2199,7 @@ Optional. Absent, the host is asked to stop it.
 }
 ```
 
-- 409 Nothing was queued: the worker has no live session.
+- 409 Nothing was queued: the agent has no live session.
 
 `application/json`
 
@@ -2221,16 +2221,16 @@ Optional. Absent, the host is asked to stop it.
 
 ***
 
-### [POST]/fleet/workers/{id}/resume
+### [POST]/agents/{id}/resume
 
 - Summary  
-  Start a session continuing the worker's last conversation
+  Start a session continuing the agent's last conversation
 
 - Operation id  
-  resumeWorker
+  resumeAgent
 
 - Description  
-  Queues a `start` with `resume: true`, or `false` for a worker that has never had a session.
+  Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.
 
 - Tags  
   clients, acting
@@ -2241,8 +2241,8 @@ Optional. Absent, the host is asked to stop it.
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -2254,7 +2254,7 @@ id: string //format: uuid
 
 ```typescript
 {
-  // Follow it in `listWorkerCommands`. Null when nothing was sent to the host.
+  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
   commandId: string | null
 }
 ```
@@ -2279,7 +2279,7 @@ id: string //format: uuid
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2289,7 +2289,7 @@ id: string //format: uuid
 }
 ```
 
-- 409 Nothing was queued: the worker is retired or has a live session, or its host is `lost` or full.
+- 409 Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.
 
 `application/json`
 
@@ -2311,19 +2311,19 @@ id: string //format: uuid
 
 ***
 
-### [PUT]/fleet/workers/{id}/status
+### [PUT]/agents/{id}/status
 
 - Summary  
-  Say whether the worker needs the person, is in review or done, and what on
+  Say whether the agent needs the person, is in review or done, and what on
 
 - Operation id  
-  setWorkerStatus
+  setAgentStatus
 
 - Description  
-  Called by the worker itself, from its `page` skill, and by approval-service for the worker whose change it took or shipped. `waiting` says the worker needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the worker is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).
+  Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).
 
 - Tags  
-  workers, of themselves
+  agents, of themselves
 
 - Security  
   bearerAuth
@@ -2331,14 +2331,14 @@ id: string //format: uuid
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
 #### RequestBody
 
-What the worker says of itself.
+What the agent says of itself.
 
 - application/json
 
@@ -2360,13 +2360,13 @@ What the worker says of itself.
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
+  // Assigned by the service when the agent is created.
   id: string //format: uuid
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
   title: string | null
-  // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
   label: string | null
   // The work item it was started on, as given when it was made; null for none.
   item: string | null //minLength: 1 //maxLength: 64
@@ -2383,9 +2383,9 @@ What the worker says of itself.
     // Input tokens read from the prompt cache.
     cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
   }
-  // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
   createdBy: string | null
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
   documents: string[]
   // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -2398,11 +2398,11 @@ What the worker says of itself.
   createdAt: string //format: date-time
   // When its host last reported a change to it; null until its host first reports it.
   reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
   status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
   summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
   headline: string | null
   // When `summary` was said; null when there is none.
   saidAt: string | null //format: date-time
@@ -2437,7 +2437,7 @@ What the worker says of itself.
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2447,7 +2447,7 @@ What the worker says of itself.
 }
 ```
 
-- 409 The worker is retired, or has no live session to be `working` or `waiting`.
+- 409 The agent is retired, or has no live session to be `working` or `waiting`.
 
 `application/json`
 
@@ -2469,19 +2469,19 @@ What the worker says of itself.
 
 ***
 
-### [PUT]/fleet/workers/{id}/title
+### [PUT]/agents/{id}/title
 
 - Summary  
-  Name the worker for its work, once
+  Name the agent for its work, once
 
 - Operation id  
-  setWorkerTitle
+  setAgentTitle
 
 - Description  
-  Called by the worker itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `renameWorker`.
+  Called by the agent itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `renameAgent`.
 
 - Tags  
-  workers, of themselves
+  agents, of themselves
 
 - Security  
   bearerAuth
@@ -2489,20 +2489,20 @@ What the worker says of itself.
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
 #### RequestBody
 
-What the worker names itself.
+What the agent names itself.
 
 - application/json
 
 ```typescript
 {
-  // What the worker is there to do, in a few words.
+  // What the agent is there to do, in a few words.
   title: string //minLength: 1 //maxLength: 40
 }
 ```
@@ -2515,13 +2515,13 @@ What the worker names itself.
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
+  // Assigned by the service when the agent is created.
   id: string //format: uuid
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
   title: string | null
-  // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
   label: string | null
   // The work item it was started on, as given when it was made; null for none.
   item: string | null //minLength: 1 //maxLength: 64
@@ -2538,9 +2538,9 @@ What the worker names itself.
     // Input tokens read from the prompt cache.
     cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
   }
-  // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
   createdBy: string | null
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
   documents: string[]
   // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -2553,11 +2553,11 @@ What the worker names itself.
   createdAt: string //format: date-time
   // When its host last reported a change to it; null until its host first reports it.
   reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
   status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
   summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
   headline: string | null
   // When `summary` was said; null when there is none.
   saidAt: string | null //format: date-time
@@ -2592,7 +2592,7 @@ What the worker names itself.
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2602,7 +2602,7 @@ What the worker names itself.
 }
 ```
 
-- 409 The worker is retired, or has a title already.
+- 409 The agent is retired, or has a title already.
 
 `application/json`
 
@@ -2624,10 +2624,10 @@ What the worker names itself.
 
 ***
 
-### [GET]/fleet/workers/{id}/transcript
+### [GET]/agents/{id}/transcript
 
 - Summary  
-  List a worker's transcript lines after a cursor, oldest first, across its sessions
+  List an agent's transcript lines after a cursor, oldest first, across its sessions
 
 - Operation id  
   listTranscript
@@ -2644,8 +2644,8 @@ What the worker names itself.
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -2669,12 +2669,12 @@ limit?: integer //minimum: 1 //maximum: 1000 //default: 500
 ```typescript
 {
   lines: {
-    // Line number per worker, from 0, continuing across its sessions.
+    // Line number per agent, from 0, continuing across its sessions.
     seq: integer //minimum: 0
     at: string //format: date-time
     // Assigned by the service when it queues the session's `start`.
     sessionId: string //format: uuid
-    // `instruction`: a message sent to the worker.
+    // `instruction`: a message sent to the agent.
     from: enum[agent, tool, instruction]
     // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
     text: string
@@ -2706,7 +2706,7 @@ limit?: integer //minimum: 1 //maximum: 1000 //default: 500
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2728,10 +2728,10 @@ limit?: integer //minimum: 1 //maximum: 1000 //default: 500
 
 ***
 
-### [GET]/fleet/workers/{id}/sessions
+### [GET]/agents/{id}/sessions
 
 - Summary  
-  List a worker's sessions, oldest first
+  List an agent's sessions, oldest first
 
 - Operation id  
   listSessions
@@ -2745,8 +2745,8 @@ limit?: integer //minimum: 1 //maximum: 1000 //default: 500
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -2761,8 +2761,8 @@ id: string //format: uuid
   sessions: {
     // Assigned by the service when it queues the session's `start`.
     id: string //format: uuid
-    // Assigned by the service when the worker is created.
-    workerId: string //format: uuid
+    // Assigned by the service when the agent is created.
+    agentId: string //format: uuid
     // When its `start` was queued.
     startedAt: string //format: date-time
     endedAt: string | null //format: date-time
@@ -2805,7 +2805,7 @@ id: string //format: uuid
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2827,7 +2827,7 @@ id: string //format: uuid
 
 ***
 
-### [GET]/fleet/workers/{id}/sessions/{sessionId}/context
+### [GET]/agents/{id}/sessions/{sessionId}/context
 
 - Summary  
   Read a live session's whole context, when its start was too large to carry it
@@ -2847,8 +2847,8 @@ id: string //format: uuid
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -2900,7 +2900,7 @@ sessionId: string //format: uuid
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -2910,7 +2910,7 @@ sessionId: string //format: uuid
 }
 ```
 
-- 409 The session is not the worker's live one.
+- 409 The session is not the agent's live one.
 
 `application/json`
 
@@ -2932,13 +2932,13 @@ sessionId: string //format: uuid
 
 ***
 
-### [GET]/fleet/workers/{id}/commands
+### [GET]/agents/{id}/commands
 
 - Summary  
-  List the commands sent to a worker, oldest first, with their delivery
+  List the commands sent to an agent, oldest first, with their delivery
 
 - Operation id  
-  listWorkerCommands
+  listAgentCommands
 
 - Description  
   Each is kept 7 days from when it was queued, then deleted.
@@ -2952,8 +2952,8 @@ sessionId: string //format: uuid
 #### Parameters(Path)
 
 ```typescript
-// Assigned by the service when the worker is created.
-// Assigned by the service when the worker is created.
+// Assigned by the service when the agent is created.
+// Assigned by the service when the agent is created.
 id: string //format: uuid
 ```
 
@@ -2969,7 +2969,7 @@ id: string //format: uuid
     // discriminator: kind
     command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
     queuedAt: string //format: date-time
-    // `queued`: not yet reported by the host. `written`: its text is in the worker's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its worker was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
+    // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
     delivery: enum[queued, written, withdrawn, done, rejected]
     // When the host last reported it; null until then.
     reportedAt: string | null //format: date-time
@@ -2999,7 +2999,7 @@ id: string //format: uuid
 }
 ```
 
-- 404 No worker has this id.
+- 404 No agent has this id.
 
 `application/json`
 
@@ -3021,7 +3021,7 @@ id: string //format: uuid
 
 ***
 
-### [GET]/fleet/usage
+### [GET]/usage
 
 - Summary  
   Read how much of the Claude account's 5-hour and weekly allowance is used
@@ -3077,7 +3077,7 @@ id: string //format: uuid
 
 ***
 
-### [POST]/fleet/socket-tickets
+### [POST]/socket-tickets
 
 - Summary  
   Trade the bearer token for a one-time socket ticket
@@ -3086,7 +3086,7 @@ id: string //format: uuid
   createSocketTicket
 
 - Description  
-  A browser cannot set a header on a WebSocket, and a long-lived token must never go in a URL, so a page opens `<socketUrl>?ticket=<ticket>` instead. Good once, for 60 seconds. The socket then receives `SocketOutbound` messages: `worker`, `lines` and `host`.
+  A browser cannot set a header on a WebSocket, and a long-lived token must never go in a URL, so a page opens `<socketUrl>?ticket=<ticket>` instead. Good once, for 60 seconds. The socket then receives `SocketOutbound` messages: `agent`, `lines` and `host`.
 
 - Tags  
   clients, acting
@@ -3155,11 +3155,11 @@ id: string //format: uuid
 ### #/components/schemas/SocketReport
 
 ```typescript
-// Host to service, the only way a host reports: whenever something changes, and in full (every worker, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`workerId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it.
+// Host to service, the only way a host reports: whenever something changes, and in full (every agent, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`agentId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it.
 {
   type: enum[report]
-  workers: {
-    // Assigned by the service when the worker is created.
+  agents: {
+    // Assigned by the service when the agent is created.
     id: string //format: uuid
     // `idle`: no session running. `working`: its session is taking a turn (from Claude Code's `system` `init` to its `result`). `waiting`: its session is running and between turns. `interrupted`: a session the service started is not running, and was not stopped (a crash, a restart, or a session it does not know).
     state: enum[idle, working, waiting, interrupted]
@@ -3171,14 +3171,14 @@ id: string //format: uuid
     told?: boolean
   }[] //maxItems: 256
   lines: {
-    // Assigned by the service when the worker is created.
-    workerId: string //format: uuid
+    // Assigned by the service when the agent is created.
+    agentId: string //format: uuid
     // Assigned by the service when it queues the session's `start`.
     sessionId: string //format: uuid
-    // Deduplicated by (`workerId`, `seq`), so resending is safe.
+    // Deduplicated by (`agentId`, `seq`), so resending is safe.
     seq: integer //minimum: 0
     at: string //format: date-time
-    // `instruction`: a message sent to the worker.
+    // `instruction`: a message sent to the agent.
     from: enum[agent, tool, instruction]
     // Kept whole up to 65536 characters, and past that cut rather than refused, so the rest of its report is not lost with it. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
     text: string
@@ -3191,13 +3191,13 @@ id: string //format: uuid
     ok: boolean
     // Why not, when `ok` is false, in the host's words.
     error?: string //maxLength: 4096
-    // `false` with `ok` true: a command with text, written to its worker's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.
+    // `false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.
     taken?: boolean
   }[] //maxItems: 1000
   // A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice.
   tokens: {
-    // Assigned by the service when the worker is created.
-    workerId: string //format: uuid
+    // Assigned by the service when the agent is created.
+    agentId: string //format: uuid
     // Assigned by the service when it queues the session's `start`.
     sessionId: string //format: uuid
     // Input tokens not read from or written to the prompt cache.
@@ -3225,11 +3225,11 @@ id: string //format: uuid
 }
 ```
 
-### #/components/schemas/WorkerReport
+### #/components/schemas/AgentReport
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
+  // Assigned by the service when the agent is created.
   id: string //format: uuid
   // `idle`: no session running. `working`: its session is taking a turn (from Claude Code's `system` `init` to its `result`). `waiting`: its session is running and between turns. `interrupted`: a session the service started is not running, and was not stopped (a crash, a restart, or a session it does not know).
   state: enum[idle, working, waiting, interrupted]
@@ -3246,14 +3246,14 @@ id: string //format: uuid
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   // Assigned by the service when it queues the session's `start`.
   sessionId: string //format: uuid
-  // Deduplicated by (`workerId`, `seq`), so resending is safe.
+  // Deduplicated by (`agentId`, `seq`), so resending is safe.
   seq: integer //minimum: 0
   at: string //format: date-time
-  // `instruction`: a message sent to the worker.
+  // `instruction`: a message sent to the agent.
   from: enum[agent, tool, instruction]
   // Kept whole up to 65536 characters, and past that cut rather than refused, so the rest of its report is not lost with it. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
   text: string
@@ -3271,7 +3271,7 @@ id: string //format: uuid
   ok: boolean
   // Why not, when `ok` is false, in the host's words.
   error?: string //maxLength: 4096
-  // `false` with `ok` true: a command with text, written to its worker's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.
+  // `false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.
   taken?: boolean
 }
 ```
@@ -3281,8 +3281,8 @@ id: string //format: uuid
 ```typescript
 // A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice.
 {
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   // Assigned by the service when it queues the session's `start`.
   sessionId: string //format: uuid
   // Input tokens not read from or written to the prompt cache.
@@ -3339,7 +3339,7 @@ id: string //format: uuid
 
 ```typescript
 // discriminator: type
-#/components/schemas/CommandPush | #/components/schemas/WorkerPush | #/components/schemas/LinesPush | #/components/schemas/SentPush | #/components/schemas/HostPush | #/components/schemas/UsagePush | #/components/schemas/SocketError
+#/components/schemas/CommandPush | #/components/schemas/AgentPush | #/components/schemas/LinesPush | #/components/schemas/SentPush | #/components/schemas/HostPush | #/components/schemas/UsagePush | #/components/schemas/SocketError
 ```
 
 ### #/components/schemas/CommandPush
@@ -3363,14 +3363,14 @@ id: string //format: uuid
 ### #/components/schemas/CreateCommand
 
 ```typescript
-// Make the worker's home folder.
+// Make the agent's home folder.
 {
   // Report the command by this id once it is taken.
   id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   kind: enum[create]
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
 }
 ```
@@ -3381,16 +3381,16 @@ id: string //format: uuid
 {
   // Report the command by this id once it is taken.
   id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   kind: enum[start]
   // Assigned by the service when it queues the session's `start`.
   sessionId: string //format: uuid
-  // True to carry on the worker's last conversation (`--continue`), false to begin one.
+  // True to carry on the agent's last conversation (`--continue`), false to begin one.
   resume: boolean
   // The session's first message, when it has one.
   text?: string //minLength: 1 //maxLength: 16384
-  // Files to write into the worker's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand.
+  // Files to write into the agent's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand.
   context: {
     key: string
     version: integer
@@ -3417,7 +3417,7 @@ id: string //format: uuid
   }
   credentials?: string[] //pattern: ^[a-z0-9][a-z0-9-]{0,63}$ //maxItems: 16
   ownCredentials?: string[] //pattern: ^[a-z0-9][a-z0-9-]{0,63}$ //maxItems: 16
-  // The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the worker's folder that only it can read, and the session's environment is set from that file, never from a command line.
+  // The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the agent's folder that only it can read, and the session's environment is set from that file, never from a command line.
   secrets: {
     [key: string]: string
   }
@@ -3431,8 +3431,8 @@ id: string //format: uuid
 {
   // Report the command by this id once it is taken.
   id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   kind: enum[message]
   text: string //minLength: 1 //maxLength: 16384
 }
@@ -3444,10 +3444,10 @@ id: string //format: uuid
 {
   // Report the command by this id once it is taken.
   id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   kind: enum[interrupt]
-  // Sent to the worker once the current turn has stopped.
+  // Sent to the agent once the current turn has stopped.
   text?: string //minLength: 1 //maxLength: 16384
 }
 ```
@@ -3455,12 +3455,12 @@ id: string //format: uuid
 ### #/components/schemas/StopCommand
 
 ```typescript
-// End the session; the worker becomes idle.
+// End the session; the agent becomes idle.
 {
   // Report the command by this id once it is taken.
   id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   kind: enum[stop]
 }
 ```
@@ -3468,30 +3468,30 @@ id: string //format: uuid
 ### #/components/schemas/RetireCommand
 
 ```typescript
-// Stop any session and take the worker off the host. Its home folder is kept.
+// Stop any session and take the agent off the host. Its home folder is kept.
 {
   // Report the command by this id once it is taken.
   id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   kind: enum[retire]
 }
 ```
 
-### #/components/schemas/WorkerPush
+### #/components/schemas/AgentPush
 
 ```typescript
-// To viewers, whenever a worker changes.
+// To viewers, whenever an agent changes.
 {
-  type: enum[worker]
-  worker: {
-    // Assigned by the service when the worker is created.
+  type: enum[agent]
+  agent: {
+    // Assigned by the service when the agent is created.
     id: string //format: uuid
-    // Unique among workers not retired. Names its home folder and tmux session on its host.
+    // Unique among agents not retired. Names its home folder and tmux session on its host.
     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-    // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+    // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
     title: string | null
-    // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+    // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
     label: string | null
     // The work item it was started on, as given when it was made; null for none.
     item: string | null //minLength: 1 //maxLength: 64
@@ -3508,9 +3508,9 @@ id: string //format: uuid
       // Input tokens read from the prompt cache.
       cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
     }
-    // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+    // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
     createdBy: string | null
-    // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
     whenDone: enum[keep, stop, retire]
     documents: string[]
     // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -3523,11 +3523,11 @@ id: string //format: uuid
     createdAt: string //format: date-time
     // When its host last reported a change to it; null until its host first reports it.
     reportedAt: string | null //format: date-time
-    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
     status: enum[working, idle, waiting, review, done, ] | null
-    // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+    // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
     summary: string | null
-    // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+    // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
     headline: string | null
     // When `summary` was said; null when there is none.
     saidAt: string | null //format: date-time
@@ -3543,17 +3543,17 @@ id: string //format: uuid
 }
 ```
 
-### #/components/schemas/Worker
+### #/components/schemas/Agent
 
 ```typescript
 {
-  // Assigned by the service when the worker is created.
+  // Assigned by the service when the agent is created.
   id: string //format: uuid
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
   title: string | null
-  // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
   label: string | null
   // The work item it was started on, as given when it was made; null for none.
   item: string | null //minLength: 1 //maxLength: 64
@@ -3570,9 +3570,9 @@ id: string //format: uuid
     // Input tokens read from the prompt cache.
     cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
   }
-  // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
   createdBy: string | null
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
   documents: string[]
   // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -3585,11 +3585,11 @@ id: string //format: uuid
   createdAt: string //format: date-time
   // When its host last reported a change to it; null until its host first reports it.
   reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
   status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
   summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
   headline: string | null
   // When `summary` was said; null when there is none.
   saidAt: string | null //format: date-time
@@ -3626,15 +3626,15 @@ id: string //format: uuid
 // To viewers, as lines arrive.
 {
   type: enum[lines]
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   lines: {
-    // Line number per worker, from 0, continuing across its sessions.
+    // Line number per agent, from 0, continuing across its sessions.
     seq: integer //minimum: 0
     at: string //format: date-time
     // Assigned by the service when it queues the session's `start`.
     sessionId: string //format: uuid
-    // `instruction`: a message sent to the worker.
+    // `instruction`: a message sent to the agent.
     from: enum[agent, tool, instruction]
     // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
     text: string
@@ -3648,12 +3648,12 @@ id: string //format: uuid
 
 ```typescript
 {
-  // Line number per worker, from 0, continuing across its sessions.
+  // Line number per agent, from 0, continuing across its sessions.
   seq: integer //minimum: 0
   at: string //format: date-time
   // Assigned by the service when it queues the session's `start`.
   sessionId: string //format: uuid
-  // `instruction`: a message sent to the worker.
+  // `instruction`: a message sent to the agent.
   from: enum[agent, tool, instruction]
   // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
   text: string
@@ -3665,16 +3665,16 @@ id: string //format: uuid
 ### #/components/schemas/SentPush
 
 ```typescript
-// To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listWorkerCommands` says.
+// To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listAgentCommands` says.
 {
   type: enum[sent]
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   sent: {
     // discriminator: kind
     command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
     queuedAt: string //format: date-time
-    // `queued`: not yet reported by the host. `written`: its text is in the worker's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its worker was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
+    // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
     delivery: enum[queued, written, withdrawn, done, rejected]
     // When the host last reported it; null until then.
     reportedAt: string | null //format: date-time
@@ -3691,7 +3691,7 @@ id: string //format: uuid
   // discriminator: kind
   command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
   queuedAt: string //format: date-time
-  // `queued`: not yet reported by the host. `written`: its text is in the worker's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its worker was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
+  // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
   delivery: enum[queued, written, withdrawn, done, rejected]
   // When the host last reported it; null until then.
   reportedAt: string | null //format: date-time
@@ -3709,14 +3709,14 @@ id: string //format: uuid
   host: {
     id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
     heartbeatAt: string //format: date-time
-    // The worker-host build of its last heartbeat.
+    // The agent-host build of its last heartbeat.
     version: string | null
     // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
     status: enum[connected, disconnected, lost]
     labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
     // How many sessions the host will run at once; null if it has never said.
     capacity: integer | null //minimum: 0 //maximum: 256
-    // How many more sessions it will take now: `capacity` minus its workers with a live session. Null when `capacity` is.
+    // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
     available: integer | null //minimum: 0 //maximum: 256
   }
 }
@@ -3728,14 +3728,14 @@ id: string //format: uuid
 {
   id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
   heartbeatAt: string //format: date-time
-  // The worker-host build of its last heartbeat.
+  // The agent-host build of its last heartbeat.
   version: string | null
   // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
   status: enum[connected, disconnected, lost]
   labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
   // How many sessions the host will run at once; null if it has never said.
   capacity: integer | null //minimum: 0 //maximum: 256
-  // How many more sessions it will take now: `capacity` minus its workers with a live session. Null when `capacity` is.
+  // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
   available: integer | null //minimum: 0 //maximum: 256
 }
 ```
@@ -3791,14 +3791,14 @@ object | null
 
 ```typescript
 {
-  // Whose skills these are: `worker-service`.
+  // Whose skills these are: `agent-service`.
   key: string
   // The deployed tree's commit count, 0 when deployed from outside git.
   version: integer
   // The deployed commit, ending `-dirty` when deployed with uncommitted changes.
   commit: string
   files: {
-    // Under the worker's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`.
+    // Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`.
     path: string
     content: string
     executable: boolean
@@ -3829,7 +3829,7 @@ object | null
 
 ```typescript
 {
-  // The worker-host build that sent the heartbeat.
+  // The agent-host build that sent the heartbeat.
   version: string //maxLength: 64
   labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
   // How many sessions the host will run at once. Absent, capacity is unknown.
@@ -3844,14 +3844,14 @@ object | null
   hosts: {
     id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
     heartbeatAt: string //format: date-time
-    // The worker-host build of its last heartbeat.
+    // The agent-host build of its last heartbeat.
     version: string | null
     // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
     status: enum[connected, disconnected, lost]
     labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
     // How many sessions the host will run at once; null if it has never said.
     capacity: integer | null //minimum: 0 //maximum: 256
-    // How many more sessions it will take now: `capacity` minus its workers with a live session. Null when `capacity` is.
+    // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
     available: integer | null //minimum: 0 //maximum: 256
   }[]
 }
@@ -3862,20 +3862,20 @@ object | null
 ```typescript
 {
   roles: {
-    // A role's name, such as `reviewer`: what kind of worker it makes.
+    // A role's name, such as `reviewer`: what kind of agent it makes.
     name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
     documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
     // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
     credentials: array | null //maxItems: 16
-    // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
     whenDone: enum[keep, stop, retire]
-    // A short tag shown beside the worker's name, so sessions can be told apart.
+    // A short tag shown beside the agent's name, so sessions can be told apart.
     label: string //minLength: 1 //maxLength: 40
-    // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+    // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
     description: string | null //minLength: 1 //maxLength: 16384
     // Of two requests waiting to start, the higher starts first.
     priority: integer //minimum: 0 //maximum: 1000
-    // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+    // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
     brief: string | null //minLength: 1 //maxLength: 16384
     // When it was last written; null for a role as the stage was seeded with it.
     updatedAt: string | null //format: date-time
@@ -3887,20 +3887,20 @@ object | null
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label: string //minLength: 1 //maxLength: 40
-  // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
   description: string | null //minLength: 1 //maxLength: 16384
   // Of two requests waiting to start, the higher starts first.
   priority: integer //minimum: 0 //maximum: 1000
-  // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
   brief: string | null //minLength: 1 //maxLength: 16384
   // When it was last written; null for a role as the stage was seeded with it.
   updatedAt: string | null //format: date-time
@@ -3911,14 +3911,14 @@ object | null
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // Absent, null: the stage's defaults.
   credentials?: array | null //maxItems: 16
   // Absent, `keep`.
   whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label: string //minLength: 1 //maxLength: 40
   // Absent, null.
   description?: string | null //minLength: 1 //maxLength: 16384
@@ -3936,30 +3936,30 @@ object | null
   documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials?: array | null //maxItems: 16
-  // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
   whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label?: string //minLength: 1 //maxLength: 40
-  // What a worker made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
+  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
   description?: string | null //minLength: 1 //maxLength: 16384
   // Of two requests waiting to start, the higher starts first.
   priority?: integer //minimum: 0 //maximum: 1000
-  // The first message of a worker made from it with no `brief` of its own; null when the caller must give one.
+  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
   brief?: string | null //minLength: 1 //maxLength: 16384
 }
 ```
 
-### #/components/schemas/WorkerRequest
+### #/components/schemas/AgentRequest
 
 ```typescript
 {
-  // Assigned by the service; also the id of the worker it starts.
+  // Assigned by the service; also the id of the agent it starts.
   id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // The first message; null to start on the role's own.
   brief: string | null
-  // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
   item: string | null //minLength: 1 //maxLength: 64
   // What it is for when that is no work item; null for none.
   subject: string | null
@@ -3970,7 +3970,7 @@ object | null
   credentials: array | null
   // The `claimed-by` header it was made with, unverified; null for none.
   requester: string | null
-  // `waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start.
+  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
   state: enum[waiting, started, withdrawn]
   // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
   why: string | null
@@ -3980,33 +3980,33 @@ object | null
   position: integer | null //minimum: 1
   createdAt: string //format: date-time
   startedAt: string | null //format: date-time
-  // The worker it started; null until it has.
-  workerId: string | null //format: uuid
+  // The agent it started; null until it has.
+  agentId: string | null //format: uuid
   withdrawnAt: string | null //format: date-time
 }
 ```
 
-### #/components/schemas/NewWorkerRequest
+### #/components/schemas/NewAgentRequest
 
 ```typescript
 {
-  // A role's name, such as `reviewer`: what kind of worker it makes.
+  // A role's name, such as `reviewer`: what kind of agent it makes.
   role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // The first message. Absent, the role's own; a role without one needs it.
   brief?: string //minLength: 1 //maxLength: 16384
-  // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
   item?: string //minLength: 1 //maxLength: 64
   // What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.
   subject?: string //minLength: 1 //maxLength: 200
   // Absent, the role's.
   label?: string //minLength: 1 //maxLength: 40
   labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this worker in place of the name's shared secret.
+  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
 {
      name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
      token: string //minLength: 1 //maxLength: 4096
    })[] //maxItems: 16
-  // A name with a token of the caller's, given this worker in place of the name's shared secret.
+  // A name with a token of the caller's, given this agent in place of the name's shared secret.
   tokens: {
     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
     token: string //minLength: 1 //maxLength: 4096
@@ -4014,18 +4014,18 @@ object | null
 }
 ```
 
-### #/components/schemas/WorkerRequestList
+### #/components/schemas/AgentRequestList
 
 ```typescript
 {
   requests: {
-    // Assigned by the service; also the id of the worker it starts.
+    // Assigned by the service; also the id of the agent it starts.
     id: string //format: uuid
-    // A role's name, such as `reviewer`: what kind of worker it makes.
+    // A role's name, such as `reviewer`: what kind of agent it makes.
     role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
     // The first message; null to start on the role's own.
     brief: string | null
-    // A work-tracker item's id: the epic, story or task the worker was started on. Never changes.
+    // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
     item: string | null //minLength: 1 //maxLength: 64
     // What it is for when that is no work item; null for none.
     subject: string | null
@@ -4036,7 +4036,7 @@ object | null
     credentials: array | null
     // The `claimed-by` header it was made with, unverified; null for none.
     requester: string | null
-    // `waiting` to be admitted; `started`, its worker made and its session queued; `withdrawn`, never to start.
+    // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
     state: enum[waiting, started, withdrawn]
     // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
     why: string | null
@@ -4046,20 +4046,20 @@ object | null
     position: integer | null //minimum: 1
     createdAt: string //format: date-time
     startedAt: string | null //format: date-time
-    // The worker it started; null until it has.
-    workerId: string | null //format: uuid
+    // The agent it started; null until it has.
+    agentId: string | null //format: uuid
     withdrawnAt: string | null //format: date-time
   }[]
 }
 ```
 
-### #/components/schemas/NewWorker
+### #/components/schemas/NewAgent
 
 ```typescript
 {
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the worker's, each unless given here, which overrides the role's. A role this stage does not have is refused.
+  // The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.
   role?: string //pattern: ^[a-z][a-z0-9-]{0,39}$
   // Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`.
   hostId?: string //pattern: ^[A-Za-z0-9._-]{1,64}$
@@ -4068,11 +4068,11 @@ object | null
   brief?: string //minLength: 1 //maxLength: 16384
   // Absent, the role's, or without one none.
   label?: string //minLength: 1 //maxLength: 40
-  // The work item it is started on, kept for its life so `listWorkers` with `item` finds it. Absent, none.
+  // The work item it is started on, kept for its life so `listAgents` with `item` finds it. Absent, none.
   item?: string //minLength: 1 //maxLength: 64
   // Absent, the role's, or without one `keep`.
   whenDone?: enum[keep, stop, retire]
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this worker in place of the name's shared secret.
+  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
 {
      name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
      token: string //minLength: 1 //maxLength: 4096
@@ -4081,18 +4081,18 @@ object | null
 }
 ```
 
-### #/components/schemas/WorkerList
+### #/components/schemas/AgentList
 
 ```typescript
 {
-  workers: {
-    // Assigned by the service when the worker is created.
+  agents: {
+    // Assigned by the service when the agent is created.
     id: string //format: uuid
-    // Unique among workers not retired. Names its home folder and tmux session on its host.
+    // Unique among agents not retired. Names its home folder and tmux session on its host.
     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-    // What the worker named itself for its work, with `setWorkerTitle`, or the person with `renameWorker`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
+    // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
     title: string | null
-    // A short tag given when it was made or with `renameWorker`, shown beside its name. Null for none.
+    // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
     label: string | null
     // The work item it was started on, as given when it was made; null for none.
     item: string | null //minLength: 1 //maxLength: 64
@@ -4109,9 +4109,9 @@ object | null
       // Input tokens read from the prompt cache.
       cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
     }
-    // The `claimed-by` header of the `createWorker` call that made it, unverified. Null when it had none.
+    // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
     createdBy: string | null
-    // What becomes of the worker once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireWorker`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
+    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
     whenDone: enum[keep, stop, retire]
     documents: string[]
     // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
@@ -4124,11 +4124,11 @@ object | null
     createdAt: string //format: date-time
     // When its host last reported a change to it; null until its host first reports it.
     reportedAt: string | null //format: date-time
-    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setWorkerStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the worker or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setWorkerStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
+    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
     status: enum[working, idle, waiting, review, done, ] | null
-    // One line it, or approval-service, last said with `setWorkerStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
+    // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
     summary: string | null
-    // A few words said with its `summary` and gone with it, for a list of workers. Null when none was given.
+    // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
     headline: string | null
     // When `summary` was said; null when there is none.
     saidAt: string | null //format: date-time
@@ -4148,7 +4148,7 @@ object | null
 
 ```typescript
 {
-  // Follow it in `listWorkerCommands`. Null when nothing was sent to the host.
+  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
   commandId: string | null
 }
 ```
@@ -4173,20 +4173,20 @@ object | null
 }
 ```
 
-### #/components/schemas/WorkerRename
+### #/components/schemas/AgentRename
 
 ```typescript
 {
-  // Unique among workers not retired. Names its home folder and tmux session on its host.
+  // Unique among agents not retired. Names its home folder and tmux session on its host.
   name?: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the worker is there to do, in a few words.
+  // What the agent is there to do, in a few words.
   title?: string | null //minLength: 1 //maxLength: 40
-  // A short tag shown beside the worker's name, so sessions can be told apart.
+  // A short tag shown beside the agent's name, so sessions can be told apart.
   label?: string | null //minLength: 1 //maxLength: 40
 }
 ```
 
-### #/components/schemas/WorkerStatus
+### #/components/schemas/AgentStatus
 
 ```typescript
 {
@@ -4198,11 +4198,11 @@ object | null
 }
 ```
 
-### #/components/schemas/WorkerTitle
+### #/components/schemas/AgentTitle
 
 ```typescript
 {
-  // What the worker is there to do, in a few words.
+  // What the agent is there to do, in a few words.
   title: string //minLength: 1 //maxLength: 40
 }
 ```
@@ -4212,12 +4212,12 @@ object | null
 ```typescript
 {
   lines: {
-    // Line number per worker, from 0, continuing across its sessions.
+    // Line number per agent, from 0, continuing across its sessions.
     seq: integer //minimum: 0
     at: string //format: date-time
     // Assigned by the service when it queues the session's `start`.
     sessionId: string //format: uuid
-    // `instruction`: a message sent to the worker.
+    // `instruction`: a message sent to the agent.
     from: enum[agent, tool, instruction]
     // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
     text: string
@@ -4243,8 +4243,8 @@ string //minLength: 1 //maxLength: 512
   sessions: {
     // Assigned by the service when it queues the session's `start`.
     id: string //format: uuid
-    // Assigned by the service when the worker is created.
-    workerId: string //format: uuid
+    // Assigned by the service when the agent is created.
+    agentId: string //format: uuid
     // When its `start` was queued.
     startedAt: string //format: date-time
     endedAt: string | null //format: date-time
@@ -4273,8 +4273,8 @@ string //minLength: 1 //maxLength: 512
 {
   // Assigned by the service when it queues the session's `start`.
   id: string //format: uuid
-  // Assigned by the service when the worker is created.
-  workerId: string //format: uuid
+  // Assigned by the service when the agent is created.
+  agentId: string //format: uuid
   // When its `start` was queued.
   startedAt: string //format: date-time
   endedAt: string | null //format: date-time
@@ -4314,7 +4314,7 @@ string //minLength: 1 //maxLength: 512
 }
 ```
 
-### #/components/schemas/WorkerCommands
+### #/components/schemas/AgentCommands
 
 ```typescript
 {
@@ -4322,7 +4322,7 @@ string //minLength: 1 //maxLength: 512
     // discriminator: kind
     command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
     queuedAt: string //format: date-time
-    // `queued`: not yet reported by the host. `written`: its text is in the worker's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its worker was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
+    // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
     delivery: enum[queued, written, withdrawn, done, rejected]
     // When the host last reported it; null until then.
     reportedAt: string | null //format: date-time

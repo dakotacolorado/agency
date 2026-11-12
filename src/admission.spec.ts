@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { WorkerServiceApi, type TokenSource } from "./api.ts";
-import { FRESH_FOR_MS, inStartOrder, usageRefusal, type WorkerRequest } from "./admission.ts";
+import { AgentServiceApi, type TokenSource } from "./api.ts";
+import { FRESH_FOR_MS, inStartOrder, usageRefusal, type AgentRequest } from "./admission.ts";
 import type { Credential } from "./credentials.ts";
 import { FakeStore } from "./fake-store.ts";
 import { SEEDED_ROLES } from "./roles.ts";
-import type { WorkerSecrets } from "./worker-secrets.ts";
+import type { AgentSecrets } from "./agent-secrets.ts";
 
 const TOKEN = { value: async () => "secret" } satisfies TokenSource;
 const NOW = new Date("2026-11-07T12:00:00.000Z");
 
 let store: FakeStore;
-let api: WorkerServiceApi;
+let api: AgentServiceApi;
 let now: Date;
 let kept: Map<string, string>;
 
@@ -25,19 +25,19 @@ beforeEach(() => {
   store = new FakeStore();
   now = NOW;
   kept = new Map();
-  const secrets: WorkerSecrets = {
-    put: async (workerId, name, value) => void kept.set(`${workerId}/${name}`, value),
-    get: async (workerId, name) => kept.get(`${workerId}/${name}`) ?? null,
-    remove: async (workerId, names) => names.forEach((name) => kept.delete(`${workerId}/${name}`)),
+  const secrets: AgentSecrets = {
+    put: async (agentId, name, value) => void kept.set(`${agentId}/${name}`, value),
+    get: async (agentId, name) => kept.get(`${agentId}/${name}`) ?? null,
+    remove: async (agentId, names) => names.forEach((name) => kept.delete(`${agentId}/${name}`)),
   };
-  api = new WorkerServiceApi(store, TOKEN, {
+  api = new AgentServiceApi(store, TOKEN, {
     now: () => now,
-    workerSecrets: secrets,
+    agentSecrets: secrets,
     context: { forSession: async () => ({ context: null, documents: [], skills: [], note: null }), refuse: async () => null },
     credentials: {
       "document-service": known("document-service", "https://ds", "DS"),
       "work-tracker": known("work-tracker", "https://wt", "WT"),
-      "worker-service": known("worker-service", null, "WS"),
+      "agent-service": known("agent-service", null, "AG"),
       "approval-service": known("approval-service", "https://as", "AS"),
     },
   });
@@ -57,7 +57,7 @@ const call = async (method: string, path: string, body?: unknown, headers: Recor
   );
 
 const beat = async (id: string, capacity: number) => {
-  const res = await call("POST", `/fleet/hosts/${id}/heartbeat`, { version: "1", labels: [], capacity });
+  const res = await call("POST", `/hosts/${id}/heartbeat`, { version: "1", labels: [], capacity });
   expect(res.status).toBe(200);
 };
 
@@ -73,30 +73,30 @@ const usage = async (fiveHour: number, sevenDay: number, readAt = now) => {
 };
 
 const ask = async (body: object, requester = "approval-service") => {
-  const res = await call("POST", "/fleet/requests", body, { "claimed-by": requester });
+  const res = await call("POST", "/requests", body, { "claimed-by": requester });
   expect(res.status, await res.clone().text()).toBe(201);
-  return (await res.json()) as { id: string; state: string; why: string | null; workerId: string | null; position: number | null };
+  return (await res.json()) as { id: string; state: string; why: string | null; agentId: string | null; position: number | null };
 };
 
-const request = async (id: string) => (await (await call("GET", `/fleet/requests/${id}`)).json()) as Record<string, any>;
+const request = async (id: string) => (await (await call("GET", `/requests/${id}`)).json()) as Record<string, any>;
 
-const waiting = async () => ((await (await call("GET", "/fleet/requests")).json()) as { requests: Record<string, any>[] }).requests;
+const waiting = async () => ((await (await call("GET", "/requests")).json()) as { requests: Record<string, any>[] }).requests;
 
-describe("a request for a worker", () => {
+describe("a request for an agent", () => {
   it("waits while usage is at or over 90%, and says so", async () => {
     await beat("laptop", 2);
     await usage(0.9, 0.2);
     const asked = await ask({ role: "reviewer", brief: "Review PR #41.", subject: "PR #41" });
-    expect(asked).toMatchObject({ state: "waiting", workerId: null, position: 1 });
+    expect(asked).toMatchObject({ state: "waiting", agentId: null, position: 1 });
     expect(asked.why).toBe("Waits on usage: 5-hour usage is 90%, at or over 90%.");
-    expect(store.workers.size).toBe(0);
+    expect(store.agents.size).toBe(0);
   });
 
   it("waits while no connected host has room, and says so", async () => {
     await beat("laptop", 0);
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go." });
-    expect(asked).toMatchObject({ state: "waiting", why: "Waits on a host: No connected host has room for a worker." });
+    expect(asked).toMatchObject({ state: "waiting", why: "Waits on a host: No connected host has room for an agent." });
   });
 
   it("waits on usage never reported, or read too long ago, but not on a window since reset", async () => {
@@ -117,8 +117,8 @@ describe("a request for a worker", () => {
     const second = await ask({ role: "reviewer", brief: "Go." });
     const third = await ask({ role: "reviewer", brief: "Go." });
     expect(second).toMatchObject({ state: "waiting" });
-    expect(second.why).toContain("the worker started since has not given a new one yet");
-    // The started worker's session gives a fresh reading: everything waiting may start.
+    expect(second.why).toContain("the agent started since has not given a new one yet");
+    // The started agent's session gives a fresh reading: everything waiting may start.
     later(30);
     await usage(0.05, 0.37);
     await beat("laptop", 3);
@@ -145,7 +145,7 @@ describe("a request for a worker", () => {
     await beat("laptop", 3);
     const after = [await request(a.id), await request(b.id)];
     expect(after.map((each) => each.state).sort()).toEqual(["started", "waiting"]);
-    expect(after.find((each) => each.state === "waiting")!.why).toContain("the worker just started will give a new one");
+    expect(after.find((each) => each.state === "waiting")!.why).toContain("the agent just started will give a new one");
   });
 
   it("still waits on a stale reading near the limit", async () => {
@@ -154,7 +154,7 @@ describe("a request for a worker", () => {
     expect((await ask({ role: "reviewer", brief: "Go." })).why).toContain("minutes old, read at 75%");
   });
 
-  it("starts once usage and a host allow, on a host and under a name the service chooses, and records its worker", async () => {
+  it("starts once usage and a host allow, on a host and under a name the service chooses, and records its agent", async () => {
     await beat("laptop", 0);
     await usage(0.95, 0.2);
     const asked = await ask({ role: "reviewer", brief: "Review PR #41.", item: "item-1" });
@@ -164,9 +164,9 @@ describe("a request for a worker", () => {
     expect((await request(asked.id)).state).toBe("waiting");
     await beat("laptop", 1);
     const started = await request(asked.id);
-    expect(started).toMatchObject({ state: "started", why: null, position: null, workerId: asked.id, startedAt: now.toISOString() });
-    const worker = store.workers.get(asked.id)!;
-    expect(worker).toMatchObject({
+    expect(started).toMatchObject({ state: "started", why: null, position: null, agentId: asked.id, startedAt: now.toISOString() });
+    const agent = store.agents.get(asked.id)!;
+    expect(agent).toMatchObject({
       name: `reviewer-${asked.id.slice(0, 8)}`,
       hostId: "laptop",
       role: "reviewer",
@@ -183,8 +183,8 @@ describe("a request for a worker", () => {
     await beat("laptop", 1);
     await usage(0.1, 0.1);
     const asked = await ask({ role: "planner" });
-    expect(asked).toMatchObject({ state: "started", workerId: asked.id });
-    expect(store.workers.get(asked.id)).toMatchObject({ role: "planner", label: "plan: new work", documents: ["planner"] });
+    expect(asked).toMatchObject({ state: "started", agentId: asked.id });
+    expect(store.agents.get(asked.id)).toMatchObject({ role: "planner", label: "plan: new work", documents: ["planner"] });
   });
 
   it("starts the higher role priority first, and of equal priority the older", async () => {
@@ -214,42 +214,42 @@ describe("a request for a worker", () => {
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go.", credentials: ["work-tracker", { name: "approval-service", token: "own" }] });
     expect(kept.get(`${asked.id}/approval-service`)).toBe("own");
-    const res = await call("DELETE", `/fleet/requests/${asked.id}`);
+    const res = await call("DELETE", `/requests/${asked.id}`);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ state: "withdrawn", withdrawnAt: now.toISOString(), position: null });
     expect(kept.size).toBe(0);
     await beat("laptop", 2);
     expect((await request(asked.id)).state).toBe("withdrawn");
-    expect(store.workers.size).toBe(0);
-    expect((await call("DELETE", `/fleet/requests/${asked.id}`)).status).toBe(409);
-    expect((await call("DELETE", "/fleet/requests/3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10")).status).toBe(404);
+    expect(store.agents.size).toBe(0);
+    expect((await call("DELETE", `/requests/${asked.id}`)).status).toBe(409);
+    expect((await call("DELETE", "/requests/3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10")).status).toBe(404);
   });
 
   it("cannot be withdrawn once started", async () => {
     await beat("laptop", 1);
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go." });
-    expect((await call("DELETE", `/fleet/requests/${asked.id}`)).status).toBe(409);
+    expect((await call("DELETE", `/requests/${asked.id}`)).status).toBe(409);
   });
 
-  it("gives the worker it starts a token of the requester's own, kept from when it was asked", async () => {
+  it("gives the agent it starts a token of the requester's own, kept from when it was asked", async () => {
     await beat("laptop", 0);
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go.", credentials: ["work-tracker", { name: "approval-service", token: "own" }] });
     await beat("laptop", 1);
-    expect(store.workers.get(asked.id)).toMatchObject({ credentials: ["work-tracker", "approval-service"], ownCredentials: ["approval-service"] });
+    expect(store.agents.get(asked.id)).toMatchObject({ credentials: ["work-tracker", "approval-service"], ownCredentials: ["approval-service"] });
     expect(kept.get(`${asked.id}/approval-service`)).toBe("own");
     expect(JSON.stringify(await request(asked.id))).not.toContain("own\"");
   });
 
-  it("gives a worker its role's services with a token of the requester's own for one of them", async () => {
+  it("gives an agent its role's services with a token of the requester's own for one of them", async () => {
     await beat("laptop", 0);
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go.", tokens: [{ name: "approval-service", token: "own" }] });
     expect(kept.get(`${asked.id}/approval-service`)).toBe("own");
     await beat("laptop", 1);
     const reviewer = SEEDED_ROLES.find((r) => r.name === "reviewer")!;
-    expect(store.workers.get(asked.id)).toMatchObject({
+    expect(store.agents.get(asked.id)).toMatchObject({
       role: "reviewer",
       documents: reviewer.documents,
       whenDone: reviewer.whenDone,
@@ -259,11 +259,11 @@ describe("a request for a worker", () => {
     expect(JSON.stringify(await request(asked.id))).not.toContain("own\"");
   });
 
-  it("refuses a token for a service the worker would not be given, or one given twice", async () => {
-    const judge = await call("POST", "/fleet/requests", { role: "judge", brief: "Go.", tokens: [{ name: "approval-service", token: "own" }] });
+  it("refuses a token for a service the agent would not be given, or one given twice", async () => {
+    const judge = await call("POST", "/requests", { role: "judge", brief: "Go.", tokens: [{ name: "approval-service", token: "own" }] });
     expect(judge.status).toBe(400);
     expect(((await judge.json()) as { error: string }).error).toContain("approval-service is not among document-service");
-    const twice = await call("POST", "/fleet/requests", {
+    const twice = await call("POST", "/requests", {
       role: "reviewer",
       brief: "Go.",
       credentials: ["work-tracker", { name: "approval-service", token: "a" }],
@@ -273,14 +273,14 @@ describe("a request for a worker", () => {
     expect(kept.size).toBe(0);
   });
 
-  it("names no host or worker name, and needs a brief its role lacks", async () => {
-    expect((await call("POST", "/fleet/requests", { role: "reviewer", brief: "Go.", hostId: "laptop" })).status).toBe(400);
-    expect((await call("POST", "/fleet/requests", { role: "reviewer", brief: "Go.", name: "me-1" })).status).toBe(400);
-    const briefless = await call("POST", "/fleet/requests", { role: "reviewer" });
+  it("names no host or agent name, and needs a brief its role lacks", async () => {
+    expect((await call("POST", "/requests", { role: "reviewer", brief: "Go.", hostId: "laptop" })).status).toBe(400);
+    expect((await call("POST", "/requests", { role: "reviewer", brief: "Go.", name: "me-1" })).status).toBe(400);
+    const briefless = await call("POST", "/requests", { role: "reviewer" });
     expect(briefless.status).toBe(400);
     expect(((await briefless.json()) as { error: string }).error).toContain("needs `brief`");
-    expect((await call("POST", "/fleet/requests", { role: "nobody", brief: "Go." })).status).toBe(400);
-    expect((await call("POST", "/fleet/requests", { role: "reviewer", brief: "Go.", credentials: ["github"] })).status).toBe(400);
+    expect((await call("POST", "/requests", { role: "nobody", brief: "Go." })).status).toBe(400);
+    expect((await call("POST", "/requests", { role: "reviewer", brief: "Go.", credentials: ["github"] })).status).toBe(400);
   });
 
   it("lists every request with all=true, and by requester or item", async () => {
@@ -288,11 +288,11 @@ describe("a request for a worker", () => {
     await usage(0.1, 0.1);
     const started = await ask({ role: "reviewer", brief: "Go.", item: "a" }, "approval-service");
     const left = await ask({ role: "implementer", brief: "Go.", item: "b" }, "work-tracker");
-    const all = ((await (await call("GET", "/fleet/requests?all=true")).json()) as { requests: { id: string }[] }).requests;
+    const all = ((await (await call("GET", "/requests?all=true")).json()) as { requests: { id: string }[] }).requests;
     expect(all.map((r) => r.id)).toEqual([left.id, started.id]);
-    const byItem = ((await (await call("GET", "/fleet/requests?all=true&item=a")).json()) as { requests: { id: string }[] }).requests;
+    const byItem = ((await (await call("GET", "/requests?all=true&item=a")).json()) as { requests: { id: string }[] }).requests;
     expect(byItem.map((r) => r.id)).toEqual([started.id]);
-    const mine = ((await (await call("GET", "/fleet/requests?requester=work-tracker")).json()) as { requests: { id: string }[] }).requests;
+    const mine = ((await (await call("GET", "/requests?requester=work-tracker")).json()) as { requests: { id: string }[] }).requests;
     expect(mine.map((r) => r.id)).toEqual([left.id]);
   });
 
@@ -301,14 +301,14 @@ describe("a request for a worker", () => {
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go." });
     await beat("laptop", 3);
-    await Promise.all([api.admit("http://local"), api.admit("http://local"), call("POST", "/fleet/hosts/laptop/heartbeat", { version: "1", labels: [], capacity: 3 })]);
-    expect([...store.workers.values()].filter((w) => w.id === asked.id)).toHaveLength(1);
-    expect(store.workers.size).toBe(1);
+    await Promise.all([api.admit("http://local"), api.admit("http://local"), call("POST", "/hosts/laptop/heartbeat", { version: "1", labels: [], capacity: 3 })]);
+    expect([...store.agents.values()].filter((w) => w.id === asked.id)).toHaveLength(1);
+    expect(store.agents.size).toBe(1);
   });
 });
 
 describe("start order", () => {
-  const at = (id: string, role: string, createdAt: string) => ({ id, role, createdAt }) as WorkerRequest;
+  const at = (id: string, role: string, createdAt: string) => ({ id, role, createdAt }) as AgentRequest;
   it("is by role priority, then age", () => {
     const order = inStartOrder(
       [at("a", "implementer", "1"), at("b", "planner", "3"), at("c", "conflict", "2"), at("d", "reviewer", "1")],

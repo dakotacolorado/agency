@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 import { buildOf } from "./build.ts";
 
 /** This service's skills, `page` and `title`, served as one. */
-export const SKILL_KEY = "worker-service";
+export const SKILL_KEY = "agent-service";
 
 /**
- * The clients a worker calls this service with, as written into its
+ * The clients an agent calls this service with, as written into its
  * `skills/`: `skill/<name>/bin/` and `skill/<name>/reference/` only. When to
  * use them and how to work stay in each `SKILL.md` that document-service's
  * `global` holds.
@@ -16,7 +16,7 @@ export const SKILL_DIR = fileURLToPath(new URL("../skill", import.meta.url));
 /** Repo-relative, as `generatedFiles` keys it. */
 export const REFERENCE_PATH = "skill/page/reference/api.md";
 /** What `page` and `title` call; the rest of the API is for people and programs. */
-export const REFERENCE_OPERATIONS = ["getWorker", "setWorkerStatus", "setWorkerTitle"];
+export const REFERENCE_OPERATIONS = ["getAgent", "setAgentStatus", "setAgentTitle"];
 
 export interface SkillFile {
   path: string;
@@ -31,7 +31,7 @@ export interface Skill {
   files: SkillFile[];
 }
 
-/** Every file under `dir`, as a worker gets it, read from disk at each call. */
+/** Every file under `dir`, as an agent gets it, read from disk at each call. */
 export function readSkill(dir: string, version: number, commit: string): Skill {
   const walk = (at: string): string[] =>
     readdirSync(at, { withFileTypes: true }).flatMap((e) =>
@@ -137,9 +137,9 @@ const body = (content: Record<string, { schema?: Schema }> | undefined) => {
 };
 
 /**
- * A worker's reference to the API, from its OpenAPI document: each of
+ * An agent's reference to the API, from its OpenAPI document: each of
  * `operations`, with its parameters, body and answers, then every named schema's fields.
- * Short enough for a worker's context, where the full rendering is not.
+ * Short enough for an agent's context, where the full rendering is not.
  */
 export function renderReference(doc: Document, operations: string[] = REFERENCE_OPERATIONS): string {
   const out = [

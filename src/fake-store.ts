@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { Host, Queued, Worker } from "./domain.ts";
+import type { Host, Queued, Agent } from "./domain.ts";
 import { Store, type Connection } from "./store.ts";
 
 /**
@@ -15,12 +15,12 @@ export class FakeStore extends Store {
     return this.byKey<Host>("SELECT id AS key, record FROM hosts");
   }
 
-  get workers(): Map<string, Worker> {
+  get agents(): Map<string, Agent> {
     return new Map(
       this.db
-        .prepare("SELECT id, rev, record FROM workers ORDER BY rowid")
+        .prepare("SELECT id, rev, record FROM agents ORDER BY rowid")
         .all()
-        .map((row) => [row.id as string, { ...(JSON.parse(row.record as string) as Worker), rev: row.rev as string }]),
+        .map((row) => [row.id as string, { ...(JSON.parse(row.record as string) as Agent), rev: row.rev as string }]),
     );
   }
 
@@ -46,10 +46,10 @@ export class FakeStore extends Store {
     return new Map(this.db.prepare("SELECT hash, valid_until FROM tickets").all().map((row) => [row.hash as string, row.valid_until as string]));
   }
 
-  /** Writes a worker as it is, unguarded and claiming no name, as a record written by an older version would be. */
-  plant(worker: Worker): void {
-    const { rev: _, ...record } = worker;
-    this.db.prepare("INSERT OR REPLACE INTO workers (id, rev, record) VALUES (?, ?, ?)").run(worker.id, "planted", JSON.stringify(record));
+  /** Writes an agent as it is, unguarded and claiming no name, as a record written by an older version would be. */
+  plant(agent: Agent): void {
+    const { rev: _, ...record } = agent;
+    this.db.prepare("INSERT OR REPLACE INTO agents (id, rev, record) VALUES (?, ?, ?)").run(agent.id, "planted", JSON.stringify(record));
   }
 
   private byKey<T>(sql: string): Map<string, T> {

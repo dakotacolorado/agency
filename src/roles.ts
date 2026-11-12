@@ -1,7 +1,7 @@
 import type { WhenDone } from "./domain.ts";
 
 /**
- * What a kind of worker is started with: a caller names the role and says
+ * What a kind of agent is started with: a caller names the role and says
  * what is particular to this one (its brief, its item), and the role gives
  * the rest. Its priority orders admission: higher starts first.
  */
@@ -23,7 +23,7 @@ export interface Role {
 }
 
 /** Every service a session can be given, as approval-service gives its reviewers today. */
-const ALL = ["document-service", "work-tracker", "worker-service", "approval-service"];
+const ALL = ["document-service", "work-tracker", "agent-service", "approval-service"];
 
 const PLANNER_BRIEF = [
   "You are a planner, started from the Work page's New item button. Ask the person, in this chat, what they want done: use the page skill to say you are waiting on them for it, and end your turn. Their answer, in their own words, starts you again. Then plan it into one epic in the work tracker, its stories, and the dependencies between them, as the `planner` document you started with says. Write the items; do not take them or do the work.",
@@ -33,7 +33,7 @@ const PLANNER_BRIEF = [
 const DESCRIPTIONS = {
   planner:
     "Turns what the person wants done into one epic in the work tracker, with its stories and the dependencies between them. It asks the person what they want, in its chat, and writes the items; it never takes them or does the work.\n\n" +
-    "**Started by** the person: the Work page's New item button, or the New worker form. Pick it when you have new work to plan.",
+    "**Started by** the person: the Work page's New item button, or the New agent form. Pick it when you have new work to plan.",
   implementer:
     "Does one ticket from the work tracker: an epic, story or task. It writes the change, runs the repo's checks, opens the PR and submits it to approval-service, then moves the item to review.\n\n" +
     "**Started by** the work queue, for the next ticket in it, or by a person on a ticket of their choosing. A send-back from approval-service, or a message, starts it again. Pick it, with the ticket, when you want one done now.",
@@ -51,7 +51,7 @@ const DESCRIPTIONS = {
     "**Started by** approval-service, when someone asks it to onboard a repo (`approval onboard <owner/repo>`). A person does not start one by hand.",
   judge:
     "Judges one proposed change to a shared document in document-service: merges it, or rejects it with the reason.\n\n" +
-    "**Started by** document-service, for each proposal a worker makes. A person does not start one by hand.",
+    "**Started by** document-service, for each proposal an agent makes. A person does not start one by hand.",
 };
 
 type Seed = Omit<Role, "updatedAt" | "brief" | "description"> & { name: keyof typeof DESCRIPTIONS; brief?: string };
@@ -60,7 +60,7 @@ const seed = (role: Seed): Role => ({ brief: null, updatedAt: null, description:
 
 /**
  * The roles a stage starts with, as approval-service, document-service,
- * work-tracker and workplace-ui make their workers today. A role written
+ * work-tracker and workplace-ui make their agents today. A role written
  * with the same name replaces its seed.
  */
 export const SEEDED_ROLES: readonly Role[] = [

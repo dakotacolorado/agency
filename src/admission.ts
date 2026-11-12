@@ -11,9 +11,9 @@ export const REQUEST_STATES = ["waiting", "started", "withdrawn"] as const;
 
 export type RequestState = (typeof REQUEST_STATES)[number];
 
-/** A worker asked for by role, waiting until usage and a host allow it to start. */
-export interface WorkerRequest {
-  /** Also the id of the worker it starts, so a token of its own kept for it is the worker's. */
+/** An agent asked for by role, waiting until usage and a host allow it to start. */
+export interface AgentRequest {
+  /** Also the id of the agent it starts, so a token of its own kept for it is the agent's. */
   id: string;
   role: string;
   /** Null to start on the role's own brief. */
@@ -34,14 +34,14 @@ export interface WorkerRequest {
   why: string | null;
   createdAt: string;
   startedAt: string | null;
-  workerId: string | null;
+  agentId: string | null;
   withdrawnAt: string | null;
   /** Replaced on every write, so admitting it and withdrawing it cannot both land. */
   rev?: string;
 }
 
 /**
- * A stale reading this far under `USAGE_LIMIT` still admits one request at a time: the worker it starts
+ * A stale reading this far under `USAGE_LIMIT` still admits one request at a time: the agent it starts
  * gives the next reading, which nothing else would while no session is running.
  */
 export const STALE_UNDER = USAGE_LIMIT - 0.2;
@@ -77,7 +77,7 @@ export function usageAdmits(usage: Usage, now: Date, lastStart: Date | null = nu
   const readAt = Math.max(...[usage.fiveHour, usage.sevenDay].map((each) => Date.parse(each!.readAt)));
   const since = lastStart === null ? -Infinity : lastStart.getTime();
   if (since > readAt && now.getTime() - since < FRESH_FOR_MS) {
-    return { none: "Waits on usage: the last reading is stale, and the worker started since has not given a new one yet." };
+    return { none: "Waits on usage: the last reading is stale, and the agent started since has not given a new one yet." };
   }
   return { one: true };
 }
@@ -89,12 +89,12 @@ export function usageRefusal(usage: Usage, now: Date, lastStart: Date | null = n
 }
 
 /** The order waiting requests start in: their role's priority, highest first, then oldest first. */
-export function inStartOrder(requests: WorkerRequest[], roles: Role[]): WorkerRequest[] {
+export function inStartOrder(requests: AgentRequest[], roles: Role[]): AgentRequest[] {
   const priority = new Map(roles.map((role) => [role.name, role.priority]));
   return [...requests].sort(
     (a, b) => (priority.get(b.role) ?? 0) - (priority.get(a.role) ?? 0) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
   );
 }
 
-/** The worker's name: its role and the start of its id, which is unique enough among workers not retired. */
-export const nameFor = (request: Pick<WorkerRequest, "id" | "role">) => `${request.role.slice(0, 31)}-${request.id.slice(0, 8)}`;
+/** The agent's name: its role and the start of its id, which is unique enough among agents not retired. */
+export const nameFor = (request: Pick<AgentRequest, "id" | "role">) => `${request.role.slice(0, 31)}-${request.id.slice(0, 8)}`;

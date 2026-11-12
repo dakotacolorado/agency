@@ -1,6 +1,10 @@
-# worker-service
+# agent-service
 
-The workers' API: one package holding the API (`src/`) and its CDK (`infra/`).
+The agents' API: agents, their sessions, the requests that start them, roles,
+usage and the hosts they run on. One Node 24 process (`src/cli.ts`) serving
+HTTP, its data in one SQLite file (`src/store.ts`), what ages out pruned by an
+in-process timer (`src/sweep.ts`). agent-host, on each host, follows its
+shapes; change them with it.
 
 Keep a comment only when it explains what the code cannot say: a constraint, a
 trade-off, a reason something is not the obvious way. Prefer a type, a name or
@@ -8,14 +12,12 @@ a failing test to a sentence.
 
 ## Tests
 
-`npm run typecheck`, `npm test`, `npm run synth` — the checks. Tests are
-colocated as `*.spec.ts`. `integration.spec.ts` hits a deployed stage and skips
-without `WORKER_SERVICE_URL`/`WORKER_SERVICE_TOKEN`, so `npm test` needs no
-credentials.
-`npm run scenarios:beta` runs real worker sessions on beta and is the check
-for changes to status, paging or prompts; it is no part of `npm test`.
-The `test` skill (`.claude/skills/test/SKILL.md`) says how to run the checks
-and the scenarios, and which pipeline jobs deploy, smoke and roll back.
+Colocated as `*.spec.ts`; `npm test` needs no network: the store runs on
+SQLite in memory or in a temporary file (`src/fake-store.ts` is the real store
+in memory, read as maps), and `src/cli.spec.ts` starts the server on ports the
+OS picks. `integration.spec.ts` hits a running instance and skips without
+`INTEGRATION_AG_URL`/`INTEGRATION_AG_TOKEN`. How to run the checks is the
+`test` skill (`.claude/skills/test/SKILL.md`).
 
 ## Changing the API
 
