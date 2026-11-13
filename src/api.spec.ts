@@ -228,7 +228,7 @@ describe("hosts", () => {
     await beat("laptop");
     const res = await call("GET", "/hosts/laptop");
     expect(res.status).toBe(404);
-    expect(await res.text()).toBe("404 Not Found");
+    expect(await res.json()).toEqual({ code: "ResourceNotFoundException", message: "No operation is at GET /hosts/laptop." });
   });
 
   it("counts a host's places by its agents' live sessions", async () => {
