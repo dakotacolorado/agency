@@ -51,30 +51,16 @@ and agent-host passes them to Claude Code with `--mcp-config`. What ages out (a
 command's record, a pending command not durable, an ended request, a spent
 ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
 
-## On a host
+## Hosts
 
-`ops/` installs it on a host by hand, as the hosts' other services are:
-
-```sh
-ops/deploy beta dakotajp-lenovo-laptop        # from a clean checkout at the commit to release
-ops/agent-host ~/src/agent-host dakotas-hp-laptop 2 linux,x86_64   # a clean checkout of agent-host
-ops/check                                     # a real session: its context, and the skills it was given
-```
-
-`ops/deploy` builds the checkout, installs it under
-`~/.local/share/routines/agent-service/`, keeps `previous` to put back, makes
-the host's tokens once in `~/.config/agent-service/env` (its own, and one named
-`agent-service` from this host's honed), writes the services file naming
-honed alone (waypoint is not wired in yet), restarts `agent-service.service` and checks `/health` answers the
-commit, serves it at `https://<host>:8446` with `tailscale serve`, and installs
-the nightly backup to the other host. `ops/agent-host` installs an agent-host
-checkout (Node 24, on the Claude Agent SDK, its sessions on this user's Claude
-login) beside worker-host and points it at this host's agent-service.
+Each machine that runs agents runs
+[agent-host](https://github.com/dakotacolorado/agent-host), pointed at this
+service's address and `AUTH_TOKEN`; it connects over the protocol below.
 
 ## Protocol
 
 A host speaks to agent-service over one WebSocket at `/socket` on the API's
-own address and port (`wss://` behind Tailscale HTTPS): it connects with
+own address and port (`wss://` behind an HTTPS proxy): it connects with
 `?hostId=<id>` and the stage's token as `Authorization: Bearer`, and nothing
 else of the API is for it. On every (re)connect it sends its full `report`,
 then a `heartbeat` (`version`, `labels`, `capacity`), and a heartbeat every 30
