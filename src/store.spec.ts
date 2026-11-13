@@ -186,3 +186,15 @@ describe("pruning", () => {
     expect(await store.takeTicket("spent")).toBeNull();
   });
 });
+
+describe("a database from before roles moved to honed", () => {
+  it("loses its roles and per-agent secrets tables, and nothing else", async () => {
+    store.db.exec("CREATE TABLE roles (name TEXT PRIMARY KEY, record TEXT NOT NULL); CREATE TABLE agent_secrets (agent_id TEXT, name TEXT, value TEXT);");
+    await store.putHost(host);
+    reopen();
+    const tables = (store.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
+    expect(tables).not.toContain("roles");
+    expect(tables).not.toContain("agent_secrets");
+    expect(await store.listHosts()).toEqual([host]);
+  });
+});
