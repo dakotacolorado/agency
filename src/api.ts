@@ -28,7 +28,7 @@ import { hash, same, ticket } from "./secret.ts";
 import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView } from "./fleet.ts";
 import { NO_SOCKET, Push, type Poster } from "./push.ts";
 import { NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
-import { MARK_ICON, TAGLINE } from "./banner.ts";
+import { LETTERS_ONLY, MARK_ICON, MARK_PIXELS, SUMMARY, TAGLINE } from "./banner.ts";
 import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { ownSkill, type Skill } from "./skill.ts";
 import { readFileSync } from "node:fs";
@@ -60,7 +60,7 @@ export const OVERVIEW = `agency: ${TAGLINE} People, their Claude Code and agents
 export const failure = (status: ErrorStatus, message: string) => ({ code: ERROR_CODES[status], message });
 
 /** What answers without a token: whether it is up, what it serves, and the page, which asks for one itself. */
-export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp", "/", "/ui/app.js", "/ui/style.css", "/ui/mark.svg"];
+export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp", "/", "/ui/app.js", "/ui/style.css", "/ui/mark.svg", "/ui/banner.js"];
 
 export interface TokenSource {
   value(): Promise<string | null>;
@@ -172,6 +172,9 @@ export class AgencyApi {
     this.hono.get("/", serve(once(() => file("ui/index.html")), "text/html"));
     this.hono.get("/ui/app.js", serve(once(() => file("ui/app.js")), "text/javascript"));
     this.hono.get("/ui/style.css", serve(once(() => file("ui/style.css")), "text/css"));
+    // The page's words and mark are banner.ts's own, so the terminal, the page and the tab cannot differ.
+    const banner = Object.entries({ LETTERS: LETTERS_ONLY, MARK_PIXELS, TAGLINE, SUMMARY }).map(([name, value]) => `export const ${name} = ${JSON.stringify(value)};\n`).join("");
+    this.hono.get("/ui/banner.js", (c) => c.body(banner, 200, { "content-type": "text/javascript; charset=utf-8" }));
     this.hono.get("/ui/mark.svg", (c) => c.body(MARK_ICON, 200, { "content-type": "image/svg+xml; charset=utf-8" }));
     this.hono.get("/docs/api", serve(once(() => file("docs/index.html")), "text/html"));
     this.hono.get("/mcp.json", serve(once(() => file("mcp.json")), "application/json"));

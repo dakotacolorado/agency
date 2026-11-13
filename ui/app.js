@@ -1,6 +1,8 @@
 // agency's page: agents, an agent's transcript, a form to make one, requests, hosts, roles and usage, over the API.
 // Every element is made with `h`, which sets text, never HTML, so nothing an agent or its transcript says is run.
 
+import { LETTERS, MARK_PIXELS, SUMMARY, TAGLINE } from "./banner.js";
+
 const TOKEN_KEY = "agency.token";
 /** Where the token was kept before agency was renamed from agent-service: moved over once, so no one signs in again. */
 const OLD_TOKEN_KEY = "agent-service.token";
@@ -29,6 +31,56 @@ function h(tag, props = {}, ...children) {
 }
 
 const token = () => localStorage.getItem(TOKEN_KEY);
+
+/** Where this page is served, as `https://host:8446/`: the base of the API and the MCP server too. */
+const base = () => `${location.origin}${location.pathname}`;
+
+/** The mark drawn from banner.ts's pixel grid, a square a pixel, so it is the terminal's mark. */
+function pixelMark() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${MARK_PIXELS[0].length} ${MARK_PIXELS.length}`);
+  svg.setAttribute("shape-rendering", "crispEdges");
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("aria-hidden", "true");
+  MARK_PIXELS.forEach((row, y) =>
+    [...row].forEach((pixel, x) => {
+      if (pixel !== "#") return;
+      const rect = document.createElementNS(NS, "rect");
+      for (const [key, value] of Object.entries({ x, y, width: 1, height: 1 })) rect.setAttribute(key, String(value));
+      svg.append(rect);
+    }),
+  );
+  return svg;
+}
+
+/** The block-letter name with the mark beside it, as honed's, waypoint's and jobber's pages open. */
+function wordmark(small = false) {
+  return h("a", { class: `wordmark${small ? " small" : ""}`, href: "#/", "aria-label": "agency" }, h("pre", { "aria-hidden": "true" }, LETTERS), pixelMark());
+}
+
+/** What agency is and where its API, MCP server and docs are: atop the sign-in, and smaller atop the agents. */
+function landing(small) {
+  return h(
+    "div",
+    { class: "landing" },
+    wordmark(small),
+    h("p", { class: "tagline" }, TAGLINE),
+    h("p", { class: "muted" }, SUMMARY),
+    h(
+      "p",
+      { class: "endpoints muted" },
+      "API ",
+      h("code", {}, `${base()}agents`),
+      " · MCP ",
+      h("code", {}, `${base()}mcp`),
+      " · docs: ",
+      h("a", { href: "./docs/api", target: "_blank" }, "API"),
+      ", ",
+      h("a", { href: "./docs/mcp", target: "_blank" }, "MCP"),
+    ),
+  );
+}
 
 class ApiError extends Error {
   constructor(status, body) {
@@ -141,9 +193,7 @@ function signIn() {
     h(
       "div",
       { class: "signin" },
-      h("h1", {}, "agency"),
-      h("p", { class: "tagline" }, "Agents at your command, across all your computers."),
-      h("p", { class: "muted" }, "Agents, their sessions, the requests that start them and the hosts they run on. The API is at ", h("code", {}, `${location.origin}/agents`), ", the MCP server at ", h("code", {}, `${location.origin}/mcp`), "."),
+      landing(false),
       form,
     ),
   );
@@ -187,6 +237,7 @@ async function agents(params) {
   };
   fill(list);
   main.replaceChildren(
+    landing(true),
     h("div", { class: "filters" }, h("label", { style: quiet }, checkbox(all, (e) => (location.hash = e.target.checked ? "#/?all=true" : "#/")), " include deleted"), counted),
     el,
   );
