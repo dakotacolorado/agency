@@ -76,3 +76,11 @@ describe("the docs", () => {
     expect(page).not.toContain("127.0.0.1");
   });
 });
+
+describe("an unknown path", () => {
+  it("answers as every error does, `{code, message}`", async () => {
+    const res = await api.fetch(new Request("http://local/nothing-here", { headers: { authorization: `Bearer ${TOKEN}` } }));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ code: "ResourceNotFoundException", message: "No operation is at GET /nothing-here." });
+  });
+});

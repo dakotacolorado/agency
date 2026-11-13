@@ -234,7 +234,7 @@ async function agentPage(id) {
       agent.label && ["Label", agent.label],
       agent.item && ["Item", h("span", { class: "mono" }, agent.item)],
       ["When done", agent.whenDone],
-      ["Documents", agent.documents.length ? agent.documents.join(", ") : "none"],
+      ["Skills", agent.documents.length ? agent.documents.join(", ") : "none"],
       ["Tokens", tokens(agent.tokens)],
       ["Session", agent.session ? [h("span", { class: "mono" }, short(agent.session.id)), `, since ${when(agent.session.startedAt)}`] : "none live"],
       ["Made by", agent.createdBy ?? "unknown"],
@@ -295,7 +295,7 @@ async function agentPage(id) {
 
   const sessionsPanel = h("div", { class: "panel" }, h("h2", {}, "Sessions"));
   const drawSessions = ({ sessions }) => {
-    const { el, draw } = table(["Session", "Started", "Ended", "Context", "Documents", "Note"], "No sessions yet.");
+    const { el, draw } = table(["Session", "Started", "Ended", "Context", "Skills", "Note"], "No sessions yet.");
     draw(
       sessions.map((s) =>
         h(
@@ -539,7 +539,7 @@ async function roles() {
   const load = () => api("GET", "/roles");
   const { roles: list } = await load();
   if (!live()) return;
-  const { el, draw } = table(["Role", "Priority", "Label", "When done", "Documents", "Description"], "No roles.");
+  const { el, draw } = table(["Role", "Priority", "Label", "When done", "Skills", "Description"], "No roles.");
   const fill = (rows) =>
     draw(
       rows.map((role) =>
