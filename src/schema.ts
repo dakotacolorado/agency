@@ -104,7 +104,7 @@ const WhenDone = z
   .enum(WHEN_DONE)
   .describe(
     "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; " +
-      "`stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, " +
+      "`stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, " +
       "`stop` and `retire` both only stop its session, so a send-back can still start it again.",
   );
 
@@ -394,7 +394,7 @@ export const CommandSchema = z
           .string()
           .optional()
           .describe(
-            "Present when the whole context is too large for a socket message: the path of `getSessionContext` " +
+            "Present when the whole context is too large for a socket message: the path of `GetSessionContext` " +
               "for this session. A host reads it, with the stage's token, and writes what it answers in place of " +
               "`context` and `documents`, which then hold only what fitted. A host that cannot read it writes them.",
           ),
@@ -489,14 +489,14 @@ export const AgentSchema = z
       .string()
       .nullable()
       .describe(
-        "What the agent named itself for its work, with `setAgentTitle`, or the person with " +
-          "`renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names " +
+        "What the agent named itself for its work, with `PutAgentTitle`, or the person with " +
+          "`UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names " +
           "nothing on its host.",
       ),
     label: z
       .string()
       .nullable()
-      .describe("A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none."),
+      .describe("A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none."),
     item: ItemId.nullable().describe("The work item it was started on, as given when it was made; null for none."),
     role: RoleName.nullable().describe("The role it was made from, as given when it was made; null for one made without."),
     tokens: TokensSchema.describe(
@@ -506,7 +506,7 @@ export const AgentSchema = z
     createdBy: z
       .string()
       .nullable()
-      .describe("The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none."),
+      .describe("The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none."),
     whenDone: WhenDone,
     documents: z.array(z.string()).describe("The honed skills each session is given after `workplace/global`, by name."),
     credentials: z
@@ -541,19 +541,19 @@ export const AgentSchema = z
         "What it is doing, as its host sees its turns and as it last said. `working`: a turn of " +
           "its, or a background task or subagent it started, is running. `idle`: its session is live " +
           "and neither is, as after it replied; this never needs the person. `waiting`: it said with " +
-          "`setAgentStatus` that it needs the person, and stays so until the person messages it " +
+          "`PutAgentStatus` that it needs the person, and stays so until the person messages it " +
           "(a turn it begins by itself does not end it). `review`: its change is submitted to " +
           "approval-service, said by the agent or by approval-service, and it waits on the reviewer " +
           "until the change ships or is sent back. `done`: it finished what it was made for, or its " +
           "change shipped. `review` and `done` are kept once its session ends, and no turn changes " +
-          "them; only a message from the person, or `setAgentStatus`, does. Otherwise null without " +
+          "them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without " +
           "a live session. Only `waiting` should notify the person.",
       ),
     summary: z
       .string()
       .nullable()
       .describe(
-        "One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while " +
+        "One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while " +
           "`waiting` what it needs from the person. Cleared by a message from the person.",
       ),
     headline: z
@@ -662,7 +662,7 @@ export const AcceptedSchema = z
     commandId: z
       .string()
       .nullable()
-      .describe("Follow it in `listAgentCommands`. Null when nothing was sent to the host."),
+      .describe("Follow it in `ListCommands`. Null when nothing was sent to the host."),
   })
   .openapi("Accepted");
 
@@ -821,7 +821,7 @@ export const SocketOutboundSchema = z
       .describe(
         "To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is " +
           "queued, and each time its `delivery` changes, " +
-          "but for a time-based `withdrawn`, which a read of `listAgentCommands` says.",
+          "but for a time-based `withdrawn`, which a read of `ListCommands` says.",
       )
       .openapi("SentPush"),
     z
@@ -872,7 +872,7 @@ const forAgent = <R extends Unaudienced & { method: "put" }>(route: R) =>
 export const healthRoute = createRoute({
   method: "get",
   path: "/health",
-  operationId: "healthCheck",
+  operationId: "GetHealth",
   tags: ["meta"],
   summary: "Health check",
   responses: {
@@ -890,7 +890,7 @@ export const healthRoute = createRoute({
 export const heartbeatRoute = forHost({
   method: "post",
   path: "/hosts/{id}/heartbeat",
-  operationId: "heartbeat",
+  operationId: "SendHeartbeat",
   summary: "Keep the host connected, and say what it offers",
   description:
     "Liveness and what the host offers, nothing more: commands come down the host's socket at " +
@@ -909,10 +909,10 @@ export const heartbeatRoute = forHost({
 export const listHostsRoute = forClientReading({
   method: "get",
   path: "/hosts",
-  operationId: "listHosts",
+  operationId: "ListHosts",
   summary: "List hosts",
   description:
-    "Every host that has sent a heartbeat since it was last deregistered with `deleteHost`, however " +
+    "Every host that has sent a heartbeat since it was last deregistered with `DeleteHost`, however " +
     "long it has been `lost`. With `status`, only the hosts with one of those statuses.",
   request: {
     query: z.object({
@@ -933,10 +933,10 @@ export const listHostsRoute = forClientReading({
 export const deleteHostRoute = forClientActing({
   method: "delete",
   path: "/hosts/{id}",
-  operationId: "deleteHost",
+  operationId: "DeleteHost",
   summary: "Deregister a host",
   description:
-    "Deletes the host's record, which is how a host leaves `listHosts`. Its agents, their " +
+    "Deletes the host's record, which is how a host leaves `ListHosts`. Its agents, their " +
     "transcripts and the commands sent to them stay on record, and its agents read as on a " +
     "`lost` host. The next heartbeat from this id registers it again, and its socket is sent " +
     "whatever is still queued for it.",
@@ -947,7 +947,7 @@ export const deleteHostRoute = forClientActing({
 export const createAgentRoute = forClientActing({
   method: "post",
   path: "/agents",
-  operationId: "createAgent",
+  operationId: "CreateAgent",
   summary: "Create an agent on a host",
   description:
     "Records the agent `idle` and queues `create` for its host, which makes its home. With a " +
@@ -960,7 +960,7 @@ export const createAgentRoute = forClientActing({
         .object({
           name: AgentName,
           role: RoleName.optional().describe(
-            "The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` " +
+            "The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` " +
               "are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
           ),
           hostId: HostId.optional().describe(
@@ -971,7 +971,7 @@ export const createAgentRoute = forClientActing({
           brief: Text.optional().describe("The first session's first message. Absent, the role's, if it has one; otherwise no session starts."),
           label: AgentLabel.optional().describe("Absent, the role's, or without one none."),
           item: ItemId.optional().describe(
-            "The work item it is started on, kept for its life so `listAgents` with `item` finds it. Absent, none.",
+            "The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none.",
           ),
           whenDone: WhenDone.optional().describe("Absent, the role's, or without one `keep`."),
           credentials: Credentials.optional().describe(
@@ -1006,7 +1006,7 @@ export const createAgentRoute = forClientActing({
 export const listAgentsRoute = forClientReading({
   method: "get",
   path: "/agents",
-  operationId: "listAgents",
+  operationId: "ListAgents",
   summary: "List agents",
   description:
     "Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents " +
@@ -1030,7 +1030,7 @@ export const listAgentsRoute = forClientReading({
 export const getAgentRoute = forClientReading({
   method: "get",
   path: "/agents/{id}",
-  operationId: "getAgent",
+  operationId: "GetAgent",
   summary: "Get one agent",
   request: { params: z.object({ id: AgentId }) },
   responses: { 200: json(AgentSchema, "The agent."), ...NO_AGENT, ...FAILS },
@@ -1041,7 +1041,7 @@ const agentParam = { params: z.object({ id: AgentId }) };
 export const messageAgentRoute = forClientActing({
   method: "post",
   path: "/agents/{id}/messages",
-  operationId: "messageAgent",
+  operationId: "SendMessage",
   summary: "Send an agent a message, or interrupt it",
   description:
     "To an agent with a live session, `text` is a `message`, delivered at its next turn; with " +
@@ -1079,7 +1079,7 @@ export const messageAgentRoute = forClientActing({
 export const stopAgentRoute = forClientActing({
   method: "post",
   path: "/agents/{id}/stop",
-  operationId: "stopAgent",
+  operationId: "StopAgent",
   summary: "Stop an agent's session, or force it idle",
   description:
     "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. " +
@@ -1112,7 +1112,7 @@ export const stopAgentRoute = forClientActing({
 export const resumeAgentRoute = forClientActing({
   method: "post",
   path: "/agents/{id}/resume",
-  operationId: "resumeAgent",
+  operationId: "ResumeAgent",
   summary: "Start a session continuing the agent's last conversation",
   description: "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
   request: agentParam,
@@ -1127,7 +1127,7 @@ export const resumeAgentRoute = forClientActing({
 export const renameAgentRoute = forClientActing({
   method: "patch",
   path: "/agents/{id}",
-  operationId: "renameAgent",
+  operationId: "UpdateAgent",
   summary: "Rename an agent, or change or clear its title or label",
   description:
     "A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the " +
@@ -1161,7 +1161,7 @@ export const renameAgentRoute = forClientActing({
 export const retireAgentRoute = forClientActing({
   method: "delete",
   path: "/agents/{id}",
-  operationId: "retireAgent",
+  operationId: "RetireAgent",
   summary: "Retire an agent",
   description:
     "Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had " +
@@ -1179,7 +1179,7 @@ export const retireAgentRoute = forClientActing({
 export const transcriptRoute = forClientReading({
   method: "get",
   path: "/agents/{id}/transcript",
-  operationId: "listTranscript",
+  operationId: "ListTranscriptLines",
   summary: "List an agent's transcript lines after a cursor, oldest first, across its sessions",
   description: "Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.",
   request: { ...agentParam, query: z.object(page) },
@@ -1201,7 +1201,7 @@ export const transcriptRoute = forClientReading({
 export const listSessionsRoute = forClientReading({
   method: "get",
   path: "/agents/{id}/sessions",
-  operationId: "listSessions",
+  operationId: "ListSessions",
   summary: "List an agent's sessions, oldest first",
   request: agentParam,
   responses: {
@@ -1221,7 +1221,7 @@ export const SessionContextSchema = z
 export const getSessionContextRoute = forHost({
   method: "get",
   path: "/agents/{id}/sessions/{sessionId}/context",
-  operationId: "getSessionContext",
+  operationId: "GetSessionContext",
   summary: "Read a live session's whole context, when its start was too large to carry it",
   description:
     "Read at the moment it is asked, as a start's is, and recorded on the session in place of what its " +
@@ -1238,7 +1238,7 @@ export const getSessionContextRoute = forHost({
 export const listAgentCommandsRoute = forClientReading({
   method: "get",
   path: "/agents/{id}/commands",
-  operationId: "listAgentCommands",
+  operationId: "ListCommands",
   summary: "List the commands sent to an agent, oldest first, with their delivery",
   description: `Each is kept ${KEPT_FOR / 86400} days from when it was queued, then deleted.`,
   request: agentParam,
@@ -1255,7 +1255,7 @@ export const listAgentCommandsRoute = forClientReading({
 export const setAgentStatusRoute = forAgent({
   method: "put",
   path: "/agents/{id}/status",
-  operationId: "setAgentStatus",
+  operationId: "PutAgentStatus",
   summary: "Say whether the agent needs the person, is in review or done, and what on",
   description:
     "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it " +
@@ -1304,11 +1304,11 @@ export const setAgentStatusRoute = forAgent({
 export const setAgentTitleRoute = forAgent({
   method: "put",
   path: "/agents/{id}/title",
-  operationId: "setAgentTitle",
+  operationId: "PutAgentTitle",
   summary: "Name the agent for its work, once",
   description:
     "Called by the agent itself, early in its first session, once it knows what it is there to do. " +
-    "Set once: after that only the person changes it, with `renameAgent`.",
+    "Set once: after that only the person changes it, with `UpdateAgent`.",
   request: {
     ...agentParam,
     body: json(z.strictObject({ title: AgentTitle }).openapi("AgentTitle"), "What the agent names itself."),
@@ -1324,7 +1324,7 @@ export const setAgentTitleRoute = forAgent({
 export const getUsageRoute = forClientReading({
   method: "get",
   path: "/usage",
-  operationId: "getUsage",
+  operationId: "GetUsage",
   summary: "Read how much of the Claude account's 5-hour and weekly allowance is used",
   description:
     "The newest reading of each window any host has reported. A window whose `resetsAt` has " +
@@ -1369,19 +1369,19 @@ const roleParam = { params: z.object({ name: RoleName }) };
 export const listRolesRoute = forClientReading({
   method: "get",
   path: "/roles",
-  operationId: "listRoles",
+  operationId: "ListRoles",
   summary: "List roles",
   description:
     "Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, " +
     "`conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written " +
-    "with `createRole` or `updateRole` is served as written.",
+    "with `CreateRole` or `UpdateRole` is served as written.",
   responses: { 200: json(z.object({ roles: z.array(RoleSchema) }).openapi("RoleList"), "The roles."), ...FAILS },
 });
 
 export const getRoleRoute = forClientReading({
   method: "get",
   path: "/roles/{name}",
-  operationId: "getRole",
+  operationId: "GetRole",
   summary: "Get one role",
   request: roleParam,
   responses: { 200: json(RoleSchema, "The role."), ...NO_ROLE, ...FAILS },
@@ -1390,7 +1390,7 @@ export const getRoleRoute = forClientReading({
 export const createRoleRoute = forClientActing({
   method: "post",
   path: "/roles",
-  operationId: "createRole",
+  operationId: "CreateRole",
   summary: "Create a role",
   description: "Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.",
   request: {
@@ -1422,7 +1422,7 @@ export const createRoleRoute = forClientActing({
 export const updateRoleRoute = forClientActing({
   method: "patch",
   path: "/roles/{name}",
-  operationId: "updateRole",
+  operationId: "UpdateRole",
   summary: "Change a role",
   description:
     "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it " +
@@ -1497,12 +1497,12 @@ const NO_REQUEST = { 404: json(ErrorSchema, "No request has this id.") };
 export const createRequestRoute = forClientActing({
   method: "post",
   path: "/requests",
-  operationId: "createRequest",
+  operationId: "CreateRequest",
   summary: "Ask for an agent in a role, to start when usage and a host allow",
   description:
     "Records the request `waiting`, then admits what it can at once. " +
     ADMISSION +
-    " Admitted, the agent is made from its role as `createAgent` with `role` would, with this request's id as its " +
+    " Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its " +
     "own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's " +
     "choosing; `agentId` names it. A request names no host or agent name.",
   request: {
@@ -1517,7 +1517,7 @@ export const createRequestRoute = forClientActing({
           label: AgentLabel.optional().describe("Absent, the role's."),
           labels: Labels.optional().describe("What the host it is placed on must all carry. Absent, none."),
           credentials: Credentials.optional().describe(
-            "In place of the role's, as `createAgent` takes them; a `{name, token}` is kept for the agent it " +
+            "In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it " +
               "starts from now, and deleted if it is withdrawn.",
           ),
           tokens: z
@@ -1548,7 +1548,7 @@ export const createRequestRoute = forClientActing({
 export const listRequestsRoute = forClientReading({
   method: "get",
   path: "/requests",
-  operationId: "listRequests",
+  operationId: "ListRequests",
   summary: "List requests for agents",
   description:
     "Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting " +
@@ -1567,7 +1567,7 @@ export const listRequestsRoute = forClientReading({
 export const getRequestRoute = forClientReading({
   method: "get",
   path: "/requests/{id}",
-  operationId: "getRequest",
+  operationId: "GetRequest",
   summary: "Get one request for an agent",
   request: { params: z.object({ id: RequestId }) },
   responses: { 200: json(RequestSchema, "The request."), ...NO_REQUEST, ...FAILS },
@@ -1576,7 +1576,7 @@ export const getRequestRoute = forClientReading({
 export const withdrawRequestRoute = forClientActing({
   method: "delete",
   path: "/requests/{id}",
-  operationId: "withdrawRequest",
+  operationId: "WithdrawRequest",
   summary: "Withdraw a waiting request, so it never starts",
   request: { params: z.object({ id: RequestId }) },
   responses: {
@@ -1592,7 +1592,7 @@ export const TICKET_TTL = 60;
 export const socketTicketRoute = forClientActing({
   method: "post",
   path: "/socket-tickets",
-  operationId: "createSocketTicket",
+  operationId: "CreateSocketTicket",
   summary: "Trade the bearer token for a one-time socket ticket",
   description:
     "A browser cannot set a header on a WebSocket, and a long-lived token must never go in a " +
@@ -1639,7 +1639,7 @@ export const SkillSchema = z
 export const getSkillRoute = forClientReading({
   method: "get",
   path: "/skill",
-  operationId: "getSkill",
+  operationId: "GetSkill",
   summary: "Read the clients agents call this deployment with",
   description:
     "The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. " +

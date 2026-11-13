@@ -83,7 +83,7 @@ const size = (message: unknown) => Buffer.byteLength(JSON.stringify(message));
 function split(message: SocketOutbound): SocketOutbound[] {
   if (size(message) <= MESSAGE_LIMIT) return [message];
   if (message.type === "sent") {
-    // A start's context is what makes it large; a viewer wanting it reads `listAgentCommands`.
+    // A start's context is what makes it large; a viewer wanting it reads `ListCommands`.
     const { context: _, documents: __, ...command } = message.sent.command as typeof message.sent.command & {
       context?: unknown;
       documents?: unknown;
