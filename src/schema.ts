@@ -652,8 +652,8 @@ export const SentCommandSchema = z
       .enum(DELIVERIES)
       .describe(
         "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went " +
-          `unreported for ${LOST_AFTER} seconds (\`create\` and \`retire\` excepted) or its agent ` +
-          "was force-stopped. `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.",
+          `unreported for ${LOST_AFTER} seconds (\`create\` and \`retire\` excepted). ` +
+          "`done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.",
       ),
     reportedAt: Instant.nullable().describe("When the host last reported it; null until then."),
     error: z
@@ -1043,54 +1043,6 @@ export const messageAgentRoute = forClientActing({
     202: json(AcceptedSchema, "Queued, and not yet delivered."),
     ...NO_AGENT,
     ...REFUSED("the agent is retired, has no session to interrupt, or its host is `lost` or full."),
-    ...FAILS,
-  },
-});
-
-export const stopAgentRoute = forClientActing({
-  method: "post",
-  path: "/agents/{id}/stop",
-  operationId: "StopAgent",
-  summary: "Stop an agent",
-  description:
-    "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. " +
-    "When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session " +
-    "is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; " +
-    "nothing is sent. If its host later reports that session still running, it is sent a `stop`. " +
-    "A caller need not send `force`: the service decides it from the host.",
-  request: {
-    ...agentParam,
-    body: {
-      ...json(
-        z
-          .object({
-            force: z.boolean().optional().describe("`true` ends it on record without waiting for the host, even one still connected."),
-          })
-          .openapi("Stop"),
-        "Optional. Absent, the host is asked to stop it.",
-      ),
-      required: false,
-    },
-  },
-  responses: {
-    202: json(AcceptedSchema, "The `stop` is queued; ended on record (its host `lost`, or `force`), and `commandId` is null."),
-    ...NO_AGENT,
-    ...REFUSED("the agent has no live session."),
-    ...FAILS,
-  },
-});
-
-export const resumeAgentRoute = forClientActing({
-  method: "post",
-  path: "/agents/{id}/resume",
-  operationId: "ResumeAgent",
-  summary: "Resume an agent",
-  description: "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
-  request: agentParam,
-  responses: {
-    202: json(AcceptedSchema, "The `start` is queued."),
-    ...NO_AGENT,
-    ...REFUSED("the agent is retired or has a live session, or its host is `lost` or full."),
     ...FAILS,
   },
 });

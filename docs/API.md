@@ -5,7 +5,7 @@ API version 2026-11-12
 Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.
-- **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.
+- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `RetireAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
 - **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.
 
@@ -35,10 +35,8 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [ListTranscriptLines](#listtranscriptlines): List transcript lines
 - [PutAgentStatus](#putagentstatus): Put an agent's status
 - [PutAgentTitle](#putagenttitle): Put an agent's title
-- [ResumeAgent](#resumeagent): Resume an agent
 - [RetireAgent](#retireagent): Retire an agent
 - [SendMessage](#sendmessage): Send a message
-- [StopAgent](#stopagent): Stop an agent
 - [UpdateAgent](#updateagent): Update an agent
 - [WithdrawRequest](#withdrawrequest): Withdraw a request
 
@@ -87,7 +85,6 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [SocketReport](#socketreport)
 - [SocketTicket](#socketticket)
 - [StartCommand](#startcommand)
-- [Stop](#stop)
 - [StopCommand](#stopcommand)
 - [Tokens](#tokens)
 - [Transcript](#transcript)
@@ -2006,64 +2003,6 @@ HTTP status: 503
 
 ---
 
-## ResumeAgent
-
-Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.
-
-### Request syntax
-
-```http
-POST /agents/{id}/resume HTTP/1.1
-Authorization: Bearer token
-```
-
-### URI request parameters
-
-**id**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-### Response syntax
-
-```http
-HTTP/1.1 202
-Content-type: application/json
-
-{
-   "commandId": "string"
-}
-```
-
-### Response elements
-
-**commandId**  
-Follow it in `ListCommands`. Null when nothing was sent to the host.  
-Type: String. Nullable: Yes.
-
-### Errors
-
-**ValidationException**  
-The request failed validation.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**ResourceNotFoundException**  
-No agent has this id.  
-HTTP status: 404
-
-**ConflictException**  
-Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.  
-HTTP status: 409
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
 ## RetireAgent
 
 Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
@@ -2188,75 +2127,6 @@ HTTP status: 404
 
 **ConflictException**  
 Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.  
-HTTP status: 409
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
-## StopAgent
-
-Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.
-
-### Request syntax
-
-```http
-POST /agents/{id}/stop HTTP/1.1
-Authorization: Bearer token
-Content-type: application/json
-
-{
-   "force": boolean
-}
-```
-
-### URI request parameters
-
-**id**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-### Request body
-
-**force**  
-`true` ends it on record without waiting for the host, even one still connected.  
-Type: Boolean. Required: No.
-
-### Response syntax
-
-```http
-HTTP/1.1 202
-Content-type: application/json
-
-{
-   "commandId": "string"
-}
-```
-
-### Response elements
-
-**commandId**  
-Follow it in `ListCommands`. Null when nothing was sent to the host.  
-Type: String. Nullable: Yes.
-
-### Errors
-
-**ValidationException**  
-The request failed validation.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**ResourceNotFoundException**  
-No agent has this id.  
-HTTP status: 404
-
-**ConflictException**  
-Nothing was queued: the agent has no live session.  
 HTTP status: 409
 
 **ServiceUnavailableException**  
@@ -3301,7 +3171,7 @@ When it was queued for its host.
 Type: String. Required: Yes.
 
 **delivery**  
-`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.  
+`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted). `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.  
 Type: String. Valid values: `queued` | `withdrawn` | `done` | `rejected`. Required: Yes.
 
 **reportedAt**  
@@ -3532,14 +3402,6 @@ Type: Object. Required: No.
 **mcpServers**  
 The MCP servers the session may call, by service, as Claude Code's `mcpServers` takes them: each given service that serves one, its address and token written as `${URL_VAR}` and `${TOKEN_VAR}`, which the session's own environment fills, so the command holds no token. The host passes them to Claude Code with `--mcp-config`.  
 Type: Object. Required: No.
-
-## Stop
-
-### Contents
-
-**force**  
-`true` ends it on record without waiting for the host, even one still connected.  
-Type: Boolean. Required: No.
 
 ## StopCommand
 

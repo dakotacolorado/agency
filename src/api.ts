@@ -45,7 +45,7 @@ export const API_VERSION = "2026-11-12";
 export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role \`priority\` first, then the oldest.
-- **Talk to it** with \`SendMessage\`, which starts a session when none is live; \`StopAgent\`, \`ResumeAgent\` and \`RetireAgent\` end, carry on and end it for good.
+- **Talk to it** with \`SendMessage\`, which starts a session carrying on its conversation when none is live; \`RetireAgent\` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
 - **Follow it**: its \`status\` is \`working\`, \`idle\`, \`waiting\` (on the person), \`review\` or \`done\`, which it says of itself with \`PutAgentStatus\`; \`ListTranscriptLines\` reads what it said, after a cursor.
 - **Hosts** run agent-host, which keeps a WebSocket open at \`/socket\`: heartbeats and reports go up it, commands come down it (\`SocketInbound\`, \`SocketOutbound\`). You don't call it. A page watches live with a ticket from \`CreateSocketTicket\`.
 
@@ -370,36 +370,6 @@ export class AgentServiceApi {
         return c.json(failure(409, `${agent.name} is ${agent.state}, with no session to interrupt.`), 409);
       }
       return this.start(c, agent, ready, text);
-    }));
-
-    app.openapi(routes.stopAgentRoute, async (c) => afresh(async () => {
-      const force = c.req.valid("json")?.force === true;
-      const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (!agent.session) {
-        return c.json(failure(409, `${agent.name} is ${agent.state}, with no session to stop.`), 409);
-      }
-      const now = this.now();
-      // A lost or deregistered host cannot be told, so its session is ended on record, as `force` does.
-      if (force || typeof (await this.reachable(agent)) === "string") {
-        await this.forceStop(agent, now);
-        return c.json({ commandId: null }, 202);
-      }
-      const command: Command = { kind: "stop", id: randomUUID(), agentId: agent.id };
-      await this.fleet.apply({ queue: inOrder(agent.hostId, [command], now) });
-      return c.json({ commandId: command.id }, 202);
-    }));
-
-    app.openapi(routes.resumeAgentRoute, async (c) => afresh(async () => {
-      const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
-      if (agent.session) {
-        return c.json(failure(409, `${agent.name} is ${agent.state}, in a live session already.`), 409);
-      }
-      const ready = await this.reachable(agent);
-      if (typeof ready === "string") return c.json(failure(409, ready), 409);
-      return this.start(c, agent, ready);
     }));
 
     app.openapi(routes.renameAgentRoute, async (c) => afresh(async () => {
@@ -768,24 +738,6 @@ export class AgentServiceApi {
       guarded: true,
     });
     return c.json({ commandId: started.command.id }, 202);
-  }
-
-  /**
-   * Recorded at once, and everything queued for the agent but its home is
-   * withdrawn. Should its host start or keep the session anyway, the next
-   * report of it is answered with a `stop`.
-   */
-  private async forceStop(agent: Agent, now: Date): Promise<void> {
-    const at = now.toISOString();
-    await this.fleet.apply({
-      agents: [{ ...agent, state: "idle", session: null, ...afterSession(agent) }],
-      sessions: [{ ...agent.session!, agentId: agent.id, endedAt: at, ended: "stopped" }],
-      guarded: true,
-    });
-    for (const queued of await this.store.pending(agent.hostId)) {
-      if (queued.command.agentId !== agent.id || DURABLE.includes(queued.command.kind)) continue;
-      await this.fleet.settle(agent.hostId, { ...queued, reportedAt: null, ok: null, error: null, withdrawnAt: at });
-    }
   }
 
   private spec(): void {

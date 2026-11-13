@@ -247,8 +247,6 @@ async function agentPage(id) {
       h(
         "div",
         { class: "row" },
-        !retired && act("Stop", "", async () => (await api("POST", `/agents/${agent.id}/stop`), "Stop queued.")),
-        !retired && act("Resume", "", async () => (await api("POST", `/agents/${agent.id}/resume`), "Resume queued.")),
         !retired &&
           act("Retire", "danger", async () => {
             if (!confirm(`Retire ${agent.name}? Its session ends and its name is freed; this cannot be undone.`)) return undefined;

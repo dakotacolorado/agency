@@ -104,7 +104,7 @@ sequenceDiagram
     P->>S: POST /socket-tickets
     P-->>S: wss /socket?ticket= (one-time, 60s)
 
-    P->>S: POST /agents/{id}/messages, /stop, /resume
+    P->>S: POST /agents/{id}/messages, DELETE /agents/{id}
     S-->>P: 202: queued, and { type: sent } (queued)
     S-->>H: { type: command }
     H-->>S: { type: report, agents, lines, commandResults }
@@ -119,8 +119,7 @@ sequenceDiagram
 The queue is the truth, so a dropped socket loses nothing: what it missed is
 replayed to the next. A command not reported by the time its host would be
 `lost` is withdrawn (`create` and `retire` excepted). A host silent over 60s is
-`disconnected`, over 300s `lost`; a lost host is sent nothing new, and stopping
-one of its agents ends the session on record at once, as `force` does.
+`disconnected`, over 300s `lost`; a lost host is sent nothing new.
 
 ### The account's usage
 

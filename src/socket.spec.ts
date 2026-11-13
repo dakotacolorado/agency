@@ -161,13 +161,6 @@ describe("a host's report on its socket", () => {
     expect(store.hosts.get("laptop")!.heartbeatAt).toBe(before);
   });
 
-  it("answers a stop for a force-stopped session it still runs, on the same socket", async () => {
-    await http("POST", `/agents/${id}/stop`, { force: true });
-    poster.posts = [];
-    await send("host", { type: "report", agents: [{ id, state: "working", sessionId }] });
-    expect(poster.to("host")).toEqual([{ type: "command", command: { kind: "stop", id: expect.any(String), agentId: id } }]);
-  });
-
   it("is refused from a page, and anything unreadable is answered with why", async () => {
     await send("page", { type: "report", agents: [{ id, state: "idle", sessionId }] });
     await send("host", "not json");
@@ -325,9 +318,8 @@ describe("replaying a host's queue to a socket that connects", () => {
     expect(kinds("new")).toEqual(["create", "start", "message"]);
   });
 
-  it("leaves out what the first report names, and what its applying queues is pushed once", async () => {
+  it("leaves out what the first report names", async () => {
     const [home] = store.commands.get("laptop")!;
-    await http("POST", `/agents/${id}/stop`, { force: true });
     poster.posts = [];
     await asHost("host");
     await send("host", {
@@ -335,7 +327,7 @@ describe("replaying a host's queue to a socket that connects", () => {
       agents: [{ id, state: "working", sessionId }],
       commandResults: [{ commandId: home!.command.id, ok: true }],
     });
-    expect(kinds("host")).toEqual(["stop"]);
+    expect(kinds("host")).toEqual(["start", "message"]);
   });
 
   it("leaves out what was withdrawn, and keeps a create however late", async () => {

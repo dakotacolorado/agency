@@ -332,7 +332,7 @@ export interface Sent extends Queued {
   reportedAt: string | null;
   ok: boolean | null;
   error: string | null;
-  /** Taken off its host's queue by the service, because its agent was force-stopped. */
+  /** Taken off its host's queue by the service, unreported too long; see `withdrawn`. */
   withdrawnAt: string | null;
 }
 
