@@ -30,6 +30,7 @@ export interface Running {
 /** The API on the database at `config.db`, with its timers running. */
 export function start(config: Config): Running {
   const store = Store.open(config.db);
+  store.forgetConnections();
   const token = fixedToken(config.token);
   const credentials = credentialsOf(config.services, token, config.env);
   const api = new AgentServiceApi(store, token, {

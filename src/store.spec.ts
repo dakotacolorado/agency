@@ -88,7 +88,9 @@ describe("a restart", () => {
     expect((await store.listRequests()).map((r) => r.id)).toEqual(["r"]);
     expect(await store.getSecret("w", "waypoint")).toBe("s3cret");
     await expect(store.commit({ claim: { name: "a", agentId: "other" } })).rejects.toBeInstanceOf(NameTaken);
-    // A socket does not outlive the process that held it.
+    // Kept for a backup's open of a served database; forgotten only by the process that serves.
+    expect((await store.connections()).map((c) => c.connectionId)).toEqual(["c"]);
+    store.forgetConnections();
     expect(await store.connections()).toEqual([]);
   });
 });
