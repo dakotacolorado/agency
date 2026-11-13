@@ -38,7 +38,10 @@ ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
 
 ## Protocol
 
-Commands and reports go by the host's socket alone; the heartbeat only keeps
+The socket is a WebSocket at `/socket` on the API's own address and port
+(`wss://` behind Tailscale HTTPS), which the heartbeat and a socket ticket
+give as `socketUrl`. The server pings each socket every 30 seconds and closes
+one that misses a ping, so a host whose link dropped reconnects. Commands and reports go by the host's socket alone; the heartbeat only keeps
 the host `connected` and says what it offers. A command waits in its host's
 queue until a report names it: it is pushed to the host's socket when written,
 and every command still pending is replayed, oldest first, to a host socket
