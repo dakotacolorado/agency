@@ -94,6 +94,8 @@ export class Store {
     this.db = db;
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     db.exec(SCHEMA);
+    // Roles now live in honed, and agents have no tokens of their own: a database from before keeps neither.
+    db.exec("DROP TABLE IF EXISTS roles; DROP TABLE IF EXISTS agent_secrets;");
   }
 
   /** The database at `path`, made if absent; `:memory:` for one that lasts as long as the process. */
