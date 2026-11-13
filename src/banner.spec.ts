@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PACKAGE_VERSION } from "./build.ts";
 import { banner, MARK_ICON, MARK_PIXELS, TAGLINE, WORDMARK } from "./banner.ts";
 
-const info = { version: "1.2.3", url: "http://127.0.0.1:4600", publicUrl: "https://beta:8446", db: "/data/agency.db", services: ["agency", "waypoint"], pickUp: null, missing: [], color: false };
+const info = { version: "1.2.3", url: "http://127.0.0.1:4600", publicUrl: "https://beta:8446", db: "/data/agency.db", services: ["agency", "waypoint"], missing: [], color: false };
 
 describe("banner", () => {
   it("carries the person's tagline verbatim", () => {
@@ -37,9 +37,8 @@ describe("banner", () => {
     ]);
   });
 
-  it("says when AUTH_TOKEN is not set, and the role it picks up tasks in", () => {
+  it("says when AUTH_TOKEN is not set", () => {
     expect(banner({ ...info, missing: ["AUTH_TOKEN"] })).toContain("\nAUTH_TOKEN not set: every call but /health answers 503\n");
-    expect(banner({ ...info, pickUp: "implementer" })).toContain("\n  picking up waypoint's ready tasks as implementer\n");
   });
 
   it("is painted in agency's brass only when color is on", () => {
