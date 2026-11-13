@@ -110,11 +110,12 @@ too.
 
 An agent is made, by a person or a program, with what its job needs:
 
-- **documents**: document-service keys each session reads after `global`, at
-  their latest version. An unknown key is refused at creation.
+- **documents**: the honed skills each session is given after
+  `workplace/global`, by name, at their current version. A name honed does
+  not have is refused at creation.
 - **credentials**: the services it is given an address and token for, by name
-  (`document-service`, `work-tracker`, `agent-service`, `approval-service`;
-  without any, all four). Only names are kept. The queued `start` holds the addresses; each
+  (`agent-service`, and each the services file names; without any, all of
+  them). Only names are kept. The queued `start` holds the addresses; each
   token is read from the service's environment as the `start` is pushed to its host's
   socket, as `secrets`, so no token is stored, listed by `listAgentCommands`
   or replayed stale, and a rotated secret reaches the next start. The host
@@ -143,6 +144,17 @@ An agent is made, by a person or a program, with what its job needs:
   person's, which does all the stage's token does too. The agent keeps its role's name, and `listAgents?role=`
   filters by it.
 
+## Instructions, from honed
+
+Every session's instructions are honed skills, read when it starts from the
+honed the services file names `honed`: `workplace/global`, whose `SKILL.md`
+(without its front matter) is the session's `CLAUDE.md`, then each skill the
+agent's role names, laid whole as a Claude Code skill at `skills/<the name's
+last segment>/`. Each skill read whole is kept in the database, so when honed
+does not answer, a start is given the last good copy and its session's
+`contextNote` says so; a skill honed says it no longer has is left out. The
+session records the version of each in `context` and `documents`.
+
 ## Admission
 
 A caller that does not need its agent now asks for one: `POST
@@ -170,14 +182,17 @@ Each start also carries the **clients** of the services it is given: for each
 credential, that service's `GET /skill` (`bin/` and `reference/` of its skill),
 read at the address and with the token this stage has for it, and this
 service's own (`skill/`: `page` and `title`, served at `GET /skill`).
-They are written over `global`'s files at the same paths, so an agent calls the
-API that is deployed where its tokens reach, however far `global` lags. A
-`SKILL.md` or `CLAUDE.md` a service sends is dropped: guidance reaches an agent
-only through `global`'s votes. Every skill's `bin/` is laid first, then the
-documents beside `global`, then each `reference/` while the start has room, so
-a client and a role always fit before a reference does. A skill that cannot be
-read, or whose `bin/` would take the start past its size limit, is left out and
-`global`'s copy stays; a `reference/` that does not fit is left out alone. The
+They are written over `workplace/global`'s files at the same paths, so an agent
+calls the API that is deployed where its tokens reach. A `SKILL.md` or
+`CLAUDE.md` another service sends is dropped: guidance reaches an agent through
+honed; this service's own `page` and `title` `SKILL.md`s are the exception, as
+no honed skill says when to use them. A service with no client answers 404 and
+is skipped. Every skill's `bin/` is laid first, then the honed skills beside
+`workplace/global`, then each `reference/` while the start has room, so a
+client and a role always fit before a reference does. A skill that cannot be
+read, or whose `bin/` would take the start past its size limit, is left out
+and `workplace/global`'s copy stays; a `reference/` that does not fit is left
+out alone. The
 session's `contextNote` says why; the session records each skill it got in
 `skills`.
 

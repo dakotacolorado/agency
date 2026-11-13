@@ -7,7 +7,7 @@ import type { WhenDone } from "./domain.ts";
  */
 export interface Role {
   name: string;
-  /** Read after `global` at each start. */
+  /** The honed skills each start reads after `workplace/global`, by name. */
   documents: string[];
   /** The services each session is given, by name; null for the stage's defaults. */
   credentials: string[] | null;
@@ -22,11 +22,8 @@ export interface Role {
   updatedAt: string | null;
 }
 
-/** Every service a session can be given, as approval-service gives its reviewers today. */
-const ALL = ["document-service", "work-tracker", "agent-service", "approval-service"];
-
 const PLANNER_BRIEF = [
-  "You are a planner, started from the Work page's New item button. Ask the person, in this chat, what they want done: use the page skill to say you are waiting on them for it, and end your turn. Their answer, in their own words, starts you again. Then plan it into one epic in the work tracker, its stories, and the dependencies between them, as the `planner` document you started with says. Write the items; do not take them or do the work.",
+  "You are a planner, started from the Work page's New item button. Ask the person, in this chat, what they want done: use the page skill to say you are waiting on them for it, and end your turn. Their answer, in their own words, starts you again. Then plan it into one epic in the work tracker, its stories, and the dependencies between them, as the `planner` skill you started with says. Write the items; do not take them or do the work.",
   "When the plan is written, report each item you made by short id and title, then use the page skill to say done, with a one-line result: your session then ends, and a message from the person in this chat starts it again, to revise the items you made rather than make new ones.",
 ].join("\n\n");
 
@@ -49,9 +46,6 @@ const DESCRIPTIONS = {
   onboarder:
     "Drafts the release routine (`pipeline.toml` and `jobs.toml` in release-routines) for a repo approval-service has not released before, checks it and writes it, so approval-service can run its first stage and register it.\n\n" +
     "**Started by** approval-service, when someone asks it to onboard a repo (`approval onboard <owner/repo>`). A person does not start one by hand.",
-  judge:
-    "Judges one proposed change to a shared document in document-service: merges it, or rejects it with the reason.\n\n" +
-    "**Started by** document-service, for each proposal an agent makes. A person does not start one by hand.",
 };
 
 type Seed = Omit<Role, "updatedAt" | "brief" | "description"> & { name: keyof typeof DESCRIPTIONS; brief?: string };
@@ -59,18 +53,18 @@ type Seed = Omit<Role, "updatedAt" | "brief" | "description"> & { name: keyof ty
 const seed = (role: Seed): Role => ({ brief: null, updatedAt: null, description: DESCRIPTIONS[role.name], ...role });
 
 /**
- * The roles a stage starts with, as approval-service, document-service,
- * work-tracker and workplace-ui make their agents today. A role written
- * with the same name replaces its seed.
+ * The roles a stage starts with, as approval-service, work-tracker and
+ * workplace-ui made their workers, each naming the honed skills it reads.
+ * Each is given every service the stage has. A role written with the same
+ * name replaces its seed.
  */
 export const SEEDED_ROLES: readonly Role[] = [
-  seed({ name: "planner", documents: ["planner"], credentials: null, whenDone: "stop", label: "plan: new work", priority: 40, brief: PLANNER_BRIEF }),
-  seed({ name: "reviewer", documents: ["approval"], credentials: ALL, whenDone: "retire", label: "review", priority: 30 }),
-  seed({ name: "conflict", documents: [], credentials: ALL, whenDone: "retire", label: "conflict", priority: 30 }),
-  seed({ name: "investigator", documents: [], credentials: ALL, whenDone: "retire", label: "investigate", priority: 30 }),
-  seed({ name: "onboarder", documents: [], credentials: ALL, whenDone: "retire", label: "onboard", priority: 30 }),
-  seed({ name: "judge", documents: [], credentials: ["document-service"], whenDone: "retire", label: "judge", priority: 30 }),
-  seed({ name: "implementer", documents: ["tickets"], credentials: null, whenDone: "stop", label: "ticket", priority: 10 }),
+  seed({ name: "planner", documents: ["workplace/planner"], credentials: null, whenDone: "stop", label: "plan: new work", priority: 40, brief: PLANNER_BRIEF }),
+  seed({ name: "reviewer", documents: ["workplace/reviewer"], credentials: null, whenDone: "retire", label: "review", priority: 30 }),
+  seed({ name: "conflict", documents: [], credentials: null, whenDone: "retire", label: "conflict", priority: 30 }),
+  seed({ name: "investigator", documents: [], credentials: null, whenDone: "retire", label: "investigate", priority: 30 }),
+  seed({ name: "onboarder", documents: [], credentials: null, whenDone: "retire", label: "onboard", priority: 30 }),
+  seed({ name: "implementer", documents: [], credentials: null, whenDone: "stop", label: "ticket", priority: 10 }),
 ];
 
 /**

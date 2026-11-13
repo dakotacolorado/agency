@@ -75,7 +75,7 @@ Body: `AgentTitle`. What the agent names itself.
 | `tokens` | `Tokens` |  |
 | `createdBy` | string or null | The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none. |
 | `whenDone` | `keep`, `stop`, `retire` | What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again. |
-| `documents` | string[] | What each session is given after `global`, by key. |
+| `documents` | string[] | The honed skills each session is given after `workplace/global`, by name. |
 | `credentials` | array or null | The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own. |
 | `hostId` | string |  |
 | `state` | `idle`, `working`, `waiting`, `interrupted`, `retired` | `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host. |

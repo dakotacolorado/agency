@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS roles (name TEXT PRIMARY KEY, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS requests (
   id TEXT PRIMARY KEY, rev TEXT NOT NULL, state TEXT NOT NULL, ended_at TEXT, record TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS skill_copies (name TEXT PRIMARY KEY, version INTEGER NOT NULL, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agent_secrets (
   agent_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL,
   PRIMARY KEY (agent_id, name)
@@ -328,6 +329,15 @@ export class Store {
         .run(request.id, written.rev, request.state, endedAt, JSON.stringify(fields));
       return written;
     });
+  }
+
+  /** The last copy of a skill read whole, for a start to fall back on when its source does not answer. */
+  async keepCopy(name: string, version: number, copy: unknown): Promise<void> {
+    this.db.prepare("INSERT OR REPLACE INTO skill_copies (name, version, record) VALUES (?, ?, ?)").run(name, version, JSON.stringify(copy));
+  }
+
+  async copyOf<T>(name: string): Promise<T | null> {
+    return parse<T>(this.db.prepare("SELECT record FROM skill_copies WHERE name = ?").get(name));
   }
 
   async putSecret(agentId: string, name: string, value: string): Promise<void> {

@@ -57,17 +57,20 @@ const AgentTitle = z
   .describe("What the agent is there to do, in a few words.")
   .openapi({ example: "Short status headline" });
 
-/** As document-service keys them. */
-const DocumentKey = z.string().regex(/^[a-z0-9][a-z0-9.-]{0,99}$/).openapi({ example: "approval" });
+/** As honed names its skills: a name, with its group prefix if it has one. */
+const DocumentKey = z
+  .string()
+  .max(100)
+  .regex(/^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  .openapi({ example: "workplace/reviewer" });
 
 const Documents = z
-  .array(DocumentKey.refine((key) => key !== "global", "global is given to every agent"))
+  .array(DocumentKey.refine((key) => key !== "workplace/global", "workplace/global is given to every agent"))
   .max(8)
-  .refine((keys) => new Set(keys).size === keys.length, "Name each document once.")
-  .refine((keys) => keys.filter((key) => key.startsWith("proposal.global.")).length <= 1, "Name one proposal.global document at most.")
+  .refine((keys) => new Set(keys).size === keys.length, "Name each skill once.")
   .describe(
-    "document-service keys each session reads after `global`, at their latest version, in this order. " +
-      "A `proposal.global.<id>` key, a copy of `global` with a proposal applied, is read in place of `global`.",
+    "The honed skills each session is given after `workplace/global`, by name, at their current version, in this order, " +
+      "each laid whole as a Claude Code skill at `skills/<the name's last segment>/`.",
   );
 
 const ContextSchema = z.object({
@@ -95,7 +98,7 @@ const Credentials = z
     (given) => new Set(given.map((c) => (typeof c === "string" ? c : c.name))).size === given.length,
     "Name each credential once.",
   )
-  .openapi({ example: ["work-tracker", { name: "document-service", token: "…" }] });
+  .openapi({ example: ["work-tracker", { name: "waypoint", token: "…" }] });
 
 const WhenDone = z
   .enum(WHEN_DONE)
@@ -493,7 +496,7 @@ export const AgentSchema = z
       .nullable()
       .describe("The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none."),
     whenDone: WhenDone,
-    documents: z.array(z.string()).describe("What each session is given after `global`, by key."),
+    documents: z.array(z.string()).describe("The honed skills each session is given after `workplace/global`, by name."),
     credentials: z
       .array(z.string())
       .nullable()
@@ -590,7 +593,7 @@ export const SessionSchema = z
     context: z
       .object({ key: z.string(), version: z.number().int() })
       .nullable()
-      .describe("The document-service context it started with; null when it was given none."),
+      .describe("The `workplace/global` it started with, from honed; null when it was given none."),
     documents: z
       .array(z.object({ key: z.string(), version: z.number().int() }))
       .describe("The documents it started with beside `context`, in order."),
@@ -951,15 +954,15 @@ export const createAgentRoute = forClientActing({
           ),
           whenDone: WhenDone.optional().describe("Absent, the role's, or without one `keep`."),
           credentials: Credentials.optional().describe(
-            "The services each session is given an address and token for, by name: `document-service`, " +
-              "`work-tracker`, `agent-service`, `approval-service`, as the stage has them. A name it does not have is refused. " +
-              "Absent, the role's, or without one all of those. Only the names are kept on record; each token is read at each start. " +
+            "The services each session is given an address and token for, by name: `agent-service` and each " +
+              "its services file names, such as `waypoint` and `honed`. A name it does not have is refused. " +
+              "Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. " +
               "`{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart " +
               "from its record, never returned by any read, and deleted when the agent is retired.",
           ),
           documents: Documents.optional().describe(
-            "Read after `global` at each start, at their latest version. A key document-service does not " +
-              "know is refused here, in its words. Absent, the role's, or without one only `global`.",
+            "Given after `workplace/global` at each start, at their current version. A skill honed does not " +
+              "have is refused here. Absent, the role's, or without one only `workplace/global`.",
           ),
         })
         .openapi("NewAgent"),
@@ -974,7 +977,7 @@ export const createAgentRoute = forClientActing({
     503: json(ErrorSchema, "No API token is configured, or no `hostId` was given and no connected host fits and has room."),
     400: json(
       ErrorSchema,
-      "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or document-service does not know one of `documents`.",
+      "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.",
     ),
   },
 });
@@ -1314,7 +1317,7 @@ export const getUsageRoute = forClientReading({
 const Priority = z.number().int().min(0).max(1000);
 
 const RoleFields = {
-  documents: Documents.describe("What each session of an agent made from it reads after `global`, by key, in this order."),
+  documents: Documents.describe("The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order."),
   credentials: CredentialNames.nullable().describe(
     "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these " +
       "a token of its own, by naming it in `credentials` as `{name, token}`.",
@@ -1375,7 +1378,7 @@ export const createRoleRoute = forClientActing({
         .strictObject({
           name: RoleName,
           ...RoleFields,
-          documents: RoleFields.documents.optional().describe("Absent, only `global`."),
+          documents: RoleFields.documents.optional().describe("Absent, only `workplace/global`."),
           credentials: RoleFields.credentials.optional().describe("Absent, null: the stage's defaults."),
           whenDone: WhenDone.optional().describe("Absent, `keep`."),
           priority: RoleFields.priority.optional().describe("Absent, 0."),
@@ -1391,7 +1394,7 @@ export const createRoleRoute = forClientActing({
     ...ADMIN,
     409: json(ErrorSchema, "A role has this name already."),
     ...FAILS,
-    400: json(ErrorSchema, "The request failed validation, a credential is not one this stage has, or document-service does not know one of `documents`."),
+    400: json(ErrorSchema, "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`."),
   },
 });
 
@@ -1419,7 +1422,7 @@ export const updateRoleRoute = forClientActing({
     ...ADMIN,
     ...NO_ROLE,
     ...FAILS,
-    400: json(ErrorSchema, "The request failed validation, a credential is not one this stage has, or document-service does not know one of `documents`."),
+    400: json(ErrorSchema, "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`."),
   },
 });
 
@@ -1618,8 +1621,8 @@ export const getSkillRoute = forClientReading({
   operationId: "getSkill",
   summary: "Read the clients agents call this deployment with",
   description:
-    "The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. " +
-    "Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, " +
-    "so an agent calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.",
+    "The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. " +
+    "Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over " +
+    "`workplace/global`'s files at the same paths, so an agent calls the API that is deployed.",
   responses: { 200: json(SkillSchema, "The skills' files."), 401: FAILS[401], 503: FAILS[503] },
 });

@@ -8,9 +8,8 @@ export const SKILL_KEY = "agent-service";
 
 /**
  * The clients an agent calls this service with, as written into its
- * `skills/`: `skill/<name>/bin/` and `skill/<name>/reference/` only. When to
- * use them and how to work stay in each `SKILL.md` that document-service's
- * `global` holds.
+ * `skills/`: `skill/<name>/bin/`, `skill/<name>/reference/` and, this
+ * service's alone, each `SKILL.md`, which says when to use them.
  */
 export const SKILL_DIR = fileURLToPath(new URL("../skill", import.meta.url));
 /** Repo-relative, as `generatedFiles` keys it. */
