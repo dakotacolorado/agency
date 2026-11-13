@@ -29,7 +29,7 @@ What the server tells an agent when it connects:
 >
 > - An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.
 > - A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).
-> - send_message talks to an agent: it starts a session carrying on its conversation when none is live. retire_agent ends the agent for good. There is no stopping one: an agent is running or it is not.
+> - send_message talks to an agent: it starts a session carrying on its conversation when none is live. delete_agent ends the agent for good. There is no stopping one: an agent is running or it is not.
 > - An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.
 > - list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.
 > - Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.
@@ -40,21 +40,19 @@ What the server tells an agent when it connects:
 | --- | --- | --- |
 | [`create_agent`](#create_agent) | Create an agent |  |
 | [`create_request`](#create_request) | Create a request |  |
+| [`delete_agent`](#delete_agent) | Delete an agent |  |
 | [`delete_host`](#delete_host) | Delete a host |  |
 | [`get_agent`](#get_agent) | Get an agent | yes |
 | [`get_request`](#get_request) | Get a request | yes |
 | [`get_role`](#get_role) | Get a role | yes |
 | [`get_usage`](#get_usage) | Get usage | yes |
 | [`list_agents`](#list_agents) | List agents | yes |
-| [`list_commands`](#list_commands) | List commands | yes |
 | [`list_hosts`](#list_hosts) | List hosts | yes |
 | [`list_requests`](#list_requests) | List requests | yes |
 | [`list_roles`](#list_roles) | List roles | yes |
-| [`list_sessions`](#list_sessions) | List sessions | yes |
 | [`list_transcript_lines`](#list_transcript_lines) | List transcript lines | yes |
 | [`put_agent_status`](#put_agent_status) | Put an agent's status |  |
 | [`put_agent_title`](#put_agent_title) | Put an agent's title |  |
-| [`retire_agent`](#retire_agent) | Retire an agent |  |
 | [`send_message`](#send_message) | Send a message |  |
 | [`update_agent`](#update_agent) | Update an agent |  |
 | [`withdraw_request`](#withdraw_request) | Withdraw a request |  |
@@ -65,14 +63,14 @@ Records the agent `idle` and queues `create` for its host, which makes its home.
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
-| `name` | string | yes | Unique among agents not retired. Names its home folder and tmux session on its host. |
+| `name` | string | yes | Unique among agents not deleted. Names its home folder and tmux session on its host. |
 | `role` | string |  | The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused. |
 | `hostId` | string |  | Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`. |
 | `labels` | string[] |  | Without `hostId`, what the host it is placed on must all carry. |
 | `brief` | string |  | The first session's first message. Absent, the role's, if it has one; otherwise no session starts. |
 | `label` | string |  | Absent, the role's, or without one none. |
 | `item` | string |  | The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none. |
-| `whenDone` | `keep`, `stop`, `retire` |  | Absent, the role's, or without one `keep`. |
+| `whenDone` | `keep`, `stop`, `delete` |  | Absent, the role's, or without one `keep`. |
 | `credentials` | string[] |  | The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. |
 | `skills` | string[] |  | Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none. |
 
@@ -89,6 +87,14 @@ Records the request `waiting`, then admits what it can at once. A request starts
 | `label` | string |  | Absent, the role's. |
 | `labels` | string[] |  | What the host it is placed on must all carry. Absent, none. |
 | `credentials` | string[] |  | In place of the role's, as `CreateAgent` takes them. |
+
+### delete_agent
+
+Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
+
+| Input | Type | Required | |
+| --- | --- | --- | --- |
+| `id` | string | yes | Assigned by the service when the agent is created. |
 
 ### delete_host
 
@@ -130,22 +136,14 @@ No input.
 
 ### list_agents
 
-Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
+Deleted agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, deleted ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
 | `createdBy` | string |  |  |
 | `item` | string |  | A work-tracker item's id: the epic, story or task the agent was started on. Never changes. |
 | `role` | string |  | Only the agents made from this role. |
-| `all` | `true`, `false` |  | `true` includes retired agents. |
-
-### list_commands
-
-Each is kept 7 days from when it was queued, then deleted.
-
-| Input | Type | Required | |
-| --- | --- | --- | --- |
-| `id` | string | yes | Assigned by the service when the agent is created. |
+| `all` | `true`, `false` |  | `true` includes deleted agents. |
 
 ### list_hosts
 
@@ -171,14 +169,6 @@ Every role an agent can be made from, highest `priority` first: each skill in ho
 
 No input.
 
-### list_sessions
-
-List an agent's sessions, oldest first.
-
-| Input | Type | Required | |
-| --- | --- | --- | --- |
-| `id` | string | yes | Assigned by the service when the agent is created. |
-
 ### list_transcript_lines
 
 Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.
@@ -191,7 +181,7 @@ Poll with the returned `next`, or take `lines` on a socket, to follow it as it g
 
 ### put_agent_status
 
-Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).
+Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `delete` deletes it once `done` (in `review` it is stopped, never deleted, so a send-back reaches it).
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
@@ -208,14 +198,6 @@ Called by the agent itself, early in its first session, once it knows what it is
 | --- | --- | --- | --- |
 | `id` | string | yes | Assigned by the service when the agent is created. |
 | `title` | string | yes | What the agent is there to do, in a few words. |
-
-### retire_agent
-
-Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
-
-| Input | Type | Required | |
-| --- | --- | --- | --- |
-| `id` | string | yes | Assigned by the service when the agent is created. |
 
 ### send_message
 
@@ -234,7 +216,7 @@ A new `name` is taken and the old one freed at once. Only the record changes: it
 | Input | Type | Required | |
 | --- | --- | --- | --- |
 | `id` | string | yes | Assigned by the service when the agent is created. |
-| `name` | string |  | Unique among agents not retired. Names its home folder and tmux session on its host. |
+| `name` | string |  | Unique among agents not deleted. Names its home folder and tmux session on its host. |
 | `title` | string or null |  | What the agent is there to do, in a few words. |
 | `label` | string or null |  | A short tag shown beside the agent's name, so sessions can be told apart. |
 

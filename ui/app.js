@@ -1,4 +1,4 @@
-// agent-service's page: agents, an agent's transcript and sessions, a form to make one, requests, hosts, roles and usage, over the API.
+// agent-service's page: agents, an agent's transcript, a form to make one, requests, hosts, roles and usage, over the API.
 // Every element is made with `h`, which sets text, never HTML, so nothing an agent or its transcript says is run.
 
 const TOKEN_KEY = "agent-service.token";
@@ -161,7 +161,7 @@ async function agents(params) {
   const { agents: list } = await load();
   if (!live()) return;
   const counted = h("span", { class: "muted" });
-  const { el, draw } = table(["Agent", "Status", "Doing", "Host", "Role", "Tokens"], all ? "No agents." : "No agents but retired ones.");
+  const { el, draw } = table(["Agent", "Status", "Doing", "Host", "Role", "Tokens"], all ? "No agents." : "No agents but deleted ones.");
   const fill = (rows) => {
     counted.textContent = `${rows.length} agent${rows.length === 1 ? "" : "s"}`;
     draw(
@@ -171,7 +171,7 @@ async function agents(params) {
           "tr",
           {},
           h("td", {}, agentLink(agent), agent.title ? h("div", { class: "muted" }, agent.title) : ""),
-          h("td", {}, agent.state === "retired" ? badge("retired") : badge(agent.status)),
+          h("td", {}, agent.state === "deleted" ? badge("deleted") : badge(agent.status)),
           h("td", {}, last ? [h("span", { class: "text" }, last.text), h("div", { class: "muted" }, when(last.at))] : ""),
           h("td", {}, hostCell(agent)),
           h("td", {}, agent.role ?? ""),
@@ -182,7 +182,7 @@ async function agents(params) {
   };
   fill(list);
   main.replaceChildren(
-    h("div", { class: "filters" }, h("label", { style: quiet }, checkbox(all, (e) => (location.hash = e.target.checked ? "#/?all=true" : "#/")), " include retired"), counted),
+    h("div", { class: "filters" }, h("label", { style: quiet }, checkbox(all, (e) => (location.hash = e.target.checked ? "#/?all=true" : "#/")), " include deleted"), counted),
     el,
   );
   every(REFRESH_MS, live, async () => {
@@ -220,7 +220,7 @@ async function agentPage(id) {
     );
   const drawHead = () => {
     const last = latest(agent);
-    const retired = agent.state === "retired";
+    const deleted = agent.state === "deleted";
     const fields = [
       ["Id", h("span", { class: "mono" }, agent.id)],
       agent.title && ["Title", agent.title],
@@ -247,11 +247,11 @@ async function agentPage(id) {
       h(
         "div",
         { class: "row" },
-        !retired &&
-          act("Retire", "danger", async () => {
-            if (!confirm(`Retire ${agent.name}? Its session ends and its name is freed; this cannot be undone.`)) return undefined;
+        !deleted &&
+          act("Delete", "danger", async () => {
+            if (!confirm(`Delete ${agent.name}? Its session ends and its name is freed; this cannot be undone.`)) return undefined;
             await api("DELETE", `/agents/${agent.id}`);
-            return "Retired.";
+            return "Deleted.";
           }),
       ),
       box,
@@ -291,26 +291,6 @@ async function agentPage(id) {
     h("div", { class: "row" }, h("button", { class: "primary", type: "submit" }, "Send"), h("label", { style: quiet }, interrupt, " interrupt its turn first")),
   );
 
-  const sessionsPanel = h("div", { class: "panel" }, h("h2", {}, "Sessions"));
-  const drawSessions = ({ sessions }) => {
-    const { el, draw } = table(["Session", "Started", "Ended", "Skills", "Clients", "Note"], "No sessions yet.");
-    draw(
-      sessions.map((s) =>
-        h(
-          "tr",
-          {},
-          h("td", { class: "mono" }, short(s.id)),
-          h("td", {}, when(s.startedAt)),
-          h("td", {}, s.endedAt ? `${when(s.endedAt)}${s.ended ? `, ${s.ended}` : ""}` : "live"),
-          h("td", { class: "mono" }, s.skills.map((k) => `${k.name} v${k.version}`).join(", ") || "none"),
-          h("td", { class: "mono" }, s.clients ? short(s.clients.commit) : "none"),
-          h("td", { class: "text" }, s.contextNote ?? ""),
-        ),
-      ),
-    );
-    sessionsPanel.replaceChildren(h("h2", {}, "Sessions"), el);
-  };
-
   const lines = h("div", { class: "transcript" });
   const status = h("span", { class: "muted" });
   const follow = h("input", { type: "checkbox", checked: true });
@@ -348,9 +328,7 @@ async function agentPage(id) {
       h("div", { class: "row", style: "margin:0 0 8px" }, status, h("label", { style: quiet }, follow, " keep at the end")),
       lines,
     ),
-    sessionsPanel,
   );
-  drawSessions(await api("GET", `/agents/${agent.id}/sessions`));
   while (live() && (await more()));
   every(FOLLOW_MS, live, async () => {
     while (live() && (await more()));
@@ -362,7 +340,6 @@ async function agentPage(id) {
       agent = next;
       drawHead();
     }
-    drawSessions(await api("GET", `/agents/${agent.id}/sessions`));
   });
 }
 

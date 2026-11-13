@@ -3,7 +3,7 @@
   "info": {
     "version": "2026-11-12",
     "title": "agent-service",
-    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `RetireAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
+    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
   },
   "tags": [
     {
@@ -506,7 +506,7 @@
             "$ref": "#/components/schemas/StopCommand"
           },
           {
-            "$ref": "#/components/schemas/RetireCommand"
+            "$ref": "#/components/schemas/DeleteCommand"
           }
         ],
         "discriminator": {
@@ -517,7 +517,7 @@
             "message": "#/components/schemas/MessageCommand",
             "interrupt": "#/components/schemas/InterruptCommand",
             "stop": "#/components/schemas/StopCommand",
-            "retire": "#/components/schemas/RetireCommand"
+            "delete": "#/components/schemas/DeleteCommand"
           }
         }
       },
@@ -546,7 +546,7 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not deleted. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           }
         },
@@ -844,7 +844,7 @@
         ],
         "description": "End the session; the agent becomes idle."
       },
-      "RetireCommand": {
+      "DeleteCommand": {
         "type": "object",
         "properties": {
           "id": {
@@ -862,7 +862,7 @@
           "kind": {
             "type": "string",
             "enum": [
-              "retire"
+              "delete"
             ],
             "description": "Which command this is."
           }
@@ -906,7 +906,7 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not deleted. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           },
           "title": {
@@ -957,9 +957,9 @@
             "enum": [
               "keep",
               "stop",
-              "retire"
+              "delete"
             ],
-            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
+            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again."
           },
           "skills": {
             "type": "array",
@@ -991,9 +991,9 @@
               "working",
               "waiting",
               "interrupted",
-              "retired"
+              "deleted"
             ],
-            "description": "`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host."
+            "description": "`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host."
           },
           "session": {
             "type": [
@@ -1011,13 +1011,41 @@
                 "type": "string",
                 "format": "date-time",
                 "example": "2026-10-27T12:00:00.000Z"
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "The honed skill."
+                    },
+                    "version": {
+                      "type": "integer",
+                      "description": "The version it was given."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "version"
+                  ]
+                },
+                "description": "The honed skills it started with, in order."
+              },
+              "contextNote": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why a skill it was made with was left out, or given from honed's last good copy; null when none was."
               }
             },
             "required": [
               "id",
               "startedAt"
             ],
-            "description": "The live session, or null for none."
+            "description": "The live session, or null for none: when it started, and what it started with."
           },
           "createdAt": {
             "type": "string",
@@ -1305,7 +1333,7 @@
               "done",
               "rejected"
             ],
-            "description": "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted). `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not."
+            "description": "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `delete` excepted). `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not."
           },
           "reportedAt": {
             "type": [
@@ -1628,9 +1656,9 @@
             "enum": [
               "keep",
               "stop",
-              "retire"
+              "delete"
             ],
-            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
+            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again."
           },
           "label": {
             "type": "string",
@@ -1922,7 +1950,7 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not deleted. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           },
           "role": {
@@ -1972,7 +2000,7 @@
             "enum": [
               "keep",
               "stop",
-              "retire"
+              "delete"
             ],
             "description": "Absent, the role's, or without one `keep`."
           },
@@ -2057,7 +2085,7 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not deleted. Names its home folder and tmux session on its host.",
             "example": "frontend-1"
           },
           "title": {
@@ -2155,139 +2183,6 @@
         "maxLength": 512,
         "description": "Pass as `after` to read what follows. Unchanged when nothing does yet.",
         "example": "c3E9MTI4"
-      },
-      "SessionList": {
-        "type": "object",
-        "properties": {
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Session"
-            },
-            "description": "Its sessions, oldest first."
-          }
-        },
-        "required": [
-          "sessions"
-        ]
-      },
-      "Session": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Assigned by the service when it queues the session's `start`.",
-            "example": "9d6a1f0e-4b7c-4e21-a3f8-0c5d2e7b4a19"
-          },
-          "agentId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Assigned by the service when the agent is created.",
-            "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z",
-            "description": "When its `start` was queued."
-          },
-          "endedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z",
-            "description": "When it ended; null while it is live."
-          },
-          "ended": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "stopped",
-              "interrupted",
-              null
-            ],
-            "description": "`stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live."
-          },
-          "skills": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "description": "The honed skill."
-                },
-                "version": {
-                  "type": "integer",
-                  "description": "The version it was given."
-                }
-              },
-              "required": [
-                "name",
-                "version"
-              ]
-            },
-            "description": "The honed skills it started with, in order."
-          },
-          "clients": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "version": {
-                "type": "integer",
-                "description": "The commit count of the agent-service build they came from."
-              },
-              "commit": {
-                "type": "string",
-                "description": "Its commit."
-              }
-            },
-            "required": [
-              "version",
-              "commit"
-            ],
-            "description": "The `page` and `title` clients it started with; null on a session that started with none."
-          },
-          "contextNote": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Why a skill it was made with was left out, or given from honed's last good copy; null when none was."
-          }
-        },
-        "required": [
-          "id",
-          "agentId",
-          "startedAt",
-          "endedAt",
-          "ended",
-          "skills",
-          "clients",
-          "contextNote"
-        ]
-      },
-      "AgentCommands": {
-        "type": "object",
-        "properties": {
-          "commands": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SentCommand"
-            },
-            "description": "Its commands, oldest first."
-          }
-        },
-        "required": [
-          "commands"
-        ]
       },
       "SocketTicket": {
         "type": "object",
@@ -3065,7 +2960,7 @@
             }
           },
           "409": {
-            "description": "ConflictException: Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.",
+            "description": "ConflictException: Nothing was queued: an agent not deleted already has `name`, the host is `lost`, or it is full and a `brief` was given.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3089,7 +2984,7 @@
       "get": {
         "operationId": "ListAgents",
         "summary": "List agents",
-        "description": "Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.",
+        "description": "Deleted agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, deleted ones included, so what they used is still there once they have gone. With `role`, only those made from that role.",
         "security": [
           {
             "bearerAuth": []
@@ -3141,10 +3036,10 @@
                 "true",
                 "false"
               ],
-              "description": "`true` includes retired agents."
+              "description": "`true` includes deleted agents."
             },
             "required": false,
-            "description": "`true` includes retired agents.",
+            "description": "`true` includes deleted agents.",
             "name": "all",
             "in": "query"
           }
@@ -3351,7 +3246,7 @@
             }
           },
           "409": {
-            "description": "ConflictException: Nothing was queued: the agent is retired, or an agent not retired already has `name`.",
+            "description": "ConflictException: Nothing was queued: the agent is deleted, or an agent not deleted already has `name`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3373,9 +3268,9 @@
         }
       },
       "delete": {
-        "operationId": "RetireAgent",
-        "summary": "Retire an agent",
-        "description": "Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.",
+        "operationId": "DeleteAgent",
+        "summary": "Delete an agent",
+        "description": "Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.",
         "security": [
           {
             "bearerAuth": []
@@ -3400,7 +3295,7 @@
         ],
         "responses": {
           "202": {
-            "description": "Retired; `commandId` is the `retire`'s.",
+            "description": "Deleted; `commandId` is the `delete`'s.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3440,7 +3335,7 @@
             }
           },
           "409": {
-            "description": "ConflictException: Nothing was queued: the agent is retired already.",
+            "description": "ConflictException: Nothing was queued: the agent is deleted already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3542,7 +3437,7 @@
             }
           },
           "409": {
-            "description": "ConflictException: Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.",
+            "description": "ConflictException: Nothing was queued: the agent is deleted, has no session to interrupt, or its host is `lost` or full.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3568,7 +3463,7 @@
       "put": {
         "operationId": "PutAgentStatus",
         "summary": "Put an agent's status",
-        "description": "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).",
+        "description": "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `delete` deletes it once `done` (in `review` it is stopped, never deleted, so a send-back reaches it).",
         "security": [
           {
             "bearerAuth": []
@@ -3643,7 +3538,7 @@
             }
           },
           "409": {
-            "description": "ConflictException: The agent is retired, or has no live session to be `working` or `waiting`.",
+            "description": "ConflictException: The agent is deleted, or has no live session to be `working` or `waiting`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3744,7 +3639,7 @@
             }
           },
           "409": {
-            "description": "ConflictException: The agent is retired, or has a title already.",
+            "description": "ConflictException: The agent is deleted, or has a title already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3827,168 +3722,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Transcript"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ResourceNotFoundException: No agent has this id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agents/{id}/sessions": {
-      "get": {
-        "operationId": "ListSessions",
-        "summary": "List sessions",
-        "description": "List an agent's sessions, oldest first.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Agents"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Assigned by the service when the agent is created.",
-              "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
-            },
-            "required": true,
-            "description": "Assigned by the service when the agent is created.",
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Every session.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ResourceNotFoundException: No agent has this id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agents/{id}/commands": {
-      "get": {
-        "operationId": "ListCommands",
-        "summary": "List commands",
-        "description": "Each is kept 7 days from when it was queued, then deleted.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Agents"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Assigned by the service when the agent is created.",
-              "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
-            },
-            "required": true,
-            "description": "Assigned by the service when the agent is created.",
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Every command kept.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentCommands"
                 }
               }
             }

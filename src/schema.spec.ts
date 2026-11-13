@@ -127,7 +127,7 @@ describe("the reference", async () => {
   const all = await schemas();
 
   it("names every operation as AWS names theirs: a verb, then what it acts on, in PascalCase", () => {
-    const verbs = ["Get", "List", "Create", "Update", "Delete", "Put", "Send", "Stop", "Resume", "Retire", "Withdraw"];
+    const verbs = ["Get", "List", "Create", "Update", "Delete", "Put", "Send", "Stop", "Resume", "Delete", "Withdraw"];
     const named = new RegExp(`^(${verbs.join("|")})(?:[A-Z][a-z]+)+$`);
     expect(ops.map((op) => op.operationId).filter((id) => !named.test(id))).toEqual([]);
   });
@@ -168,7 +168,6 @@ describe("the shapes", async () => {
         "label", "item", "role", "tokens", "createdBy", "whenDone", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told",
       ].sort(),
     );
-    expect(fields("Session")).toEqual(["clients", "contextNote", "endedAt", "ended", "id", "skills", "startedAt", "agentId"].sort());
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
     expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
     expect(fields("AgentReport")).toEqual(["id", "sessionId", "state", "tasks", "told"]);

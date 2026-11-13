@@ -6,6 +6,7 @@ import type { Poster } from "./push.ts";
 import type { Command, SocketOutbound } from "./schema.ts";
 import { SocketHandler, type SocketEvent } from "./socket.ts";
 import { Conflict } from "./store.ts";
+import { sentView } from "./fleet.ts";
 
 const NOW = new Date("2026-10-27T12:00:00.000Z");
 const TOKEN = { value: async () => "secret" };
@@ -246,34 +247,34 @@ describe("a report and a status said at once", () => {
     });
   });
 
-  it("retires an agent made to retire when done is said mid-turn, as its turn ends", async () => {
-    await make("retire");
+  it("deletes an agent made to delete when done is said mid-turn, as its turn ends", async () => {
+    await make("delete");
     afterListing(async () => expect((await done()).status).toBe(200));
     await send("host", { type: "report", agents: [{ id, state: "working", sessionId }], lines: [line(0)] });
     expect(store.agents.get(id)).toMatchObject({ state: "working", status: "done" });
     await send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }] });
-    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
+    expect(store.agents.get(id)).toMatchObject({ state: "deleted", status: "done" });
   });
 
-  it("retires it when done is said while the report of its turn's end is being written", async () => {
-    await make("retire");
+  it("deletes it when done is said while the report of its turn's end is being written", async () => {
+    await make("delete");
     afterListing(async () => expect((await done()).status).toBe(200));
     await send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }] });
-    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
+    expect(store.agents.get(id)).toMatchObject({ state: "deleted", status: "done" });
   });
 
-  it("retires it when its turn's end is reported while done is being written", async () => {
-    await make("retire");
+  it("deletes it when its turn's end is reported while done is being written", async () => {
+    await make("delete");
     afterGetting(() => send("host", { type: "report", agents: [{ id, state: "waiting", sessionId }] }));
     expect((await done()).status).toBe(200);
-    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
+    expect(store.agents.get(id)).toMatchObject({ state: "deleted", status: "done" });
   });
 
-  it("retires it when its session ends while it reads done", async () => {
-    await make("retire");
+  it("deletes it when its session ends while it reads done", async () => {
+    await make("delete");
     expect((await done()).status).toBe(200);
     await send("host", { type: "report", agents: [{ id, state: "interrupted", sessionId }] });
-    expect(store.agents.get(id)).toMatchObject({ state: "retired", status: "done" });
+    expect(store.agents.get(id)).toMatchObject({ state: "deleted", status: "done" });
   });
 });
 
@@ -355,9 +356,7 @@ describe("a message to a live session", () => {
   let messageId: string;
 
   const commands = async () =>
-    ((await (await http("GET", `/agents/${id}/commands`)).json()) as {
-      commands: { command: Command; delivery: string; error: string | null }[];
-    }).commands;
+    (await store.sentTo(id)).map((sent) => sentView(sent, now));
   const message = async () => (await commands()).find((c) => c.command.id === messageId)!;
   const sentPushes = () => poster.to("page").filter((m) => m.type === "sent");
 
@@ -535,14 +534,14 @@ describe("the tokens an agent's sessions used, as its host reports them", () => 
     expect(await tokensOf()).toEqual(totals(12, 250, 3100, 50000));
   });
 
-  it("is kept on a retired agent, and listed with it by item", async () => {
+  it("is kept on a deleted agent, and listed with it by item", async () => {
     await report(sessionId, totals(5, 6, 7, 8));
     expect((await http("DELETE", `/agents/${id}`)).status).toBe(202);
     await report(sessionId, totals(9, 10, 11, 12));
     const listed = (await (await http("GET", "/agents?item=ca147da6")).json()) as {
       agents: { id: string; state: string; tokens: unknown }[];
     };
-    expect(listed.agents).toMatchObject([{ id, state: "retired", tokens: totals(9, 10, 11, 12) }]);
+    expect(listed.agents).toMatchObject([{ id, state: "deleted", tokens: totals(9, 10, 11, 12) }]);
   });
 
   it("ignores totals for an agent on another host", async () => {

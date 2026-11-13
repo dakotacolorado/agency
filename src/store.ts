@@ -27,7 +27,7 @@ export interface Change {
   guarded?: boolean;
   sessions?: SessionWrite[];
   queue?: { hostId: string; queued: Queued }[];
-  /** A name taken by a new agent; the write fails as `NameTaken` if an agent not retired has it. */
+  /** A name taken by a new agent; the write fails as `NameTaken` if an agent not deleted has it. */
   claim?: { name: string; agentId: string };
   release?: string;
   /** Commands taken off their host's queue in the same write, as `settle` does. */
@@ -92,6 +92,13 @@ export class Store {
     db.exec(SCHEMA);
     // Roles now live in honed, agents have no tokens of their own, and a message is delivered or not: a database from before keeps none of those tables.
     db.exec("DROP TABLE IF EXISTS roles; DROP TABLE IF EXISTS agent_secrets; DROP TABLE IF EXISTS written;");
+    // An agent was once retired, not deleted: a database from before says so in its records.
+    db.exec(`
+      UPDATE agents SET record = json_set(record, '$.state', 'deleted') WHERE json_extract(record, '$.state') = 'retired';
+      UPDATE agents SET record = json_set(record, '$.whenDone', 'delete') WHERE json_extract(record, '$.whenDone') = 'retire';
+      UPDATE pending SET record = json_set(record, '$.command.kind', 'delete') WHERE json_extract(record, '$.command.kind') = 'retire';
+      UPDATE sent SET record = json_set(record, '$.command.kind', 'delete') WHERE json_extract(record, '$.command.kind') = 'retire';
+    `);
   }
 
   /** The database at `path`, made if absent; `:memory:` for one that lasts as long as the process. */

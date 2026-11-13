@@ -64,8 +64,8 @@ export const REPORTED_STATES = ["idle", ...LIVE_STATES, "interrupted"] as const;
 
 export type ReportedState = (typeof REPORTED_STATES)[number];
 
-/** `retired` is never reported by a host: it is the service's, set by `DELETE`. */
-export const AGENT_STATES = [...REPORTED_STATES, "retired"] as const;
+/** `deleted` is never reported by a host: it is the service's, set by `DELETE`. */
+export const AGENT_STATES = [...REPORTED_STATES, "deleted"] as const;
 
 export type AgentState = (typeof AGENT_STATES)[number];
 
@@ -87,8 +87,8 @@ export const STATUSES = ["working", "idle", "waiting", "review", "done"] as cons
 
 export type Status = (typeof STATUSES)[number];
 
-/** What becomes of an agent once it says it is done: it stays, its session is stopped, or it is retired. */
-export const WHEN_DONE = ["keep", "stop", "retire"] as const;
+/** What becomes of an agent once it says it is done: it stays, its session is stopped, or it is deleted. */
+export const WHEN_DONE = ["keep", "stop", "delete"] as const;
 
 export type WhenDone = (typeof WHEN_DONE)[number];
 
@@ -179,6 +179,10 @@ export function activityOf(from: string, text: string): string | null {
 export interface SessionRef {
   id: string;
   startedAt: string;
+  /** The honed skills it started with, by name and version; absent on a session begun before it was kept here. */
+  skills?: { name: string; version: number }[];
+  /** Why a skill was left out, or given from honed's last good copy. */
+  contextNote?: string | null;
 }
 
 export interface Agent {
@@ -272,10 +276,10 @@ export function statusOf(agent: Agent): Status | null {
 }
 
 /** What its maker asked be done with an agent once it is quiet in `review` or `done`. */
-export function onceQuiet(agent: Agent): "stop" | "retire" | null {
+export function onceQuiet(agent: Agent): "stop" | "delete" | null {
   const whenDone = agent.whenDone ?? "keep";
   if (agent.status === "done" && whenDone !== "keep") return whenDone;
-  // In review it waits on approval-service, whose send-back must still reach it: stopped, never retired.
+  // In review it waits on approval-service, whose send-back must still reach it: stopped, never deleted.
   if (agent.status === "review" && whenDone !== "keep") return "stop";
   return null;
 }
@@ -354,10 +358,10 @@ export const expired = ({ queuedAt }: Queued, now: Date) =>
   now.getTime() - Date.parse(queuedAt) > KEPT_FOR * 1000;
 
 /**
- * Making and retiring an agent's home are offered until its host takes them,
+ * Making and deleting an agent's home are offered until its host takes them,
  * however long that is: the record already says they are so.
  */
-export const DURABLE: readonly Command["kind"][] = ["create", "retire"];
+export const DURABLE: readonly Command["kind"][] = ["create", "delete"];
 
 /**
  * A command its host has not taken by the time that host would be called lost

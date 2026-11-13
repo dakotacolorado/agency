@@ -5,7 +5,7 @@ API version 2026-11-12
 Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.
-- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `RetireAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
+- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
 - **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.
 
@@ -20,6 +20,7 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [CreateAgent](#createagent): Create an agent
 - [CreateRequest](#createrequest): Create a request
 - [CreateSocketTicket](#createsocketticket): Create a socket ticket
+- [DeleteAgent](#deleteagent): Delete an agent
 - [DeleteHost](#deletehost): Delete a host
 - [GetAgent](#getagent): Get an agent
 - [GetHealth](#gethealth): Get health
@@ -27,15 +28,12 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [GetRole](#getrole): Get a role
 - [GetUsage](#getusage): Get usage
 - [ListAgents](#listagents): List agents
-- [ListCommands](#listcommands): List commands
 - [ListHosts](#listhosts): List hosts
 - [ListRequests](#listrequests): List requests
 - [ListRoles](#listroles): List roles
-- [ListSessions](#listsessions): List sessions
 - [ListTranscriptLines](#listtranscriptlines): List transcript lines
 - [PutAgentStatus](#putagentstatus): Put an agent's status
 - [PutAgentTitle](#putagenttitle): Put an agent's title
-- [RetireAgent](#retireagent): Retire an agent
 - [SendMessage](#sendmessage): Send a message
 - [UpdateAgent](#updateagent): Update an agent
 - [WithdrawRequest](#withdrawrequest): Withdraw a request
@@ -44,7 +42,6 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 
 - [Accepted](#accepted)
 - [Agent](#agent)
-- [AgentCommands](#agentcommands)
 - [AgentList](#agentlist)
 - [AgentPush](#agentpush)
 - [AgentRename](#agentrename)
@@ -58,6 +55,7 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [CommandReport](#commandreport)
 - [CreateCommand](#createcommand)
 - [Cursor](#cursor)
+- [DeleteCommand](#deletecommand)
 - [Error](#error)
 - [Heartbeat](#heartbeat)
 - [Host](#host)
@@ -70,13 +68,10 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [MessageCommand](#messagecommand)
 - [NewAgent](#newagent)
 - [NewAgentRequest](#newagentrequest)
-- [RetireCommand](#retirecommand)
 - [Role](#role)
 - [RoleList](#rolelist)
 - [SentCommand](#sentcommand)
 - [SentPush](#sentpush)
-- [Session](#session)
-- [SessionList](#sessionlist)
 - [SessionTokensReport](#sessiontokensreport)
 - [SocketError](#socketerror)
 - [SocketInbound](#socketinbound)
@@ -117,7 +112,7 @@ Content-type: application/json
    "brief": "string",
    "label": "string",
    "item": "string",
-   "whenDone": "keep | stop | retire",
+   "whenDone": "keep | stop | delete",
    "credentials": [ "string" ],
    "skills": [ "string" ]
 }
@@ -132,7 +127,7 @@ Type: String. Length: 1 to 200. Required: No.
 ### Request body
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
 **role**  
@@ -161,7 +156,7 @@ Type: String. Length: 1 to 64. Required: No.
 
 **whenDone**  
 Absent, the role's, or without one `keep`.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
+Type: String. Valid values: `keep` | `stop` | `delete`. Required: No.
 
 **credentials**  
 The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
@@ -191,14 +186,19 @@ Content-type: application/json
       "cacheReadInputTokens": number
    },
    "createdBy": "string",
-   "whenDone": "keep | stop | retire",
+   "whenDone": "keep | stop | delete",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
-   "state": "idle | working | waiting | interrupted | retired",
+   "state": "idle | working | waiting | interrupted | deleted",
    "session": {
       "id": "string",
-      "startedAt": "string"
+      "startedAt": "string",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ],
+      "contextNote": "string"
    },
    "createdAt": "string",
    "reportedAt": "string",
@@ -223,7 +223,7 @@ Assigned by the service when the agent is created.
 Type: String.
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
 **title**  
@@ -251,8 +251,8 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -267,11 +267,11 @@ The host it lives on.
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
 **state**  
-`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
-Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `deleted`.
 
 **session**  
-The live session, or null for none.  
+The live session, or null for none: when it started, and what it started with.  
 Type: Object. Nullable: Yes.
 
 **createdAt**  
@@ -329,7 +329,7 @@ No host has the id `hostId`.
 HTTP status: 404
 
 **ConflictException**  
-Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.  
+Nothing was queued: an agent not deleted already has `name`, the host is `lost`, or it is full and a `brief` was given.  
 HTTP status: 409
 
 **ServiceUnavailableException**  
@@ -564,6 +564,64 @@ HTTP status: 503
 
 ---
 
+## DeleteAgent
+
+Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
+
+### Request syntax
+
+```http
+DELETE /agents/{id} HTTP/1.1
+Authorization: Bearer token
+```
+
+### URI request parameters
+
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+### Response syntax
+
+```http
+HTTP/1.1 202
+Content-type: application/json
+
+{
+   "commandId": "string"
+}
+```
+
+### Response elements
+
+**commandId**  
+Follow it in `ListCommands`. Null when nothing was sent to the host.  
+Type: String. Nullable: Yes.
+
+### Errors
+
+**ValidationException**  
+The request failed validation.  
+HTTP status: 400
+
+**UnauthorizedException**  
+Missing or incorrect bearer token.  
+HTTP status: 401
+
+**ResourceNotFoundException**  
+No agent has this id.  
+HTTP status: 404
+
+**ConflictException**  
+Nothing was queued: the agent is deleted already.  
+HTTP status: 409
+
+**ServiceUnavailableException**  
+No API token is configured.  
+HTTP status: 503
+
+---
+
 ## DeleteHost
 
 Deletes the host's record, which is how a host leaves `ListHosts`. Its agents, their transcripts and the commands sent to them stay on record, and its agents read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.
@@ -645,14 +703,19 @@ Content-type: application/json
       "cacheReadInputTokens": number
    },
    "createdBy": "string",
-   "whenDone": "keep | stop | retire",
+   "whenDone": "keep | stop | delete",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
-   "state": "idle | working | waiting | interrupted | retired",
+   "state": "idle | working | waiting | interrupted | deleted",
    "session": {
       "id": "string",
-      "startedAt": "string"
+      "startedAt": "string",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ],
+      "contextNote": "string"
    },
    "createdAt": "string",
    "reportedAt": "string",
@@ -677,7 +740,7 @@ Assigned by the service when the agent is created.
 Type: String.
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
 **title**  
@@ -705,8 +768,8 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -721,11 +784,11 @@ The host it lives on.
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
 **state**  
-`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
-Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `deleted`.
 
 **session**  
-The live session, or null for none.  
+The live session, or null for none: when it started, and what it started with.  
 Type: Object. Nullable: Yes.
 
 **createdAt**  
@@ -987,7 +1050,7 @@ Content-type: application/json
    "name": "string",
    "skills": [ "string" ],
    "credentials": [ "string" ],
-   "whenDone": "keep | stop | retire",
+   "whenDone": "keep | stop | delete",
    "label": "string",
    "description": "string",
    "priority": number,
@@ -1011,8 +1074,8 @@ The services each session is given, by name; null for every one the stage has.
 Type: Array of strings. At most 16 items. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **label**  
 A short tag shown beside the agent's name, so sessions can be told apart.  
@@ -1116,7 +1179,7 @@ HTTP status: 503
 
 ## ListAgents
 
-Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
+Deleted agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, deleted ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
 
 ### Request syntax
 
@@ -1139,7 +1202,7 @@ Only the agents made from this role.
 Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: No.
 
 **all**  
-`true` includes retired agents.  
+`true` includes deleted agents.  
 Type: String. Valid values: `true` | `false`. Required: No.
 
 ### Response syntax
@@ -1163,14 +1226,19 @@ Content-type: application/json
          "cacheReadInputTokens": number
       },
       "createdBy": "string",
-      "whenDone": "keep | stop | retire",
+      "whenDone": "keep | stop | delete",
       "skills": [ "string" ],
       "credentials": [ "string" ],
       "hostId": "string",
-      "state": "idle | working | waiting | interrupted | retired",
+      "state": "idle | working | waiting | interrupted | deleted",
       "session": {
          "id": "string",
-         "startedAt": "string"
+         "startedAt": "string",
+         "skills": [ {
+            "name": "string",
+            "version": number
+         } ],
+         "contextNote": "string"
       },
       "createdAt": "string",
       "reportedAt": "string",
@@ -1204,66 +1272,6 @@ HTTP status: 400
 **UnauthorizedException**  
 Missing or incorrect bearer token.  
 HTTP status: 401
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
-## ListCommands
-
-Each is kept 7 days from when it was queued, then deleted.
-
-### Request syntax
-
-```http
-GET /agents/{id}/commands HTTP/1.1
-Authorization: Bearer token
-```
-
-### URI request parameters
-
-**id**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-### Response syntax
-
-```http
-HTTP/1.1 200
-Content-type: application/json
-
-{
-   "commands": [ {
-      "command": value,
-      "queuedAt": "string",
-      "delivery": "queued | withdrawn | done | rejected",
-      "reportedAt": "string",
-      "error": "string"
-   } ]
-}
-```
-
-### Response elements
-
-**commands**  
-Its commands, oldest first.  
-Type: Array of [SentCommand](#sentcommand) objects.
-
-### Errors
-
-**ValidationException**  
-The request failed validation.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**ResourceNotFoundException**  
-No agent has this id.  
-HTTP status: 404
 
 **ServiceUnavailableException**  
 No API token is configured.  
@@ -1427,7 +1435,7 @@ Content-type: application/json
       "name": "string",
       "skills": [ "string" ],
       "credentials": [ "string" ],
-      "whenDone": "keep | stop | retire",
+      "whenDone": "keep | stop | delete",
       "label": "string",
       "description": "string",
       "priority": number,
@@ -1452,75 +1460,6 @@ HTTP status: 400
 **UnauthorizedException**  
 Missing or incorrect bearer token.  
 HTTP status: 401
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
-## ListSessions
-
-List an agent's sessions, oldest first.
-
-### Request syntax
-
-```http
-GET /agents/{id}/sessions HTTP/1.1
-Authorization: Bearer token
-```
-
-### URI request parameters
-
-**id**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-### Response syntax
-
-```http
-HTTP/1.1 200
-Content-type: application/json
-
-{
-   "sessions": [ {
-      "id": "string",
-      "agentId": "string",
-      "startedAt": "string",
-      "endedAt": "string",
-      "ended": "stopped | interrupted | ",
-      "skills": [ {
-         "name": "string",
-         "version": number
-      } ],
-      "clients": {
-         "version": number,
-         "commit": "string"
-      },
-      "contextNote": "string"
-   } ]
-}
-```
-
-### Response elements
-
-**sessions**  
-Its sessions, oldest first.  
-Type: Array of [Session](#session) objects.
-
-### Errors
-
-**ValidationException**  
-The request failed validation.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**ResourceNotFoundException**  
-No agent has this id.  
-HTTP status: 404
 
 **ServiceUnavailableException**  
 No API token is configured.  
@@ -1605,7 +1544,7 @@ HTTP status: 503
 
 ## PutAgentStatus
 
-Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).
+Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `delete` deletes it once `done` (in `review` it is stopped, never deleted, so a send-back reaches it).
 
 ### Request syntax
 
@@ -1661,14 +1600,19 @@ Content-type: application/json
       "cacheReadInputTokens": number
    },
    "createdBy": "string",
-   "whenDone": "keep | stop | retire",
+   "whenDone": "keep | stop | delete",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
-   "state": "idle | working | waiting | interrupted | retired",
+   "state": "idle | working | waiting | interrupted | deleted",
    "session": {
       "id": "string",
-      "startedAt": "string"
+      "startedAt": "string",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ],
+      "contextNote": "string"
    },
    "createdAt": "string",
    "reportedAt": "string",
@@ -1693,7 +1637,7 @@ Assigned by the service when the agent is created.
 Type: String.
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
 **title**  
@@ -1721,8 +1665,8 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -1737,11 +1681,11 @@ The host it lives on.
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
 **state**  
-`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
-Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `deleted`.
 
 **session**  
-The live session, or null for none.  
+The live session, or null for none: when it started, and what it started with.  
 Type: Object. Nullable: Yes.
 
 **createdAt**  
@@ -1799,7 +1743,7 @@ No agent has this id.
 HTTP status: 404
 
 **ConflictException**  
-The agent is retired, or has no live session to be `working` or `waiting`.  
+The agent is deleted, or has no live session to be `working` or `waiting`.  
 HTTP status: 409
 
 **ServiceUnavailableException**  
@@ -1856,14 +1800,19 @@ Content-type: application/json
       "cacheReadInputTokens": number
    },
    "createdBy": "string",
-   "whenDone": "keep | stop | retire",
+   "whenDone": "keep | stop | delete",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
-   "state": "idle | working | waiting | interrupted | retired",
+   "state": "idle | working | waiting | interrupted | deleted",
    "session": {
       "id": "string",
-      "startedAt": "string"
+      "startedAt": "string",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ],
+      "contextNote": "string"
    },
    "createdAt": "string",
    "reportedAt": "string",
@@ -1888,7 +1837,7 @@ Assigned by the service when the agent is created.
 Type: String.
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
 **title**  
@@ -1916,8 +1865,8 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -1932,11 +1881,11 @@ The host it lives on.
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
 **state**  
-`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
-Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `deleted`.
 
 **session**  
-The live session, or null for none.  
+The live session, or null for none: when it started, and what it started with.  
 Type: Object. Nullable: Yes.
 
 **createdAt**  
@@ -1994,65 +1943,7 @@ No agent has this id.
 HTTP status: 404
 
 **ConflictException**  
-The agent is retired, or has a title already.  
-HTTP status: 409
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
-## RetireAgent
-
-Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
-
-### Request syntax
-
-```http
-DELETE /agents/{id} HTTP/1.1
-Authorization: Bearer token
-```
-
-### URI request parameters
-
-**id**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-### Response syntax
-
-```http
-HTTP/1.1 202
-Content-type: application/json
-
-{
-   "commandId": "string"
-}
-```
-
-### Response elements
-
-**commandId**  
-Follow it in `ListCommands`. Null when nothing was sent to the host.  
-Type: String. Nullable: Yes.
-
-### Errors
-
-**ValidationException**  
-The request failed validation.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**ResourceNotFoundException**  
-No agent has this id.  
-HTTP status: 404
-
-**ConflictException**  
-Nothing was queued: the agent is retired already.  
+The agent is deleted, or has a title already.  
 HTTP status: 409
 
 **ServiceUnavailableException**  
@@ -2126,7 +2017,7 @@ No agent has this id.
 HTTP status: 404
 
 **ConflictException**  
-Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.  
+Nothing was queued: the agent is deleted, has no session to interrupt, or its host is `lost` or full.  
 HTTP status: 409
 
 **ServiceUnavailableException**  
@@ -2162,7 +2053,7 @@ Type: String. Required: Yes.
 ### Request body
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: No.
 
 **title**  
@@ -2193,14 +2084,19 @@ Content-type: application/json
       "cacheReadInputTokens": number
    },
    "createdBy": "string",
-   "whenDone": "keep | stop | retire",
+   "whenDone": "keep | stop | delete",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
-   "state": "idle | working | waiting | interrupted | retired",
+   "state": "idle | working | waiting | interrupted | deleted",
    "session": {
       "id": "string",
-      "startedAt": "string"
+      "startedAt": "string",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ],
+      "contextNote": "string"
    },
    "createdAt": "string",
    "reportedAt": "string",
@@ -2225,7 +2121,7 @@ Assigned by the service when the agent is created.
 Type: String.
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
 **title**  
@@ -2253,8 +2149,8 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -2269,11 +2165,11 @@ The host it lives on.
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
 **state**  
-`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
-Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `deleted`.
 
 **session**  
-The live session, or null for none.  
+The live session, or null for none: when it started, and what it started with.  
 Type: Object. Nullable: Yes.
 
 **createdAt**  
@@ -2331,7 +2227,7 @@ No agent has this id.
 HTTP status: 404
 
 **ConflictException**  
-Nothing was queued: the agent is retired, or an agent not retired already has `name`.  
+Nothing was queued: the agent is deleted, or an agent not deleted already has `name`.  
 HTTP status: 409
 
 **ServiceUnavailableException**  
@@ -2497,7 +2393,7 @@ Assigned by the service when the agent is created.
 Type: String. Required: Yes.
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
 **title**  
@@ -2525,8 +2421,8 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes. Required: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: Yes.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`. Required: Yes.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -2541,11 +2437,11 @@ The host it lives on.
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: Yes.
 
 **state**  
-`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
-Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`. Required: Yes.
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `deleted`. Required: Yes.
 
 **session**  
-The live session, or null for none.  
+The live session, or null for none: when it started, and what it started with.  
 Type: Object. Nullable: Yes. Required: Yes.
 
 **createdAt**  
@@ -2588,14 +2484,6 @@ Type: Boolean. Nullable: Yes. Required: Yes.
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`. Required: Yes.
 
-## AgentCommands
-
-### Contents
-
-**commands**  
-Its commands, oldest first.  
-Type: Array of [SentCommand](#sentcommand) objects. Required: Yes.
-
 ## AgentList
 
 ### Contents
@@ -2622,7 +2510,7 @@ Type: [Agent](#agent) object. Required: Yes.
 ### Contents
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: No.
 
 **title**  
@@ -2813,7 +2701,7 @@ Which command this is.
 Type: String. Valid values: `create`. Required: Yes.
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
 ## Cursor
@@ -2821,6 +2709,24 @@ Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 Pass as `after` to read what follows. Unchanged when nothing does yet.
 
 ### Contents
+
+## DeleteCommand
+
+Stop any session and take the agent off the host. Its home folder is kept.
+
+### Contents
+
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
+
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+**kind**  
+Which command this is.  
+Type: String. Valid values: `delete`. Required: Yes.
 
 ## Error
 
@@ -3020,7 +2926,7 @@ Type: String. Length: 1 to 16384. Required: Yes.
 ### Contents
 
 **name**  
-Unique among agents not retired. Names its home folder and tmux session on its host.  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
 **role**  
@@ -3049,7 +2955,7 @@ Type: String. Length: 1 to 64. Required: No.
 
 **whenDone**  
 Absent, the role's, or without one `keep`.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
+Type: String. Valid values: `keep` | `stop` | `delete`. Required: No.
 
 **credentials**  
 The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
@@ -3091,24 +2997,6 @@ Type: Array of strings. At most 64 items. Required: No.
 In place of the role's, as `CreateAgent` takes them.  
 Type: Array of strings. At most 16 items. Required: No.
 
-## RetireCommand
-
-Stop any session and take the agent off the host. Its home folder is kept.
-
-### Contents
-
-**id**  
-Report the command by this id once it is taken.  
-Type: String. Length: 1 to 128. Required: Yes.
-
-**agentId**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-**kind**  
-Which command this is.  
-Type: String. Valid values: `retire`. Required: Yes.
-
 ## Role
 
 A role, as its honed skill `agent-roles/<name>` defines it: its `SKILL.md` is what an agent in it is told, and its `role.json` these settings.
@@ -3128,8 +3016,8 @@ The services each session is given, by name; null for every one the stage has.
 Type: Array of strings. At most 16 items. Nullable: Yes. Required: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: Yes.
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `delete`. Required: Yes.
 
 **label**  
 A short tag shown beside the agent's name, so sessions can be told apart.  
@@ -3171,7 +3059,7 @@ When it was queued for its host.
 Type: String. Required: Yes.
 
 **delivery**  
-`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted). `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.  
+`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `delete` excepted). `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.  
 Type: String. Valid values: `queued` | `withdrawn` | `done` | `rejected`. Required: Yes.
 
 **reportedAt**  
@@ -3198,50 +3086,6 @@ Type: String. Required: Yes.
 
 **sent**  
 Type: [SentCommand](#sentcommand) object. Required: Yes.
-
-## Session
-
-### Contents
-
-**id**  
-Assigned by the service when it queues the session's `start`.  
-Type: String. Required: Yes.
-
-**agentId**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-**startedAt**  
-When its `start` was queued.  
-Type: String. Required: Yes.
-
-**endedAt**  
-When it ended; null while it is live.  
-Type: String. Nullable: Yes. Required: Yes.
-
-**ended**  
-`stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.  
-Type: String. Valid values: `stopped` | `interrupted` | `null`. Nullable: Yes. Required: Yes.
-
-**skills**  
-The honed skills it started with, in order.  
-Type: Array of Object. Required: Yes.
-
-**clients**  
-The `page` and `title` clients it started with; null on a session that started with none.  
-Type: Object. Nullable: Yes. Required: Yes.
-
-**contextNote**  
-Why a skill it was made with was left out, or given from honed's last good copy; null when none was.  
-Type: String. Nullable: Yes. Required: Yes.
-
-## SessionList
-
-### Contents
-
-**sessions**  
-Its sessions, oldest first.  
-Type: Array of [Session](#session) objects. Required: Yes.
 
 ## SessionTokensReport
 

@@ -66,7 +66,7 @@ describe("a host's places", () => {
 
   it("are held in working and waiting", () => {
     expect(["working", "waiting"].every(isLive)).toBe(true);
-    expect(["idle", "interrupted", "retired"].some(isLive)).toBe(false);
+    expect(["idle", "interrupted", "deleted"].some(isLive)).toBe(false);
   });
 });
 
@@ -74,11 +74,11 @@ describe("a command", () => {
   const message: Command = { kind: "message", id: "c", agentId: "w", text: "hi" };
   const create: Command = { kind: "create", id: "c", agentId: "w", name: "w" };
 
-  it("is withdrawn unreported once its host would be lost, but a create or retire never is", () => {
+  it("is withdrawn unreported once its host would be lost, but a create or delete never is", () => {
     expect(withdrawn({ command: message, queuedAt: ago(LOST_AFTER) }, NOW)).toBe(false);
     expect(withdrawn({ command: message, queuedAt: ago(LOST_AFTER + 1) }, NOW)).toBe(true);
     expect(withdrawn({ command: create, queuedAt: ago(LOST_AFTER * 100) }, NOW)).toBe(false);
-    expect(withdrawn({ command: { kind: "retire", id: "c", agentId: "w" }, queuedAt: ago(LOST_AFTER * 100) }, NOW)).toBe(false);
+    expect(withdrawn({ command: { kind: "delete", id: "c", agentId: "w" }, queuedAt: ago(LOST_AFTER * 100) }, NOW)).toBe(false);
   });
 
   it("is delivered as its host reported it", () => {

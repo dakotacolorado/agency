@@ -4,7 +4,7 @@
 # configured as) at this host's agent-service, with a brief to say which
 # skills it was given, and waits for its session to answer. Prints the
 # skills it started with (its role's, by version), its clients and its
-# context note) and its last reply, then retires it. Exits 0
+# context note) and its last reply, then deletes it. Exits 0
 # once it has answered naming its planner skill.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -27,5 +27,5 @@ done
 reply=$(call GET "/agents/$id/transcript" | field 'v.lines.filter(l=>l.from==="agent").map(l=>l.text).at(-1)??""')
 echo "check: it is $state, and said: $reply"
 call DELETE "/agents/$id" >/dev/null
-echo "check: retired $id"
+echo "check: deleted $id"
 printf '%s' "$reply" | grep -q 'planner'

@@ -5,7 +5,7 @@ Generated from this deployment's `openapi.json`. `bin/` adds the address, the be
 Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.
-- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `RetireAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
+- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
 - **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.
 
@@ -35,7 +35,7 @@ Get one agent.
 
 Put an agent's status.
 
-Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).
+Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `delete` deletes it once `done` (in `review` it is stopped, never deleted, so a send-back reaches it).
 
 | Parameter | In | Type | |
 | --- | --- | --- | --- |
@@ -47,7 +47,7 @@ Body: `AgentStatus`. What the agent says of itself.
 - 400: ValidationException: The request failed validation. → `Error`
 - 401: UnauthorizedException: Missing or incorrect bearer token. → `Error`
 - 404: ResourceNotFoundException: No agent has this id. → `Error`
-- 409: ConflictException: The agent is retired, or has no live session to be `working` or `waiting`. → `Error`
+- 409: ConflictException: The agent is deleted, or has no live session to be `working` or `waiting`. → `Error`
 - 503: ServiceUnavailableException: No API token is configured. → `Error`
 
 ## PUT /agents/{id}/title
@@ -66,7 +66,7 @@ Body: `AgentTitle`. What the agent names itself.
 - 400: ValidationException: The request failed validation. → `Error`
 - 401: UnauthorizedException: Missing or incorrect bearer token. → `Error`
 - 404: ResourceNotFoundException: No agent has this id. → `Error`
-- 409: ConflictException: The agent is retired, or has a title already. → `Error`
+- 409: ConflictException: The agent is deleted, or has a title already. → `Error`
 - 503: ServiceUnavailableException: No API token is configured. → `Error`
 
 # Schemas
@@ -76,19 +76,19 @@ Body: `AgentTitle`. What the agent names itself.
 | Field | Type | |
 | --- | --- | --- |
 | `id` | string (uuid) | Assigned by the service when the agent is created. |
-| `name` | string | Unique among agents not retired. Names its home folder and tmux session on its host. |
+| `name` | string | Unique among agents not deleted. Names its home folder and tmux session on its host. |
 | `title` | string or null | What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host. |
 | `label` | string or null | A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none. |
 | `item` | string or null (min 1, max 64) | The work item it was started on, as given when it was made; null for none. |
 | `role` | string or null | The role it was made from, as given when it was made; null for one made without. |
 | `tokens` | `Tokens` |  |
 | `createdBy` | string or null | The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none. |
-| `whenDone` | `keep`, `stop`, `retire` | What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again. |
+| `whenDone` | `keep`, `stop`, `delete` | What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. |
 | `skills` | string[] | The honed skills each session is given, by name: its role's own first. |
 | `credentials` | array or null | The services each session is given, by name; null for every one the stage has. Never a token. |
 | `hostId` | string | The host it lives on. |
-| `state` | `idle`, `working`, `waiting`, `interrupted`, `retired` | `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host. |
-| `session` | object or null | The live session, or null for none. |
+| `state` | `idle`, `working`, `waiting`, `interrupted`, `deleted` | `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host. |
+| `session` | object or null | The live session, or null for none: when it started, and what it started with. |
 | `createdAt` | string (date-time) | When it was made. |
 | `reportedAt` | string or null (date-time) | When its host last reported a change to it; null until its host first reports it. |
 | `status` | `working`, `idle`, `waiting`, `review`, `done`, `null` | What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person. |

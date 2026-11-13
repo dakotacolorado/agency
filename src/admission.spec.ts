@@ -162,7 +162,7 @@ describe("a request for an agent", () => {
       item: "item-1",
       createdBy: "approval-service",
       skills: ["agent-roles/reviewer"],
-      whenDone: "retire",
+      whenDone: "delete",
       state: "working",
     });
     expect(await waiting()).toEqual([]);

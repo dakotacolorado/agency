@@ -94,5 +94,5 @@ export function inStartOrder(requests: AgentRequest[], roles: Role[]): AgentRequ
   );
 }
 
-/** The agent's name: its role and the start of its id, which is unique enough among agents not retired. */
+/** The agent's name: its role and the start of its id, which is unique enough among agents not deleted. */
 export const nameFor = (request: Pick<AgentRequest, "id" | "role">) => `${request.role.slice(0, 31)}-${request.id.slice(0, 8)}`;
