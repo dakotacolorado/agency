@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { AgentServiceApi, type TokenSource } from "./api.ts";
 import {
+  expired,
   HEADLINE_LIMIT,
   HEARTBEAT_INTERVAL,
   KEPT_FOR,
@@ -13,6 +14,7 @@ import {
 } from "./domain.ts";
 import { hash } from "./secret.ts";
 import { FakeStore } from "./fake-store.ts";
+import { sentView } from "./fleet.ts";
 import type { Poster } from "./push.ts";
 import type { Command, SocketOutbound } from "./schema.ts";
 import { SocketHandler } from "./socket.ts";
@@ -74,6 +76,10 @@ const EMPTY = { version: "0.1.0", labels: [] };
 
 /** A host's heartbeat, as its socket hands it over. */
 const beat = (id: string, body: { labels?: string[]; capacity?: number } = {}) => api.beat(id, { ...EMPTY, ...body });
+
+/** An agent's sessions and commands, as the store keeps them: no route serves them. */
+const sessionsOf = async (id: string) => ({ sessions: await store.sessionsOf(id) });
+const commandsOf = async (id: string) => ({ commands: (await store.sentTo(id)).filter((s) => !expired(s, now)).map((s) => sentView(s, now)) });
 
 /** Ends the agent's live session as its host does, reporting it idle; there is no stopping one from outside. */
 const endSession = async (id: string, hostId = "laptop") => {
@@ -262,7 +268,7 @@ describe("creating an agent", () => {
   it("with a brief, starts its first session at once, after its create", async () => {
     const made = await create({ brief: "Fix the board." });
     expect(made.state).toBe("working");
-    expect(made.session).toEqual({ id: expect.any(String), startedAt: NOW.toISOString() });
+    expect(made.session).toEqual({ id: expect.any(String), startedAt: NOW.toISOString(), skills: [], contextNote: null });
     const [home, start] = queued();
     expect(home!.kind).toBe("create");
     expect(start).toEqual({
@@ -274,7 +280,7 @@ describe("creating an agent", () => {
       text: "Fix the board.",
       ...SELF,
     });
-    expect(await read(`/agents/${made.id}/sessions`)).toEqual({
+    expect(await sessionsOf(made.id)).toEqual({
       sessions: [
         {
           id: made.session!.id,
@@ -290,11 +296,11 @@ describe("creating an agent", () => {
     });
   });
 
-  it("refuses a name an agent not retired has, and frees it on retirement", async () => {
+  it("refuses a name an agent not deleted has, and frees it on deletion", async () => {
     const first = await create();
     const res = await call("POST", "/agents", { name: "frontend-1", hostId: "laptop" });
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ message: "An agent not retired is already named frontend-1." });
+    expect(await res.json()).toMatchObject({ message: "An agent not deleted is already named frontend-1." });
     expect((await call("DELETE", `/agents/${first.id}`)).status).toBe(202);
     await create();
   });
@@ -326,7 +332,7 @@ describe("creating an agent", () => {
 });
 
 describe("listing agents", () => {
-  it("leaves out the retired unless asked, and takes no host or state filter", async () => {
+  it("leaves out the deleted unless asked, and takes no host or state filter", async () => {
     await beat("laptop");
     await beat("desktop");
     const a = await create({ name: "a" });
@@ -338,7 +344,7 @@ describe("listing agents", () => {
     expect(await names("")).toEqual(["a", "b"]);
     expect(await names("?all=true")).toEqual(["a", "b", "c"]);
     expect(await names("?hostId=desktop")).toEqual(["a", "b"]);
-    expect(await names("?state=retired")).toEqual(["a", "b"]);
+    expect(await names("?state=deleted")).toEqual(["a", "b"]);
     expect((await call("GET", `/agents/${a.id}`)).status).toBe(200);
     expect((await call("GET", "/agents/3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10")).status).toBe(404);
     expect(b.state).toBe("working");
@@ -355,7 +361,7 @@ describe("the item an agent was started on", () => {
     expect((await read(`/agents/${off.id}`)).item).toBeNull();
   });
 
-  it("lists every agent started on it, retired ones included, and no other", async () => {
+  it("lists every agent started on it, deleted ones included, and no other", async () => {
     await beat("laptop");
     await create({ name: "a", item: "epic-1" });
     await create({ name: "b", item: "story-2" });
@@ -395,7 +401,7 @@ describe("a session's life, as its host reports it", () => {
     expect(queued()).toEqual(commands);
     await report("laptop", { commandResults: ack(commands) });
     expect(queued()).toEqual([]);
-    const sent = (await read(`/agents/${id}/commands`)).commands;
+    const sent = (await commandsOf(id)).commands;
     expect(sent.map((s: { delivery: string }) => s.delivery)).toEqual(["done", "done"]);
   });
 
@@ -423,7 +429,7 @@ describe("a session's life, as its host reports it", () => {
   it("ends the session stopped when its host says it went idle, and interrupted when it died", async () => {
     await reports([{ id, state: "idle", sessionId }]);
     expect(await agent(id)).toMatchObject({ state: "idle", session: null });
-    const [first] = (await read(`/agents/${id}/sessions`)).sessions;
+    const [first] = (await sessionsOf(id)).sessions;
     expect(first).toMatchObject({ id: sessionId, ended: "stopped", endedAt: NOW.toISOString() });
 
     const res = await call("POST", `/agents/${id}/messages`, { text: "Again." });
@@ -431,7 +437,7 @@ describe("a session's life, as its host reports it", () => {
     const again = (await agent(id)).session.id;
     await reports([{ id, state: "interrupted", sessionId: again }]);
     expect(await agent(id)).toMatchObject({ state: "interrupted", session: null });
-    expect((await read(`/agents/${id}/sessions`)).sessions[1]).toMatchObject({ id: again, ended: "interrupted" });
+    expect((await sessionsOf(id)).sessions[1]).toMatchObject({ id: again, ended: "interrupted" });
   });
 
   it("does not take a session not yet begun for a missing one", async () => {
@@ -484,7 +490,7 @@ describe("a session's life, as its host reports it", () => {
     const [home, start] = queued();
     await report("laptop", { commandResults: [...ack([home!]), ...ack([start!], false, "tmux failed")] });
     expect(await agent(id)).toMatchObject({ state: "interrupted", session: null });
-    const sent = (await read(`/agents/${id}/commands`)).commands;
+    const sent = (await commandsOf(id)).commands;
     expect(sent[1]).toMatchObject({ delivery: "rejected", error: "tmux failed" });
   });
 
@@ -761,20 +767,20 @@ describe("an agent that says it is done", () => {
     expect((await agent(id)).status).toBe("working");
   });
 
-  it("is retired when made to retire once its turn ends, its name freed, reading done", async () => {
-    await make("retire");
+  it("is deleted when made to delete once its turn ends, its name freed, reading done", async () => {
+    await make("delete");
     const res = await done();
     expect(res.status, await res.clone().text()).toBe(200);
     expect(await res.json()).toMatchObject({ state: "working", status: "done" });
     await quiet();
-    expect(await agent(id)).toMatchObject({ state: "retired", status: "done", summary: "Approved PR #18." });
-    expect(queued().filter((c) => c.agentId === id).map((c) => c.kind)).toEqual(["create", "start", "stop", "retire"]);
-    expect((await read(`/agents/${id}/sessions`)).sessions[0]).toMatchObject({ ended: "stopped" });
+    expect(await agent(id)).toMatchObject({ state: "deleted", status: "done", summary: "Approved PR #18." });
+    expect(queued().filter((c) => c.agentId === id).map((c) => c.kind)).toEqual(["create", "start", "stop", "delete"]);
+    expect((await sessionsOf(id)).sessions[0]).toMatchObject({ ended: "stopped" });
     expect((await call("POST", "/agents", { name: "frontend-1", hostId: "laptop" })).status).toBe(201);
   });
 
   it("does not read done when its session ends without saying so", async () => {
-    await make("retire");
+    await make("delete");
     await call("PUT", `/agents/${id}/status`, { status: "working", summary: "Reviewing" });
     await report("laptop", { agents: [{ id, state: "interrupted", sessionId }] });
     expect(await agent(id)).toMatchObject({ state: "interrupted", status: null });
@@ -793,8 +799,8 @@ describe("an agent that says it is done", () => {
     expect(await agent(id)).toMatchObject({ status: "working", summary: null });
   });
 
-  it("in review, is stopped but never retired when made to retire, and still reads review once its session has ended", async () => {
-    await make("retire");
+  it("in review, is stopped but never deleted when made to delete, and still reads review once its session has ended", async () => {
+    await make("delete");
     expect((await review()).status).toBe(200);
     await quiet();
     expect(queued().filter((c) => c.agentId === id).map((c) => c.kind)).toEqual(["create", "start", "stop"]);
@@ -856,28 +862,28 @@ describe("messaging an agent", () => {
     expect((await message({})).status).toBe(400);
   });
 
-  it("refuses a start on a full host, and anything for a lost one or a retired agent", async () => {
+  it("refuses a start on a full host, and anything for a lost one or a deleted agent", async () => {
     await create({ name: "busy", brief: "Go." });
     const full = await message({ text: "Go." });
     expect(full.status).toBe(409);
     later(LOST_AFTER + 1);
     expect((await message({ text: "Go." })).status).toBe(409);
     await call("DELETE", `/agents/${id}`);
-    expect(await (await message({ text: "Go." })).json()).toMatchObject({ message: "frontend-1 is retired." });
+    expect(await (await message({ text: "Go." })).json()).toMatchObject({ message: "frontend-1 is deleted." });
   });
 
   it("withdraws a message its lost host never took, but keeps offering a create", async () => {
     await message({ text: "Go." });
     const { commandId } = await (await message({ text: "Late." })).json();
     later(LOST_AFTER + 1);
-    const sent = (await read(`/agents/${id}/commands`)).commands;
-    expect(sent.find((s: { command: { id: string } }) => s.command.id === commandId).delivery).toBe("withdrawn");
+    const sent = (await commandsOf(id)).commands;
+    expect(sent.find((s: { command: { id: string } }) => s.command.id === commandId)!.delivery).toBe("withdrawn");
     expect((await replayed()).map((c) => c.kind)).toEqual(["create"]);
   });
 
   it("keeps a command's record for its time and no longer", async () => {
     later(KEPT_FOR + 1);
-    expect((await read(`/agents/${id}/commands`)).commands).toEqual([]);
+    expect((await commandsOf(id)).commands).toEqual([]);
   });
 });
 
@@ -903,12 +909,12 @@ describe("renaming an agent", () => {
     expect((await call("POST", "/agents", { name: "agent-1", hostId: "laptop" })).status).toBe(201);
   });
 
-  it("refuses a name another agent holds, and a retired agent", async () => {
+  it("refuses a name another agent holds, and a deleted agent", async () => {
     const one = await create({ name: "agent-1" });
     await create({ name: "agent-2" });
     const taken = await call("PATCH", `/agents/${one.id}`, { name: "agent-2" });
     expect(taken.status).toBe(409);
-    expect((await taken.json()).message).toBe("An agent not retired is already named agent-2.");
+    expect((await taken.json()).message).toBe("An agent not deleted is already named agent-2.");
     expect(await agent(one.id)).toMatchObject({ name: "agent-1" });
     await call("DELETE", `/agents/${one.id}`);
     expect((await call("PATCH", `/agents/${one.id}`, { name: "agent-9" })).status).toBe(409);
@@ -1019,7 +1025,7 @@ describe("an agent's title", () => {
     expect(await agent(id)).toMatchObject({ state: "working", title: "Short status headline" });
   });
 
-  it("refuses a title too long or empty, and a retired agent", async () => {
+  it("refuses a title too long or empty, and a deleted agent", async () => {
     expect((await name("x".repeat(TITLE_LIMIT + 1))).status).toBe(400);
     expect((await name("  ")).status).toBe(400);
     await call("DELETE", `/agents/${id}`);
@@ -1027,36 +1033,36 @@ describe("an agent's title", () => {
   });
 });
 
-describe("retiring an agent", () => {
-  it("records it retired at once, ends its session, and queues a stop and then retire", async () => {
+describe("deleting an agent", () => {
+  it("records it deleted at once, ends its session, and queues a stop and then delete", async () => {
     await beat("laptop");
     const made = await create({ brief: "Go." });
     const res = await call("DELETE", `/agents/${made.id}`);
     expect(res.status).toBe(202);
     const { commandId } = await res.json();
-    expect(queued().map((c) => c.kind)).toEqual(["create", "start", "stop", "retire"]);
+    expect(queued().map((c) => c.kind)).toEqual(["create", "start", "stop", "delete"]);
     expect(queued().at(-1)!.id).toBe(commandId);
-    expect(await agent(made.id)).toMatchObject({ state: "retired", session: null });
-    expect((await read(`/agents/${made.id}/sessions`)).sessions[0].ended).toBe("stopped");
+    expect(await agent(made.id)).toMatchObject({ state: "deleted", session: null });
+    expect((await sessionsOf(made.id)).sessions[0]!.ended).toBe("stopped");
     expect((await call("DELETE", `/agents/${made.id}`)).status).toBe(409);
 
-    // Whatever its host still says of it, it stays retired.
+    // Whatever its host still says of it, it stays deleted.
     await report("laptop", { agents: [{ id: made.id, state: "working", sessionId: made.session!.id }] });
-    expect((await agent(made.id)).state).toBe("retired");
+    expect((await agent(made.id)).state).toBe("deleted");
     expect(queued().filter((c) => c.kind === "stop")).toHaveLength(1);
   });
 
-  it("offers retire to a lost host for as long as it takes", async () => {
+  it("offers delete to a lost host for as long as it takes", async () => {
     await beat("laptop");
     const made = await create();
     later(LOST_AFTER + 1);
     expect((await call("DELETE", `/agents/${made.id}`)).status).toBe(202);
     later(LOST_AFTER * 10);
-    expect((await replayed()).map((c) => c.kind)).toEqual(["create", "retire"]);
+    expect((await replayed()).map((c) => c.kind)).toEqual(["create", "delete"]);
   });
 });
 
-describe("a write racing a report or a retire", () => {
+describe("a write racing a report or a delete", () => {
   let id: string;
   let sessionId: string;
 
@@ -1083,9 +1089,9 @@ describe("a write racing a report or a retire", () => {
   const line = () => ({ agentId: id, sessionId, seq: 0, at: NOW.toISOString(), from: "agent", text: "Reading schema.ts." });
   const turnEnds = () =>
     report("laptop", { commandResults: ack(queued()), agents: [{ id, state: "waiting", sessionId }], lines: [line()] });
-  const retired = async () => expect((await call("DELETE", `/agents/${id}`)).status).toBe(202);
-  const keptRetired = async () => {
-    expect(await agent(id)).toMatchObject({ state: "retired", session: null });
+  const deleted = async () => expect((await call("DELETE", `/agents/${id}`)).status).toBe(202);
+  const keptDeleted = async () => {
+    expect(await agent(id)).toMatchObject({ state: "deleted", session: null });
     expect((await call("POST", "/agents", { name: "frontend-1", hostId: "laptop" })).status).toBe(201);
   };
 
@@ -1103,10 +1109,10 @@ describe("a write racing a report or a retire", () => {
       expect(store.agents.get(id)).toMatchObject({ begun: sessionId, activity: { text: "Reading schema.ts." } });
     });
 
-    it(`refuses ${what} once a retire lands between its read and its write`, async () => {
-      afterGetting(retired);
+    it(`refuses ${what} once a delete lands between its read and its write`, async () => {
+      afterGetting(deleted);
       expect((await send()).status).toBe(409);
-      await keptRetired();
+      await keptDeleted();
     });
   }
 
@@ -1125,7 +1131,7 @@ describe("a write racing a report or a retire", () => {
     expect(start).toMatchObject({ kind: "start", text: "And this." });
     const live = await agent(id);
     expect(live.session.id).not.toBe(sessionId);
-    expect((await read(`/agents/${id}/sessions`)).sessions.find((s: { id: string }) => s.id === sessionId).ended).toBe("stopped");
+    expect((await sessionsOf(id)).sessions.find((s: { id: string }) => s.id === sessionId)!.ended).toBe("stopped");
   });
 
   describe("with no session", () => {
@@ -1144,25 +1150,25 @@ describe("a write racing a report or a retire", () => {
         expect(store.agents.get(id)).toMatchObject({ state: "working", activity: { text: "Reading schema.ts." } });
       });
 
-      it(`refuses ${what} once a retire lands between its read and its write`, async () => {
-        afterGetting(retired);
+      it(`refuses ${what} once a delete lands between its read and its write`, async () => {
+        afterGetting(deleted);
         expect((await send()).status).toBe(409);
-        await keptRetired();
+        await keptDeleted();
       });
     }
   });
 
-  it("retires an agent a report wrote between the retire's read and its write, keeping what it wrote", async () => {
+  it("deletes an agent a report wrote between the delete's read and its write, keeping what it wrote", async () => {
     afterGetting(turnEnds);
     expect((await call("DELETE", `/agents/${id}`)).status).toBe(202);
-    expect(store.agents.get(id)).toMatchObject({ state: "retired", begun: sessionId, activity: { text: "Reading schema.ts." } });
-    await keptRetired();
+    expect(store.agents.get(id)).toMatchObject({ state: "deleted", begun: sessionId, activity: { text: "Reading schema.ts." } });
+    await keptDeleted();
   });
 
-  it("refuses a retire once another lands between its read and its write", async () => {
-    afterGetting(retired);
+  it("refuses a delete once another lands between its read and its write", async () => {
+    afterGetting(deleted);
     expect((await call("DELETE", `/agents/${id}`)).status).toBe(409);
-    expect(queued().filter((c) => c.kind === "retire")).toHaveLength(1);
+    expect(queued().filter((c) => c.kind === "delete")).toHaveLength(1);
   });
 });
 
@@ -1227,7 +1233,7 @@ describe("a session's context", () => {
     const start = queued().find((c) => c.kind === "start") as Extract<Command, { kind: "start" }>;
     expect(start.documents).toEqual([PLANNER]);
     expect(start.context?.files.map((f) => f.path)).toEqual(expect.arrayContaining(["skills/page/SKILL.md", "skills/page/bin/page", "skills/title/bin/title"]));
-    const [session] = (await read(`/agents/${id}/sessions`)).sessions;
+    const [session] = (await sessionsOf(id)).sessions;
     expect(session).toMatchObject({ skills: [{ name: "agent-roles/planner", version: 4 }], clients: { commit: expect.any(String) }, contextNote: null });
     expect(session).not.toHaveProperty("context");
   });
@@ -1235,7 +1241,7 @@ describe("a session's context", () => {
   it("says on the session why a skill was left out", async () => {
     given = { skills: [], note: "honed has no skill named agent-roles/planner" };
     await call("POST", `/agents/${id}/messages`, { text: "Go." });
-    const [session] = (await read(`/agents/${id}/sessions`)).sessions;
+    const [session] = (await sessionsOf(id)).sessions;
     expect(session).toMatchObject({ skills: [], contextNote: "honed has no skill named agent-roles/planner" });
   });
 
@@ -1276,8 +1282,8 @@ describe("an agent's credentials", () => {
       queued(),
       [...store.agents.values()],
       await read(`/agents/${id}`),
-      await read(`/agents/${id}/commands`),
-      await read(`/agents/${id}/sessions`),
+      await commandsOf(id),
+      await sessionsOf(id),
       await read("/agents"),
     ]);
 
@@ -1443,7 +1449,7 @@ describe("roles", () => {
     expect(made).toMatchObject({
       role: "reviewer",
       label: "review",
-      whenDone: "retire",
+      whenDone: "delete",
       skills: ["agent-roles/reviewer"],
       // Naming none, it is given every service the stage has, at each start.
       credentials: null,

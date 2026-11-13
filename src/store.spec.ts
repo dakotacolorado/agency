@@ -196,3 +196,14 @@ describe("a database from before roles moved to honed", () => {
     expect(await store.listHosts()).toEqual([host]);
   });
 });
+
+describe("a database from when agents were retired", () => {
+  it("says deleted and delete where its records said retired and retire", async () => {
+    store.db.prepare("INSERT INTO agents (id, rev, record) VALUES (?, ?, ?)").run("w", "r", JSON.stringify(agent({ state: "retired" as never, whenDone: "retire" as never })));
+    const old = { command: { kind: "retire", id: "c", agentId: "w" }, queuedAt: AT };
+    store.db.prepare("INSERT INTO pending (host_id, id, queued_at, durable, record) VALUES (?, ?, ?, 1, ?)").run("laptop", "c", AT, JSON.stringify(old));
+    reopen();
+    expect(await store.getAgent("w")).toMatchObject({ state: "deleted", whenDone: "delete" });
+    expect((await store.pending("laptop")).map((q) => q.command.kind)).toEqual(["delete"]);
+  });
+});

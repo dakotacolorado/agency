@@ -11,7 +11,7 @@ const token = process.env.INTEGRATION_AG_TOKEN;
  * Each run sends heartbeats as hosts of its own and names its agents after
  * itself, so a run that dies cannot leave the next one refused as full or by
  * a name in use. A host stays listed until it is deregistered and an agent
- * holds its name until retired, so the run undoes both on the way out.
+ * holds its name until deleted, so the run undoes both on the way out.
  */
 const run = process.env.GITHUB_RUN_ID
   ? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? 1}`
@@ -141,7 +141,7 @@ describe.skipIf(!url || !token)("deployed stage", () => {
     expect(await res.json()).toMatchObject({ ticket: expect.any(String), socketUrl: expect.stringMatching(/^wss?:\/\//) });
   });
 
-  it("carries an agent from creation through a session to retirement, by socket", async () => {
+  it("carries an agent from creation through a session to deletion, by socket", async () => {
     const host = hostOf("agents");
     const { socketUrl } = await beat({ capacity: 1 }, host);
     expect(socketUrl).toMatch(/^wss?:\/\//);
@@ -163,8 +163,6 @@ describe.skipIf(!url || !token)("deployed stage", () => {
       expect(home).toMatchObject({ kind: "create", agentId: agent.id });
       socket.report({ commandResults: ack([home]), agents: [{ id: agent.id, state: "idle", sessionId: null }] });
       await eventually(async () => {
-        const sent = await read(`/agents/${agent.id}/commands`);
-        expect(sent.commands[0]).toMatchObject({ delivery: "done" });
         expect((await read(`/agents/${agent.id}`)).reportedAt).not.toBeNull();
       });
 
@@ -220,17 +218,16 @@ describe.skipIf(!url || !token)("deployed stage", () => {
       await eventually(async () => {
         expect((await read(`/agents/${agent.id}`)).state).toBe("idle");
       });
-      expect((await read(`/agents/${agent.id}/sessions`)).sessions).toMatchObject([{ id: start.sessionId, ended: "stopped" }]);
 
-      // Retired, it leaves the default list.
+      // Deleted, it leaves the default list.
       expect((await call("DELETE", `/agents/${agent.id}`)).status).toBe(202);
-      const retire = await socket.next("retire");
-      socket.report({ commandResults: ack([retire]) });
+      const deletion = await socket.next("delete");
+      socket.report({ commandResults: ack([deletion]) });
       await eventually(async () => {
-        const sent = await read(`/agents/${agent.id}/commands`);
-        expect(sent.commands.at(-1)).toMatchObject({ delivery: "done" });
+        const deleted = await read(`/agents/${agent.id}`);
+        expect(deleted).toMatchObject({ state: "deleted" });
         // Compared, not shown, so a failure does not print it.
-        expect(JSON.stringify(sent).includes(token!)).toBe(false);
+        expect(JSON.stringify(deleted).includes(token!)).toBe(false);
       });
       made.delete(agent.id);
       const { agents } = await read("/agents");

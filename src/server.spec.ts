@@ -63,8 +63,7 @@ const call = async (method: string, path: string, body?: unknown) => {
 };
 
 const startOf = async (id: string) => {
-  const { body } = await call("GET", `/agents/${id}/commands`);
-  return body.commands.map((c: { command: Command }) => c.command).findLast((c: Command) => c.kind === "start") as Extract<Command, { kind: "start" }>;
+  return (await running.store.sentTo(id)).map((s) => s.command).findLast((c) => c.kind === "start") as Extract<Command, { kind: "start" }>;
 };
 
 const planner = async (name: string) => {
@@ -101,7 +100,7 @@ describe("a session started by the served process", () => {
     expect(begin.context?.files.map((f) => f.path)).toEqual(expect.arrayContaining(["skills/page/SKILL.md", "skills/page/bin/page", "skills/title/bin/title"]));
     expect(JSON.stringify(begin)).not.toContain("workplace/global");
     expect(begin.env).toMatchObject({ HONED_URL: stubUrl, WAYPOINT_URL: `${stubUrl}/waypoint`, AG_URL: "http://local" });
-    const [session] = (await call("GET", `/agents/${id}/sessions`)).body.sessions;
+    const [session] = await running.store.sessionsOf(id);
     expect(session).toMatchObject({ skills: [{ name: "agent-roles/planner", version: 5 }], clients: { commit: expect.any(String) }, contextNote: null });
     expect(asked).toContain("/api/skills/agent-roles/planner Bearer honed-token");
   });
@@ -112,8 +111,8 @@ describe("a session started by the served process", () => {
     const id = await planner("planner-2");
     const begin = await startOf(id);
     expect(begin.documents?.map((d) => `${d.key} v${d.version}`)).toEqual(["agent-roles/planner v5"]);
-    const [session] = (await call("GET", `/agents/${id}/sessions`)).body.sessions;
-    expect(session.contextNote).toBe("honed answered 502 for agent-roles/planner, so agent-roles/planner is its last good copy, v5");
+    const [session] = await running.store.sessionsOf(id);
+    expect(session!.contextNote).toBe("honed answered 502 for agent-roles/planner, so agent-roles/planner is its last good copy, v5");
   });
 
   it("names the MCP servers of the services it is given that serve one, with no token in the command", async () => {

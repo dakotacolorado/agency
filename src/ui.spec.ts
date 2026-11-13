@@ -40,7 +40,6 @@ describe("the page", () => {
       "/agents",
       "/agents/{id}",
       "/agents/{id}/messages",
-      "/agents/{id}/sessions",
       "/agents/{id}/transcript",
       "/hosts",
       "/requests",

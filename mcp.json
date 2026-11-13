@@ -1,5 +1,5 @@
 {
-  "instructions": "agent-service runs agents: lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session carrying on its conversation when none is live. retire_agent ends the agent for good. There is no stopping one: an agent is running or it is not.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
+  "instructions": "agent-service runs agents: lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session carrying on its conversation when none is live. delete_agent ends the agent for good. There is no stopping one: an agent is running or it is not.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
   "tools": [
     {
       "name": "create_agent",
@@ -12,7 +12,7 @@
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
-            "description": "Unique among agents not retired. Names its home folder and tmux session on its host."
+            "description": "Unique among agents not deleted. Names its home folder and tmux session on its host."
           },
           "role": {
             "description": "The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
@@ -57,7 +57,7 @@
             "enum": [
               "keep",
               "stop",
-              "retire"
+              "delete"
             ]
           },
           "credentials": {
@@ -155,6 +155,33 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "delete_agent",
+      "title": "Delete an agent",
+      "description": "Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "description": "Assigned by the service when the agent is created."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
       },
       "execution": {
         "taskSupport": "forbidden"
@@ -285,7 +312,7 @@
     {
       "name": "list_agents",
       "title": "List agents",
-      "description": "Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.",
+      "description": "Deleted agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, deleted ones included, so what they used is still there once they have gone. With `role`, only those made from that role.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -307,7 +334,7 @@
             "pattern": "^[a-z][a-z0-9-]{0,39}$"
           },
           "all": {
-            "description": "`true` includes retired agents.",
+            "description": "`true` includes deleted agents.",
             "type": "string",
             "enum": [
               "true",
@@ -315,33 +342,6 @@
             ]
           }
         }
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "list_commands",
-      "title": "List commands",
-      "description": "Each is kept 7 days from when it was queued, then deleted.",
-      "inputSchema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Assigned by the service when the agent is created."
-          }
-        },
-        "required": [
-          "id"
-        ]
       },
       "annotations": {
         "readOnlyHint": true,
@@ -430,33 +430,6 @@
       }
     },
     {
-      "name": "list_sessions",
-      "title": "List sessions",
-      "description": "List an agent's sessions, oldest first.",
-      "inputSchema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Assigned by the service when the agent is created."
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
       "name": "list_transcript_lines",
       "title": "List transcript lines",
       "description": "Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.",
@@ -498,7 +471,7 @@
     {
       "name": "put_agent_status",
       "title": "Put an agent's status",
-      "description": "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).",
+      "description": "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `delete` deletes it once `done` (in `review` it is stopped, never deleted, so a send-back reaches it).",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -581,33 +554,6 @@
       }
     },
     {
-      "name": "retire_agent",
-      "title": "Retire an agent",
-      "description": "Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.",
-      "inputSchema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Assigned by the service when the agent is created."
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": true
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
       "name": "send_message",
       "title": "Send a message",
       "description": "To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.",
@@ -659,7 +605,7 @@
             "description": "Assigned by the service when the agent is created."
           },
           "name": {
-            "description": "Unique among agents not retired. Names its home folder and tmux session on its host.",
+            "description": "Unique among agents not deleted. Names its home folder and tmux session on its host.",
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"
           },

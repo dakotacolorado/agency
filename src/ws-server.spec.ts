@@ -105,8 +105,7 @@ describe("the socket", () => {
     let agent = await call("GET", `/agents/${made.body.id}`);
     for (let i = 0; i < 50 && agent.body.state !== "waiting"; i++) agent = await call("GET", `/agents/${made.body.id}`);
     expect(agent.body).toMatchObject({ state: "waiting", hostStatus: "connected", activity: { text: "Done." } });
-    const commands = await call("GET", `/agents/${made.body.id}/commands`);
-    expect(commands.body.commands.map((c: { delivery: string }) => c.delivery)).toEqual(["done", "done"]);
+    expect((await running.store.sentTo(made.body.id)).map((s) => s.ok)).toEqual([true, true]);
     // A command written now goes down the open socket at once.
     expect((await call("POST", `/agents/${made.body.id}/messages`, { text: "And then?" })).status).toBe(202);
     await until(() => host.got.length === 3, "the message pushed");

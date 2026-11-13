@@ -45,7 +45,7 @@ export const API_VERSION = "2026-11-12";
 export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role \`priority\` first, then the oldest.
-- **Talk to it** with \`SendMessage\`, which starts a session carrying on its conversation when none is live; \`RetireAgent\` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
+- **Talk to it** with \`SendMessage\`, which starts a session carrying on its conversation when none is live; \`DeleteAgent\` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
 - **Follow it**: its \`status\` is \`working\`, \`idle\`, \`waiting\` (on the person), \`review\` or \`done\`, which it says of itself with \`PutAgentStatus\`; \`ListTranscriptLines\` reads what it said, after a cursor.
 - **Hosts** run agent-host, which keeps a WebSocket open at \`/socket\`: heartbeats and reports go up it, commands come down it (\`SocketInbound\`, \`SocketOutbound\`). You don't call it. A page watches live with a ticket from \`CreateSocketTicket\`.
 
@@ -333,7 +333,7 @@ export class AgentServiceApi {
             (createdBy === undefined || w.createdBy === createdBy) &&
             (item === undefined || w.item === item) &&
             (role === undefined || w.role === role) &&
-            (all === "true" || item !== undefined || w.state !== "retired"),
+            (all === "true" || item !== undefined || w.state !== "deleted"),
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now));
@@ -350,7 +350,7 @@ export class AgentServiceApi {
       const { text, interrupt } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
+      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
       const ready = await this.reachable(agent);
       if (typeof ready === "string") return c.json(failure(409, ready), 409);
       const now = this.now();
@@ -376,7 +376,7 @@ export class AgentServiceApi {
       const { name, title, label } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
+      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
       const view = async (w: Agent) => agentView(w, await this.store.getHost(w.hostId), this.now());
       const renamed = {
         ...agent,
@@ -395,16 +395,16 @@ export class AgentServiceApi {
         });
       } catch (err) {
         if (!(err instanceof NameTaken)) throw err;
-        return c.json(failure(409, `An agent not retired is already named ${name}.`), 409);
+        return c.json(failure(409, `An agent not deleted is already named ${name}.`), 409);
       }
       return c.json(await view(renamed), 200);
     }));
 
-    app.openapi(routes.retireAgentRoute, async (c) => afresh(async () => {
+    app.openapi(routes.deleteAgentRoute, async (c) => afresh(async () => {
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired already.`), 409);
-      return c.json({ commandId: await this.retire(agent) }, 202);
+      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted already.`), 409);
+      return c.json({ commandId: await this.deleteAgent(agent) }, 202);
     }));
 
     // Every write of an agent read here is guarded and read again on a conflict, so it and a host's report
@@ -413,15 +413,15 @@ export class AgentServiceApi {
       const { status, summary, headline } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
+      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
       if (!agent.session && !keepsPastSession(status)) {
         return c.json(failure(409, `${agent.name} is ${agent.state}, with no live session to be ${status}.`), 409);
       }
       const said: Agent = { ...agent, status, summary, headline: headline ?? null, saidAt: this.now().toISOString() };
       // Mid-turn, what its maker asked be done waits for the turn and its background tasks to end; see `Fleet.report`.
       const then = quiet(said) ? onceQuiet(said) : null;
-      if (then === "retire") {
-        await this.retire(said);
+      if (then === "delete") {
+        await this.deleteAgent(said);
         return c.json(agentView((await this.store.getAgent(agent.id))!, await this.store.getHost(agent.hostId), this.now()), 200);
       }
       const stop: Command[] = then === "stop" && said.session ? [{ kind: "stop", id: randomUUID(), agentId: agent.id }] : [];
@@ -433,7 +433,7 @@ export class AgentServiceApi {
       const { title } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
+      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
       if (agent.title) {
         return c.json(failure(409, `${agent.name} is titled "${agent.title}" already; only the person changes it.`), 409);
       }
@@ -454,21 +454,9 @@ export class AgentServiceApi {
       return c.json({ lines, next: cursorAfter(lines.at(-1)?.seq ?? afterSeq) }, 200);
     });
 
-    app.openapi(routes.listSessionsRoute, async (c) => {
-      const { id } = c.req.valid("param");
-      if (!(await this.store.getAgent(id))) return c.json(failure(404, "No agent has this id."), 404);
-      return c.json({ sessions: await this.store.sessionsOf(id) }, 200);
-    });
 
-    app.openapi(routes.listAgentCommandsRoute, async (c) => {
-      const { id } = c.req.valid("param");
-      if (!(await this.store.getAgent(id))) return c.json(failure(404, "No agent has this id."), 404);
-      const now = this.now();
-      const commands = (await this.store.sentTo(id))
-        .filter((sent) => !expired(sent, now))
-        .map((sent) => sentView(sent, now));
-      return c.json({ commands }, 200);
-    });
+
+
 
     app.openapi(routes.getUsageRoute, async (c) => c.json(await this.fleet.usage(), 200));
 
@@ -665,7 +653,7 @@ export class AgentServiceApi {
       });
     } catch (err) {
       if (!(err instanceof NameTaken)) throw err;
-      return { refused: `An agent not retired is already named ${name}.`, status: 409 };
+      return { refused: `An agent not deleted is already named ${name}.`, status: 409 };
     }
     return { agent, host };
   }
@@ -689,11 +677,11 @@ export class AgentServiceApi {
   }
 
   /**
-   * Records it retired at once, ends any session, frees its name, and queues
-   * a `stop` if it had a live session and then `retire`. Returns the `retire`'s id.
+   * Records it deleted at once, ends any session, frees its name, and queues
+   * a `stop` if it had a live session and then `delete`. Returns the `delete`'s id.
    */
-  private retire(agent: Agent): Promise<string> {
-    return this.fleet.retire(agent);
+  private deleteAgent(agent: Agent): Promise<string> {
+    return this.fleet.deleteAgent(agent);
   }
 
   /** The agent's host, or why nothing can be sent to it. */

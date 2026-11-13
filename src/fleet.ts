@@ -116,10 +116,10 @@ export class Fleet {
   }
 
   /**
-   * Stops the agent's session and retires it, releasing its name; the id of the `retire` its host is sent.
+   * Stops the agent's session and deletes it, releasing its name; the id of the `delete` its host is sent.
    * Guarded: `conflicted` when the agent was written since it was read, for the caller to read it again.
    */
-  async retire(agent: Agent): Promise<string> {
+  async deleteAgent(agent: Agent): Promise<string> {
     const now = this.now();
     const at = now.toISOString();
     const commands: Command[] = [];
@@ -128,16 +128,16 @@ export class Fleet {
       sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended: "stopped" });
       commands.push({ kind: "stop", id: randomUUID(), agentId: agent.id });
     }
-    const retire: Command = { kind: "retire", id: randomUUID(), agentId: agent.id };
-    commands.push(retire);
+    const deletion: Command = { kind: "delete", id: randomUUID(), agentId: agent.id };
+    commands.push(deletion);
     await this.apply({
-      agents: [{ ...agent, state: "retired", session: null, ...afterSession(agent) }],
+      agents: [{ ...agent, state: "deleted", session: null, ...afterSession(agent) }],
       sessions,
       queue: inOrder(agent.hostId, commands, now),
       release: agent.name,
       guarded: true,
     });
-    return retire.id;
+    return deletion.id;
   }
 
   /**
@@ -145,7 +145,7 @@ export class Fleet {
    * put there is ignored: a host runs what it was given and cannot bring a
    * agent onto the record by claiming it, nor write into the transcript of
    * one it was not given. Lines are stored whatever the state, so the last
-   * words of a session are kept with the rest. A retired agent's state is
+   * words of a session are kept with the rest. A deleted agent's state is
    * the service's alone.
    */
   /**
@@ -192,7 +192,7 @@ export class Fleet {
     const sessions: SessionWrite[] = [];
     const queue: Change["queue"] = [];
     const settled: NonNullable<Change["settled"]> = [];
-    const retiring = new Set<string>();
+    const deleting = new Set<string>();
 
     const end = (agent: Agent, ended: SessionEnding) => {
       if (!agent.session) return;
@@ -206,7 +206,7 @@ export class Fleet {
       };
       agents.set(agent.id, next);
       changed.set(agent.id, next);
-      if (onceQuiet(next) === "retire") retiring.add(agent.id);
+      if (onceQuiet(next) === "delete") deleting.add(agent.id);
     };
     const update = (agent: Agent, fields: Partial<Agent>) => {
       const next = { ...agent, ...fields };
@@ -227,7 +227,7 @@ export class Fleet {
       // A start or stop is settled in the write that records what it did to its agent.
       if (command.kind === "start" || command.kind === "stop") settled.push({ hostId, sent });
       else await this.settle(hostId, sent);
-      if (agent && agent.state !== "retired") {
+      if (agent && agent.state !== "deleted") {
         // A start the host could not do is a session that died before it began.
         if (command.kind === "start" && !result.ok && agent.session?.id === command.sessionId) {
           end(agent, "interrupted");
@@ -242,7 +242,7 @@ export class Fleet {
 
     for (const { id, state, sessionId, tasks = 0, told = null } of report.agents) {
       const agent = agents.get(id);
-      if (!agent || agent.state === "retired") continue;
+      if (!agent || agent.state === "deleted") continue;
       const session = agent.session;
       if (!session) {
         // Force-stopped while its host could not hear it: told to stop, once until taken.
@@ -263,7 +263,7 @@ export class Fleet {
           update(agent, next);
           const then = onceQuiet(next);
           if (then && quiet(next) && !quiet(agent)) {
-            if (then === "retire") retiring.add(id);
+            if (then === "delete") deleting.add(id);
             else if (!stopping(offered, id)) {
               const stop: Queued = { command: { kind: "stop", id: randomUUID(), agentId: id }, queuedAt: at };
               queue.push({ hostId, queued: stop });
@@ -293,10 +293,10 @@ export class Fleet {
         .sort((a, b) => b.seq - a.seq)
         .map((line) => ({ text: activityOf(line.from, line.text), at: line.at }))
         .find((a): a is Activity => a.text !== null);
-      if (agent.state !== "retired" && latest && latest.at >= (agent.activity?.at ?? "")) update(agent, { activity: latest });
+      if (agent.state !== "deleted" && latest && latest.at >= (agent.activity?.at ?? "")) update(agent, { activity: latest });
     }
 
-    // Counted on a retired agent too: its last turn's total can arrive in the report that retires it.
+    // Counted on a deleted agent too: its last turn's total can arrive in the report that deletes it.
     for (const { agentId, sessionId, ...reported } of report.tokens ?? []) {
       const agent = agents.get(agentId);
       if (!agent) continue;
@@ -308,11 +308,11 @@ export class Fleet {
 
     // Guarded, so a status said, or anything else written, since these agents were read is never put back.
     await this.apply({ agents: [...changed.values()], sessions, queue, settled, guarded: true });
-    // Read again, as what this report wrote has a new rev, and retired even if written since.
-    for (const id of retiring) {
+    // Read again, as what this report wrote has a new rev, and deleted even if written since.
+    for (const id of deleting) {
       await afresh(async () => {
         const agent = await this.store.getAgent(id);
-        if (agent && agent.state !== "retired") await this.retire(agent);
+        if (agent && agent.state !== "deleted") await this.deleteAgent(agent);
       });
     }
     await this.push.toViewers(
@@ -398,7 +398,7 @@ export function begin(
     agent: {
       ...agent,
       state: "working",
-      session: { id: session.id, startedAt: at },
+      session: { id: session.id, startedAt: at, skills: session.skills, contextNote: session.contextNote },
       hadSession: true,
       status: "working",
       summary: null,

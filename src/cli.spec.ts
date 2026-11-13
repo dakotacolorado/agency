@@ -84,8 +84,6 @@ describe("agent-service serve", () => {
     const second = await serve(db, { AUTH_TOKEN: "a" });
     const agent = (await (await fetch(`${second.url}/agents/${id}`, { headers: auth("a") })).json()) as { name: string; state: string };
     expect(agent).toMatchObject({ name: "kept", state: "working" });
-    const commands = (await (await fetch(`${second.url}/agents/${id}/commands`, { headers: auth("a") })).json()) as { commands: { command: { kind: string }; delivery: string }[] };
-    expect(commands.commands.map((c) => [c.command.kind, c.delivery])).toEqual([["create", "queued"], ["start", "queued"]]);
     const store = Store.open(db);
     expect((await store.pending("laptop")).map((q) => q.command.kind)).toEqual(["create", "start"]);
     store.close();

@@ -46,7 +46,7 @@ const SessionId = z
 const AgentName = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]{0,39}$/)
-  .describe("Unique among agents not retired. Names its home folder and tmux session on its host.")
+  .describe("Unique among agents not deleted. Names its home folder and tmux session on its host.")
   .openapi({ example: "frontend-1" });
 
 const AgentTitle = z
@@ -93,8 +93,8 @@ const WhenDone = z
   .enum(WHEN_DONE)
   .describe(
     "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; " +
-      "`stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, " +
-      "`stop` and `retire` both only stop its session, so a send-back can still start it again.",
+      "`stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, " +
+      "`stop` and `delete` both only stop its session, so a send-back can still start it again.",
   );
 
 const ItemId = z
@@ -419,9 +419,9 @@ export const CommandSchema = z
       .describe("End the session; the agent becomes idle.")
       .openapi("StopCommand"),
     z
-      .object({ ...commandBase, kind: z.literal("retire").describe("Which command this is.") })
+      .object({ ...commandBase, kind: z.literal("delete").describe("Which command this is.") })
       .describe("Stop any session and take the agent off the host. Its home folder is kept.")
-      .openapi("RetireCommand"),
+      .openapi("DeleteCommand"),
   ])
   .openapi("Command");
 
@@ -476,13 +476,21 @@ export const AgentSchema = z
         "`idle`: has a home and no live session. `working`, `waiting`: a live session, " +
           "in a turn or between turns, as its host last reported it (`working` too from the moment a " +
           "`start` or a message is queued). " +
-          "`interrupted`: its session ended without a stop, and it can be resumed. `retired`: " +
+          "`interrupted`: its session ended without a stop, and it can be resumed. `deleted`: " +
           "no longer on the team; its home folder is kept on the host.",
       ),
     session: z
-      .object({ id: SessionId, startedAt: Instant })
+      .object({
+        id: SessionId,
+        startedAt: Instant,
+        skills: z
+          .array(z.object({ name: z.string().describe("The honed skill."), version: z.number().int().describe("The version it was given.") }))
+          .optional()
+          .describe("The honed skills it started with, in order."),
+        contextNote: z.string().nullable().optional().describe("Why a skill it was made with was left out, or given from honed's last good copy; null when none was."),
+      })
       .nullable()
-      .describe("The live session, or null for none."),
+      .describe("The live session, or null for none: when it started, and what it started with."),
     createdAt: Instant.describe("When it was made."),
     reportedAt: Instant.nullable().describe(
       "When its host last reported a change to it; null until its host first reports it.",
@@ -652,7 +660,7 @@ export const SentCommandSchema = z
       .enum(DELIVERIES)
       .describe(
         "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went " +
-          `unreported for ${LOST_AFTER} seconds (\`create\` and \`retire\` excepted). ` +
+          `unreported for ${LOST_AFTER} seconds (\`create\` and \`delete\` excepted). ` +
           "`done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.",
       ),
     reportedAt: Instant.nullable().describe("When the host last reported it; null until then."),
@@ -965,7 +973,7 @@ export const createAgentRoute = forClientActing({
   responses: {
     201: json(AgentSchema, "Created; its `create` is queued for the host."),
     404: fails(404, "No host has the id `hostId`."),
-    ...REFUSED("an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given."),
+    ...REFUSED("an agent not deleted already has `name`, the host is `lost`, or it is full and a `brief` was given."),
     ...FAILS,
     503: fails(503, "No API token is configured, or no `hostId` was given and no connected host fits and has room."),
     400: fails(400, "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.",
@@ -979,16 +987,16 @@ export const listAgentsRoute = forClientReading({
   operationId: "ListAgents",
   summary: "List agents",
   description:
-    "Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents " +
+    "Deleted agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents " +
     "made by that `claimed-by`, so a service can list its own. With `item`, only those started on that " +
-    "work item, retired ones included, so what they used is still there once they have gone. With `role`, only " +
+    "work item, deleted ones included, so what they used is still there once they have gone. With `role`, only " +
     "those made from that role.",
   request: {
     query: z.object({
       createdBy: z.string().min(1).max(MAKER_LIMIT).optional(),
       item: ItemId.optional(),
       role: RoleName.optional().describe("Only the agents made from this role."),
-      all: z.enum(["true", "false"]).optional().describe("`true` includes retired agents."),
+      all: z.enum(["true", "false"]).optional().describe("`true` includes deleted agents."),
     }),
   },
   responses: {
@@ -1042,7 +1050,7 @@ export const messageAgentRoute = forClientActing({
   responses: {
     202: json(AcceptedSchema, "Queued, and not yet delivered."),
     ...NO_AGENT,
-    ...REFUSED("the agent is retired, has no session to interrupt, or its host is `lost` or full."),
+    ...REFUSED("the agent is deleted, has no session to interrupt, or its host is `lost` or full."),
     ...FAILS,
   },
 });
@@ -1076,25 +1084,25 @@ export const renameAgentRoute = forClientActing({
   responses: {
     200: json(AgentSchema, "Renamed."),
     ...NO_AGENT,
-    ...REFUSED("the agent is retired, or an agent not retired already has `name`."),
+    ...REFUSED("the agent is deleted, or an agent not deleted already has `name`."),
     ...FAILS,
   },
 });
 
-export const retireAgentRoute = forClientActing({
+export const deleteAgentRoute = forClientActing({
   method: "delete",
   path: "/agents/{id}",
-  operationId: "RetireAgent",
-  summary: "Retire an agent",
+  operationId: "DeleteAgent",
+  summary: "Delete an agent",
   description:
-    "Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had " +
-    "a live session and then `retire`, which is offered until its host takes it. Its transcript, " +
+    "Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had " +
+    "a live session and then `delete`, which is offered until its host takes it. Its transcript, " +
     "sessions and home folder are kept.",
   request: agentParam,
   responses: {
-    202: json(AcceptedSchema, "Retired; `commandId` is the `retire`'s."),
+    202: json(AcceptedSchema, "Deleted; `commandId` is the `delete`'s."),
     ...NO_AGENT,
-    ...REFUSED("the agent is retired already."),
+    ...REFUSED("the agent is deleted already."),
     ...FAILS,
   },
 });
@@ -1121,36 +1129,7 @@ export const transcriptRoute = forClientReading({
   },
 });
 
-export const listSessionsRoute = forClientReading({
-  method: "get",
-  path: "/agents/{id}/sessions",
-  operationId: "ListSessions",
-  summary: "List sessions",
-  description: "List an agent's sessions, oldest first.",
-  request: agentParam,
-  responses: {
-    200: json(z.object({ sessions: z.array(SessionSchema).describe("Its sessions, oldest first.") }).openapi("SessionList"), "Every session."),
-    ...NO_AGENT,
-    ...FAILS,
-  },
-});
 
-export const listAgentCommandsRoute = forClientReading({
-  method: "get",
-  path: "/agents/{id}/commands",
-  operationId: "ListCommands",
-  summary: "List commands",
-  description: `Each is kept ${KEPT_FOR / 86400} days from when it was queued, then deleted.`,
-  request: agentParam,
-  responses: {
-    200: json(
-      z.object({ commands: z.array(SentCommandSchema).describe("Its commands, oldest first.") }).openapi("AgentCommands"),
-      "Every command kept.",
-    ),
-    ...NO_AGENT,
-    ...FAILS,
-  },
-});
 
 export const setAgentStatusRoute = forAgent({
   method: "put",
@@ -1163,8 +1142,8 @@ export const setAgentStatusRoute = forAgent({
     "only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change " +
     "is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. " +
     "Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, " +
-    "`whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is " +
-    "stopped, never retired, so a send-back reaches it).",
+    "`whenDone` is carried out: `stop` stops its session, and `delete` deletes it once `done` (in `review` it is " +
+    "stopped, never deleted, so a send-back reaches it).",
   request: {
     ...agentParam,
     body: json(
@@ -1196,7 +1175,7 @@ export const setAgentStatusRoute = forAgent({
   responses: {
     200: json(AgentSchema, "Recorded."),
     ...NO_AGENT,
-    409: fails(409, "The agent is retired, or has no live session to be `working` or `waiting`."),
+    409: fails(409, "The agent is deleted, or has no live session to be `working` or `waiting`."),
     ...FAILS,
   },
 });
@@ -1216,7 +1195,7 @@ export const setAgentTitleRoute = forAgent({
   responses: {
     200: json(AgentSchema, "Recorded."),
     ...NO_AGENT,
-    409: fails(409, "The agent is retired, or has a title already."),
+    409: fails(409, "The agent is deleted, or has a title already."),
     ...FAILS,
   },
 });

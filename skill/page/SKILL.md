@@ -51,7 +51,7 @@ page without one leaves you with none.
 - **In review**, once your change is submitted to the release service and its
   item moved to `review`: page `review`, saying what you submitted. You are
   waiting on the reviewer, not the person, and it does not notify them. A
-  agent in review is kept, not retired, so a send-back still reaches you;
+  agent in review is kept, not deleted, so a send-back still reaches you;
   page it last.
 - **An epic ready for sign-off**: the person closes an epic, never you, from
   its review panel. Ask for it only once every story and task under it reads
@@ -63,7 +63,7 @@ page without one leaves you with none.
 - **Done**, when you have finished what was asked, need no review, and have
   nothing left to do or running: page `done`, with the result in one line. Work
   that changes a repo is never `done` from you: it is `review` until merged. A
-  agent made to stop or retire once done is stopped then, so page it last,
+  agent made to stop or delete once done is stopped then, so page it last,
   with nothing left to do. Done does not notify the person; if you need them, page `waiting`
   instead.
 - A message from the person makes you `working` again by itself.

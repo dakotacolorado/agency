@@ -37,7 +37,6 @@ describe("a client generated from openapi.json", async () => {
     const failed: S["Agent"] = { ...agent, state: "failed" };
     // @ts-expect-error an agent is not scoped to a ticket
     const ticketed: S["Agent"] = { ...agent, workItemId: "t" };
-    const session: S["Session"] = { id: "s", agentId: "w", startedAt: "t", endedAt: null, ended: null, skills: [], clients: null, contextNote: null };
     const line: S["TranscriptLine"] = { seq: 0, at: "t", sessionId: "s", from: "agent", text: "hi" };
     const host: S["Host"] = {
       id: "h", heartbeatAt: "t", version: null, status: "connected", labels: [],
@@ -50,7 +49,7 @@ describe("a client generated from openapi.json", async () => {
       { kind: "message", id: "c", agentId: "w", text: "hi" },
       { kind: "interrupt", id: "c", agentId: "w" },
       { kind: "stop", id: "c", agentId: "w" },
-      { kind: "retire", id: "c", agentId: "w" },
+      { kind: "delete", id: "c", agentId: "w" },
     ];
     const sent: S["SentCommand"] = {
       command: { kind: "create", id: "c", agentId: "w", name: "a" },
@@ -78,7 +77,7 @@ describe("a client generated from openapi.json", async () => {
     // @ts-expect-error interrupting is a flag, not text
     const flagged: S["Message"] = { interrupt: "yes" };
 
-    export { named, agent, live, failed, ticketed, session, line, host, created, commands, sent, heartbeat, reporting, accepted, report, ping, pushed, ticket, flagged };
+    export { named, agent, live, failed, ticketed, line, host, created, commands, sent, heartbeat, reporting, accepted, report, ping, pushed, ticket, flagged };
   `;
 
   it("compiles a consumer that uses only generated types", async () => {

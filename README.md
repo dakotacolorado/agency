@@ -8,7 +8,7 @@ its agent `interrupted`, and it can be resumed.
 
 One Node 24 process serves it over HTTP, with its data in one SQLite file,
 and a page at `/` that lists agents, requests, hosts, roles and usage, follows
-an agent's transcript, and makes, messages, stops, resumes and retires agents,
+an agent's transcript, and makes, messages and deletes agents,
 under the token it asks for. Errors answer `{code, message}`, `code` an
 AWS-style exception name such as `ValidationException`.
 The contract is [`openapi.json`](./openapi.json), its operations named as
@@ -118,7 +118,7 @@ sequenceDiagram
 
 The queue is the truth, so a dropped socket loses nothing: what it missed is
 replayed to the next. A command not reported by the time its host would be
-`lost` is withdrawn (`create` and `retire` excepted). A host silent over 60s is
+`lost` is withdrawn (`create` and `delete` excepted). A host silent over 60s is
 `disconnected`, over 300s `lost`; a lost host is sent nothing new.
 
 ### The account's usage
@@ -141,7 +141,7 @@ included, and sends each session's running total as a report's `tokens`:
 `cacheReadInputTokens`, by `agentId` and `sessionId`. Since it is a total and
 not an increment, the service keeps the highest of each count per session, so
 a total sent again after a reconnect, or one that arrives late, adds nothing.
-An agent's `tokens` is the sum over its sessions, kept on a retired agent
+An agent's `tokens` is the sum over its sessions, kept on a deleted agent
 too.
 
 ## What an agent is given
@@ -178,7 +178,7 @@ An agent is made, by a person or a program, with what its job needs:
 - **label**, **whenDone**, and **createdBy**, the `claimed-by` header it was
   made with, by which `ListAgents` filters.
 - **item**: the work item it was started on, kept for its life.
-  `ListAgents?item=<id>` lists every agent started on it, retired ones
+  `ListAgents?item=<id>` lists every agent started on it, deleted ones
   included, so what they used is still there once they have gone.
 
 ## Picking up waypoint's tasks
@@ -225,7 +225,7 @@ says it. Each session is given `AG_URL` and `AG_TOKEN`, and the agent's `page`
 skill calls `PUT /agents/{id}/status` with `working` or `waiting` and a
 one-line `summary`, or `done` with its result once it has finished what it was
 made for. An agent made with `whenDone: stop` then has its session stopped, and
-one made with `retire` is retired; either way it keeps reading `done`, so a
+one made with `delete` is deleted; either way it keeps reading `done`, so a
 caller can tell an agent that finished from one whose session died. A turn that ends with nothing said since the last one ended
 reads `waiting`, so an agent that forgets still reaches the person; a message
 to a waiting agent makes it `working`. Only `status: waiting` should notify.
