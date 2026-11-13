@@ -13,7 +13,7 @@ let url: string;
 const open: WebSocket[] = [];
 
 beforeEach(async () => {
-  running = start({ db: ":memory:", token: TOKEN, adminToken: null, services: {} });
+  running = start({ db: ":memory:", token: TOKEN, services: {} });
   server = await new Promise<ServerType>((ready) => {
     const s = serve({ fetch: running.api.fetch, hostname: "127.0.0.1", port: 0 }, () => ready(s));
   });

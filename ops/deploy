@@ -3,8 +3,8 @@
 # the commit to release. Builds it, installs it as
 # ~/.local/share/routines/agent-service/versions/<version>+<commit> and points
 # current at it (the one it replaces is previous). Makes the host's tokens
-# once, in ~/.config/agent-service/env (mode 600): its own AUTH_TOKEN and
-# ADMIN_TOKEN, and a token named agent-service from this host's honed,
+# once, in ~/.config/agent-service/env (mode 600): its own AUTH_TOKEN,
+# and a token named agent-service from this host's honed,
 # through its CLI. Writes the services file naming honed alone: waypoint is
 # not wired in until the person says so. Writes
 # and restarts agent-service.service, and checks /health answers this commit;
@@ -56,7 +56,6 @@ keep_token() {
   echo "deploy: made $name in $conf/env"
 }
 [ -n "$(token AUTH_TOKEN)" ] || { printf 'AUTH_TOKEN=%s\n' "$(openssl rand -hex 32)" >>"$conf/env" && echo "deploy: made AUTH_TOKEN in $conf/env"; }
-[ -n "$(token ADMIN_TOKEN)" ] || { printf 'ADMIN_TOKEN=%s\n' "$(openssl rand -hex 32)" >>"$conf/env" && echo "deploy: made ADMIN_TOKEN in $conf/env"; }
 honed_token() { (set -a && . "$HOME/.config/honed/env" && set +a && "$routines/honed/current/bin/honed" token create agent-service); }
 keep_token HONED_TOKEN 'honed_[A-Za-z0-9_-]*' honed_token
 cat >"$conf/services.json" <<JSON

@@ -3,7 +3,7 @@
   "info": {
     "version": "2026-11-12",
     "title": "agent-service",
-    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at `socketUrl`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, or the admin token, which also writes roles, on everything but `GetHealth` and the docs.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
+    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at `socketUrl`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
   },
   "tags": [
     {
@@ -589,7 +589,7 @@
               "version",
               "files"
             ],
-            "description": "Files to write into the agent's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand."
+            "description": "agent-service's own clients, `page` and `title`, as files to write into the agent's Claude Code folder before it starts, under `skills/`, replacing the last start's."
           },
           "documents": {
             "type": "array",
@@ -631,11 +631,7 @@
                 "files"
               ]
             },
-            "description": "Written after `context`, as it is, each with its own files and its `CLAUDE.md` after the one before; they replace the last start's. No two write the same file under `skills/`. Only with a `context`; absent with one, there are none."
-          },
-          "contextUrl": {
-            "type": "string",
-            "description": "Present when the whole context is too large for a socket message: the path of `GetSessionContext` for this session. A host reads it, with the stage's token, and writes what it answers in place of `context` and `documents`, which then hold only what fitted. A host that cannot read it writes them."
+            "description": "The honed skills the session is given, each written after `context` under `skills/<its last segment>/`, replacing the last start's."
           },
           "env": {
             "type": "object",
@@ -656,19 +652,6 @@
               "agent-service"
             ],
             "description": "The services the session is given, by name, as kept on record. Their tokens are in `secrets`."
-          },
-          "ownCredentials": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-            },
-            "maxItems": 16,
-            "example": [
-              "work-tracker",
-              "agent-service"
-            ],
-            "description": "Of `credentials`, those the agent was given a token of its own for, read in place of the shared one."
           },
           "secrets": {
             "type": "object",
@@ -934,12 +917,12 @@
             ],
             "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
           },
-          "documents": {
+          "skills": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "The honed skills each session is given after `workplace/global`, by name."
+            "description": "The honed skills each session is given, by name: its role's own first."
           },
           "credentials": {
             "type": [
@@ -949,7 +932,7 @@
             "items": {
               "type": "string"
             },
-            "description": "The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own."
+            "description": "The services each session is given, by name; null for every one the stage has. Never a token."
           },
           "hostId": {
             "type": "string",
@@ -1099,7 +1082,7 @@
           "tokens",
           "createdBy",
           "whenDone",
-          "documents",
+          "skills",
           "credentials",
           "hostId",
           "state",
@@ -1508,54 +1491,26 @@
         ],
         "description": "To the socket whose message could not be handled, saying why."
       },
-      "Skill": {
+      "HeartbeatResponse": {
         "type": "object",
         "properties": {
-          "key": {
-            "type": "string",
-            "description": "Whose skills these are: `agent-service`."
-          },
-          "version": {
+          "heartbeatInterval": {
             "type": "integer",
-            "description": "The deployed tree's commit count, 0 when deployed from outside git."
+            "exclusiveMinimum": 0,
+            "description": "Seconds until the host should send its next heartbeat."
           },
-          "commit": {
-            "type": "string",
-            "description": "The deployed commit, ending `-dirty` when deployed with uncommitted changes."
-          },
-          "files": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "description": "Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`."
-                },
-                "content": {
-                  "type": "string",
-                  "description": "The file's text."
-                },
-                "executable": {
-                  "type": "boolean",
-                  "description": "Whether it is written executable."
-                }
-              },
-              "required": [
-                "path",
-                "content",
-                "executable"
-              ],
-              "description": "A file of a skill."
-            },
-            "description": "Every file, as each session is given them."
+          "socketUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as `Authorization: Bearer`. Commands and reports go by the socket alone, so on a server with none (null) no command reaches the host.",
+            "example": "wss://abc123.execute-api.us-east-1.amazonaws.com/live"
           }
         },
         "required": [
-          "key",
-          "version",
-          "commit",
-          "files"
+          "heartbeatInterval",
+          "socketUrl"
         ]
       },
       "Error": {
@@ -1584,28 +1539,6 @@
           "message"
         ],
         "description": "Every error's body."
-      },
-      "HeartbeatResponse": {
-        "type": "object",
-        "properties": {
-          "heartbeatInterval": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "description": "Seconds until the host should send its next heartbeat."
-          },
-          "socketUrl": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as `Authorization: Bearer`. Commands and reports go by the socket alone, so on a server with none (null) no command reaches the host.",
-            "example": "wss://abc123.execute-api.us-east-1.amazonaws.com/live"
-          }
-        },
-        "required": [
-          "heartbeatInterval",
-          "socketUrl"
-        ]
       },
       "Heartbeat": {
         "type": "object",
@@ -1684,16 +1617,12 @@
             "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
             "example": "reviewer"
           },
-          "documents": {
+          "skills": {
             "type": "array",
             "items": {
-              "type": "string",
-              "maxLength": 100,
-              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
-              "example": "workplace/reviewer"
+              "type": "string"
             },
-            "maxItems": 8,
-            "description": "The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order."
+            "description": "The honed skills each session of an agent made from it is given: the role's own, `agent-roles/<name>`, first."
           },
           "credentials": {
             "type": [
@@ -1709,7 +1638,7 @@
               "work-tracker",
               "agent-service"
             ],
-            "description": "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`."
+            "description": "The services each session is given, by name; null for every one the stage has."
           },
           "whenDone": {
             "type": "string",
@@ -1734,7 +1663,7 @@
             ],
             "minLength": 1,
             "maxLength": 16384,
-            "description": "What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none."
+            "description": "What an agent in it is for and who starts one: markdown, a sentence or two. Null for none."
           },
           "priority": {
             "type": "integer",
@@ -1751,183 +1680,23 @@
             "maxLength": 16384,
             "description": "The first message of an agent made from it with no `brief` of its own; null when the caller must give one."
           },
-          "updatedAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z",
-            "description": "When it was last written; null for a role as the stage was seeded with it."
+          "version": {
+            "type": "integer",
+            "description": "The version of its honed skill it was read at."
           }
         },
         "required": [
           "name",
-          "documents",
+          "skills",
           "credentials",
           "whenDone",
           "label",
           "description",
           "priority",
           "brief",
-          "updatedAt"
-        ]
-      },
-      "NewRole": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
-            "example": "reviewer"
-          },
-          "documents": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 100,
-              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
-              "example": "workplace/reviewer"
-            },
-            "maxItems": 8,
-            "description": "Absent, only `workplace/global`."
-          },
-          "credentials": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-            },
-            "maxItems": 16,
-            "example": [
-              "work-tracker",
-              "agent-service"
-            ],
-            "description": "Absent, null: the stage's defaults."
-          },
-          "whenDone": {
-            "type": "string",
-            "enum": [
-              "keep",
-              "stop",
-              "retire"
-            ],
-            "description": "Absent, `keep`."
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 40,
-            "description": "A short tag shown beside the agent's name, so sessions can be told apart.",
-            "example": "approval: PR #18"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 16384,
-            "description": "Absent, null."
-          },
-          "priority": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 1000,
-            "description": "Absent, 0."
-          },
-          "brief": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 16384,
-            "description": "Absent, null."
-          }
-        },
-        "required": [
-          "name",
-          "label"
+          "version"
         ],
-        "additionalProperties": false
-      },
-      "RoleChange": {
-        "type": "object",
-        "properties": {
-          "documents": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 100,
-              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
-              "example": "workplace/reviewer"
-            },
-            "maxItems": 8,
-            "description": "The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order."
-          },
-          "credentials": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-            },
-            "maxItems": 16,
-            "example": [
-              "work-tracker",
-              "agent-service"
-            ],
-            "description": "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`."
-          },
-          "whenDone": {
-            "type": "string",
-            "enum": [
-              "keep",
-              "stop",
-              "retire"
-            ],
-            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again."
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 40,
-            "description": "A short tag shown beside the agent's name, so sessions can be told apart.",
-            "example": "approval: PR #18"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 16384,
-            "description": "What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none."
-          },
-          "priority": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 1000,
-            "description": "Of two requests waiting to start, the higher starts first."
-          },
-          "brief": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1,
-            "maxLength": 16384,
-            "description": "The first message of an agent made from it with no `brief` of its own; null when the caller must give one."
-          }
-        },
-        "additionalProperties": false
+        "description": "A role, as its honed skill `agent-roles/<name>` defines it: its `SKILL.md` is what an agent in it is told, and its `role.json` these settings."
       },
       "AgentRequest": {
         "type": "object",
@@ -2133,68 +1902,15 @@
           "credentials": {
             "type": "array",
             "items": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                    },
-                    "token": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 4096
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "token"
-                  ],
-                  "additionalProperties": false,
-                  "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
-                }
-              ]
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
             },
             "maxItems": 16,
             "example": [
               "work-tracker",
-              {
-                "name": "waypoint",
-                "token": "…"
-              }
+              "agent-service"
             ],
-            "description": "In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn."
-          },
-          "tokens": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                },
-                "token": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096
-                }
-              },
-              "required": [
-                "name",
-                "token"
-              ],
-              "additionalProperties": false,
-              "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
-            },
-            "minItems": 1,
-            "maxItems": 16,
-            "description": "Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for."
+            "description": "In place of the role's, as `CreateAgent` takes them."
           }
         },
         "required": [
@@ -2229,7 +1945,7 @@
           "role": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
+            "description": "The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
             "example": "reviewer"
           },
           "hostId": {
@@ -2280,53 +1996,26 @@
           "credentials": {
             "type": "array",
             "items": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                    },
-                    "token": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 4096
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "token"
-                  ],
-                  "additionalProperties": false,
-                  "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
-                }
-              ]
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
             },
             "maxItems": 16,
             "example": [
               "work-tracker",
-              {
-                "name": "waypoint",
-                "token": "…"
-              }
+              "agent-service"
             ],
-            "description": "The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired."
+            "description": "The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start."
           },
-          "documents": {
+          "skills": {
             "type": "array",
             "items": {
               "type": "string",
               "maxLength": 100,
               "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
-              "example": "workplace/reviewer"
+              "example": "agent-roles/planner"
             },
             "maxItems": 8,
-            "description": "Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`."
+            "description": "Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none."
           }
         },
         "required": [
@@ -2550,73 +2239,54 @@
             ],
             "description": "`stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live."
           },
-          "context": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "key",
-              "version"
-            ],
-            "description": "The `workplace/global` it started with, from honed; null when it was given none."
-          },
-          "documents": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string"
-                },
-                "version": {
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "key",
-                "version"
-              ]
-            },
-            "description": "The documents it started with beside `context`, in order."
-          },
           "skills": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "key": {
-                  "type": "string"
+                "name": {
+                  "type": "string",
+                  "description": "The honed skill."
                 },
                 "version": {
-                  "type": "integer"
-                },
-                "commit": {
-                  "type": "string"
+                  "type": "integer",
+                  "description": "The version it was given."
                 }
               },
               "required": [
-                "key",
-                "version",
-                "commit"
+                "name",
+                "version"
               ]
             },
-            "description": "The clients it started with, each read from its service's `GET /skill` for this stage and written over `context`'s files at the same paths."
+            "description": "The honed skills it started with, in order."
+          },
+          "clients": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "version": {
+                "type": "integer",
+                "description": "The commit count of the agent-service build they came from."
+              },
+              "commit": {
+                "type": "string",
+                "description": "Its commit."
+              }
+            },
+            "required": [
+              "version",
+              "commit"
+            ],
+            "description": "The `page` and `title` clients it started with; null on a session that started with none."
           },
           "contextNote": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Why it was given no context, or why a document it was made with, or a service's skill, was left out."
+            "description": "Why a skill it was made with was left out, or given from honed's last good copy; null when none was."
           }
         },
         "required": [
@@ -2625,103 +2295,9 @@
           "startedAt",
           "endedAt",
           "ended",
-          "context",
-          "documents",
           "skills",
+          "clients",
           "contextNote"
-        ]
-      },
-      "SessionContext": {
-        "type": "object",
-        "properties": {
-          "context": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "key": {
-                "type": "string"
-              },
-              "version": {
-                "type": "integer"
-              },
-              "files": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "type": "string"
-                    },
-                    "content": {
-                      "type": "string"
-                    },
-                    "executable": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "path",
-                    "content",
-                    "executable"
-                  ]
-                }
-              }
-            },
-            "required": [
-              "key",
-              "version",
-              "files"
-            ],
-            "description": "Written as a start's `context` is; null when there is none to give."
-          },
-          "documents": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string"
-                },
-                "version": {
-                  "type": "integer"
-                },
-                "files": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "path": {
-                        "type": "string"
-                      },
-                      "content": {
-                        "type": "string"
-                      },
-                      "executable": {
-                        "type": "boolean"
-                      }
-                    },
-                    "required": [
-                      "path",
-                      "content",
-                      "executable"
-                    ]
-                  }
-                }
-              },
-              "required": [
-                "key",
-                "version",
-                "files"
-              ]
-            },
-            "description": "Written after it, as a start's `documents` are."
-          }
-        },
-        "required": [
-          "context",
-          "documents"
         ]
       },
       "AgentCommands": {
@@ -2803,53 +2379,6 @@
                     "version",
                     "commit"
                   ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/skill": {
-      "get": {
-        "operationId": "GetSkill",
-        "summary": "Get the agents' clients",
-        "description": "The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over `workplace/global`'s files at the same paths, so an agent calls the API that is deployed.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Platform"
-        ],
-        "responses": {
-          "200": {
-            "description": "The skills' files.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Skill"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -3083,7 +2612,7 @@
       "get": {
         "operationId": "ListRoles",
         "summary": "List roles",
-        "description": "Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `CreateRole` or `UpdateRole` is served as written.",
+        "description": "Every role an agent can be made from, highest `priority` first: each skill in honed's `agent-roles/` group, read now, or as last read when honed does not answer. A role is changed in honed, never here.",
         "security": [
           {
             "bearerAuth": []
@@ -3134,98 +2663,13 @@
             }
           }
         }
-      },
-      "post": {
-        "operationId": "CreateRole",
-        "summary": "Create a role",
-        "description": "Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Roles"
-        ],
-        "requestBody": {
-          "description": "The role.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewRole"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Role"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "AccessDeniedException: Writing a role takes the stage's admin token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "ConflictException: A role has this name already.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/roles/{name}": {
       "get": {
         "operationId": "GetRole",
         "summary": "Get a role",
-        "description": "Get one role.",
+        "description": "Get one role, as `ListRoles` gives it.",
         "security": [
           {
             "bearerAuth": []
@@ -3271,105 +2715,6 @@
           },
           "401": {
             "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ResourceNotFoundException: No role has this name.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "operationId": "UpdateRole",
-        "summary": "Update a role",
-        "description": "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Roles"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{0,39}$",
-              "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
-              "example": "reviewer"
-            },
-            "required": true,
-            "description": "A role's name, such as `reviewer`: what kind of agent it makes.",
-            "name": "name",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "description": "What changes.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RoleChange"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Changed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Role"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "AccessDeniedException: Writing a role takes the stage's admin token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3450,7 +2795,7 @@
             }
           },
           "400": {
-            "description": "ValidationException: The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.",
+            "description": "ValidationException: The request failed validation, the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3470,7 +2815,7 @@
             }
           },
           "503": {
-            "description": "ServiceUnavailableException: No API token is configured, or a token of its own could not be kept.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3795,7 +3140,7 @@
             }
           },
           "400": {
-            "description": "ValidationException: The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.",
+            "description": "ValidationException: The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4887,109 +4232,6 @@
           },
           "404": {
             "description": "ResourceNotFoundException: No agent has this id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agents/{id}/sessions/{sessionId}/context": {
-      "get": {
-        "operationId": "GetSessionContext",
-        "summary": "Get a session's context",
-        "description": "Read at the moment it is asked, as a start's is, and recorded on the session in place of what its start carried, so the session's `contextNote` says what it was given.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Host protocol"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Assigned by the service when the agent is created.",
-              "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
-            },
-            "required": true,
-            "description": "Assigned by the service when the agent is created.",
-            "name": "id",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Assigned by the service when it queues the session's `start`.",
-              "example": "9d6a1f0e-4b7c-4e21-a3f8-0c5d2e7b4a19"
-            },
-            "required": true,
-            "description": "Assigned by the service when it queues the session's `start`.",
-            "name": "sessionId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Its context and documents.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionContext"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ResourceNotFoundException: No agent has this id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "ConflictException: The session is not the agent's live one.",
             "content": {
               "application/json": {
                 "schema": {

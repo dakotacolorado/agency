@@ -16,10 +16,9 @@ import { FakeStore } from "./fake-store.ts";
 import type { Poster } from "./push.ts";
 import type { Command, SocketOutbound } from "./schema.ts";
 import { SocketHandler } from "./socket.ts";
-import { CONTEXT_LIMIT, FETCH_LIMIT, type ContextSource, type Read } from "./context.ts";
+import type { ContextSource, Read } from "./context.ts";
 import type { Credential } from "./credentials.ts";
-import type { AgentSecrets } from "./agent-secrets.ts";
-import { SEEDED_ROLES, type Role } from "./roles.ts";
+import { TEST_ROLES as SEEDED_ROLES, testRoles } from "./test-roles.ts";
 
 const TOKEN = { value: async () => "secret" } satisfies TokenSource;
 const NOW = new Date("2026-10-27T12:00:00.000Z");
@@ -132,7 +131,12 @@ const agent = (id: string) => read(`/agents/${id}`);
 const host = async (id: string) => (await read("/hosts")).hosts.find((h: { id: string }) => h.id === id);
 
 /** What a start is queued with to reach this service: its address and the name of its token, never the token. */
-const SELF = { env: { AG_URL: "http://local" }, credentials: ["agent-service"] };
+/** What every start carries without any honed skill: this service's address, and its own clients. */
+const SELF = {
+  env: { AG_URL: "http://local" },
+  credentials: ["agent-service"],
+  context: { key: "agent-service", version: expect.any(Number), files: expect.arrayContaining([expect.objectContaining({ path: "skills/page/bin/page" })]) },
+};
 
 describe("auth", () => {
   it("serves health without a token", async () => {
@@ -265,7 +269,7 @@ describe("creating an agent", () => {
       tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
       createdBy: null,
       whenDone: "keep",
-      documents: [],
+      skills: [],
       credentials: null,
       status: null,
       summary: null,
@@ -311,10 +315,9 @@ describe("creating an agent", () => {
           startedAt: NOW.toISOString(),
           endedAt: null,
           ended: null,
-          context: null,
-          documents: [],
           skills: [],
-          contextNote: "no context is configured",
+          clients: { version: expect.any(Number), commit: expect.any(String) },
+          contextNote: null,
         },
       ],
     });
@@ -1316,180 +1319,51 @@ describe("pushing to sockets", () => {
 });
 
 describe("a session's context", () => {
-  const GLOBAL = { key: "global", version: 4, files: [{ path: "skills/x/SKILL.md", content: "Use x.", executable: false }] };
-  const APPROVAL = { key: "approval", version: 2, files: [{ path: "skills/approve/SKILL.md", content: "Approve.", executable: false }] };
-  let attached: Read;
+  const PLANNER = { key: "agent-roles/planner", version: 4, files: [{ path: "skills/planner/SKILL.md", content: "Plan.", executable: false }] };
+  let given: Read;
   let asked: string[][];
   let id: string;
 
   beforeEach(async () => {
-    attached = { context: GLOBAL, documents: [], skills: [], note: null };
+    given = { skills: [PLANNER], note: null };
     asked = [];
     const context: ContextSource = {
-      forSession: async (documents) => {
-        asked.push(documents);
-        return attached;
+      forSession: async (skills) => {
+        asked.push(skills);
+        return given;
       },
-      refuse: async (documents) => (documents.includes("nope") ? "document-service answered 404 for nope: no document nope" : null),
+      refuse: async (skills) => (skills.includes("team/nope") ? "honed has no skill named team/nope" : null),
     };
-    api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, context });
+    api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, context, roles: testRoles() });
     await beat("laptop", { capacity: 1 });
-    id = (await create()).id;
+    id = (await create({ skills: ["agent-roles/planner"] })).id;
   });
 
-  it("is attached to each start, with the environment its scripts need, and recorded on the session", async () => {
-    const { commandId } = await (await call("POST", `/agents/${id}/messages`, { text: "Hello." })).json();
-    expect(queued().find((c) => c.id === commandId)).toMatchObject({
-      kind: "start",
-      context: GLOBAL,
-      ...SELF,
-    });
-    expect((await read(`/agents/${id}/sessions`)).sessions[0]).toMatchObject({ context: { key: "global", version: 4 }, contextNote: null });
+  it("gives each start the skills the agent names and this service's clients, and records them on the session", async () => {
+    await call("POST", `/agents/${id}/messages`, { text: "Go." });
+    expect(asked.at(-1)).toEqual(["agent-roles/planner"]);
+    const start = queued().find((c) => c.kind === "start") as Extract<Command, { kind: "start" }>;
+    expect(start.documents).toEqual([PLANNER]);
+    expect(start.context?.files.map((f) => f.path)).toEqual(expect.arrayContaining(["skills/page/SKILL.md", "skills/page/bin/page", "skills/title/bin/title"]));
+    const [session] = (await read(`/agents/${id}/sessions`)).sessions;
+    expect(session).toMatchObject({ skills: [{ name: "agent-roles/planner", version: 4 }], clients: { commit: expect.any(String) }, contextNote: null });
+    expect(session).not.toHaveProperty("context");
   });
 
-  it("is kept on the session once it has ended", async () => {
-    await call("POST", `/agents/${id}/messages`, { text: "Hello." });
-    await call("POST", `/agents/${id}/stop`, { force: true });
-    expect((await read(`/agents/${id}/sessions`)).sessions[0]).toMatchObject({ ended: "stopped", context: { key: "global", version: 4 } });
+  it("says on the session why a skill was left out", async () => {
+    given = { skills: [], note: "honed has no skill named agent-roles/planner" };
+    await call("POST", `/agents/${id}/messages`, { text: "Go." });
+    const [session] = (await read(`/agents/${id}/sessions`)).sessions;
+    expect(session).toMatchObject({ skills: [], contextNote: "honed has no skill named agent-roles/planner" });
   });
 
-  it("is left out when it cannot be read, and the session says why", async () => {
-    attached = { context: null, documents: [], skills: [], note: "document-service answered 503 for global" };
-    const { commandId } = await (await call("POST", `/agents/${id}/messages`, { text: "Hello." })).json();
-    const start = queued().find((c) => c.id === commandId)!;
-    expect(start).not.toHaveProperty("context");
-    // An agent can still say what it is doing without its context.
-    expect(start).toMatchObject(SELF);
-    expect((await read(`/agents/${id}/sessions`)).sessions[0]).toMatchObject({ context: null, contextNote: "document-service answered 503 for global" });
-  });
-
-  it("carries the documents an agent was made with after global, each start, and records them", async () => {
-    const made = await create({ name: "reviewer-1", documents: ["approval"] });
-    expect(made).toMatchObject({ documents: ["approval"] });
-    attached = { ...attached, documents: [APPROVAL] };
-    const { commandId } = await (await call("POST", `/agents/${made.id}/messages`, { text: "Hello." })).json();
-    expect(asked.at(-1)).toEqual(["approval"]);
-    expect(queued().find((c) => c.id === commandId)).toMatchObject({ kind: "start", context: GLOBAL, documents: [APPROVAL] });
-    expect((await read(`/agents/${made.id}/sessions`)).sessions[0]).toMatchObject({
-      context: { key: "global", version: 4 },
-      documents: [{ key: "approval", version: 2 }],
-    });
-    await call("POST", `/agents/${made.id}/stop`, { force: true });
-    await call("POST", `/agents/${made.id}/resume`);
-    expect(asked.at(-1)).toEqual(["approval"]);
-  });
-
-  it("asks for the skills of the services the agent is given, lays them over global, and records them", async () => {
-    const WT = { key: "work-tracker", version: 53, commit: "abc", files: [{ path: "skills/x/bin/run", content: "echo", executable: true }] };
-    const given: string[][] = [];
-    const withSkills = new AgentServiceApi(store, TOKEN, {
-      now: () => now,
-      poster,
-      socketUrl: SOCKET,
-      context: {
-        forSession: async (_, skills) => ({ ...attached, skills: (skills ?? []).map(({ key, version, commit }) => ({ key, version, commit })) }),
-        refuse: async () => null,
-      },
-      skills: {
-        forSession: async (names) => {
-          given.push(names);
-          return { skills: [WT], notes: ["document-service answered 404 for its skill"] };
-        },
-      },
-    });
-    api = withSkills;
-    await call("POST", `/agents/${id}/messages`, { text: "Hello." });
-    expect(given).toEqual([["agent-service"]]);
-    expect((await read(`/agents/${id}/sessions`)).sessions[0]).toMatchObject({
-      skills: [{ key: "work-tracker", version: 53, commit: "abc" }],
-      contextNote: "document-service answered 404 for its skill",
-    });
-  });
-
-  it("serves its own clients, behind the token", async () => {
-    expect((await api.fetch(new Request("http://local/skill"))).status).toBe(401);
-    const skill = await read("/skill");
-    expect(skill.key).toBe("agent-service");
-    expect(skill.files.map((f: { path: string }) => f.path)).toContain("skills/page/bin/page");
-  });
-
-  it("gives an agent made without documents global alone, as before", async () => {
-    const { commandId } = await (await call("POST", `/agents/${id}/messages`, { text: "Hello." })).json();
-    expect(asked).toEqual([[]]);
-    expect(queued().find((c) => c.id === commandId)).not.toHaveProperty("documents");
-  });
-
-  describe("too large for its start", () => {
-    const BIG = { key: "global", version: 5, files: [{ path: "skills/x/reference/api.md", content: "x".repeat(CONTEXT_LIMIT), executable: false }] };
-    const TRIMMED = { key: "global", version: 5, files: [{ path: "skills/x/SKILL.md", content: "Use x.", executable: false }] };
-    let limits: (number | undefined)[];
-
-    beforeEach(() => {
-      limits = [];
-      api = new AgentServiceApi(store, TOKEN, {
-        now: () => now,
-        poster,
-        socketUrl: SOCKET,
-        context: {
-          forSession: async (_, __, limit) => {
-            limits.push(limit);
-            return limit === FETCH_LIMIT
-              ? attached
-              : { context: TRIMMED, documents: [], skills: [], note: "the x skill's reference/ would take global past it", cut: true };
-          },
-          refuse: async () => null,
-        },
-      });
-    });
-
-    it("carries what fits and where its host reads the whole, which is then recorded", async () => {
-      attached = { context: BIG, documents: [APPROVAL], skills: [], note: null };
-      const { commandId } = await (await call("POST", `/agents/${id}/messages`, { text: "Hello." })).json();
-      expect(limits).toEqual([FETCH_LIMIT, undefined]);
-      const start = queued().find((c) => c.id === commandId)!;
-      if (start.kind !== "start") throw new Error("not a start");
-      expect(start).toMatchObject({ context: TRIMMED, contextUrl: `/agents/${id}/sessions/${start.sessionId}/context` });
-      expect(start).not.toHaveProperty("documents");
-      expect((await read(`/agents/${id}/sessions`)).sessions[0].contextNote).toMatch(/^the x skill's reference\/ .*, in its start; its host is to read the whole/);
-
-      expect(await read(start.contextUrl!)).toEqual({ context: BIG, documents: [APPROVAL] });
-      expect((await read(`/agents/${id}/sessions`)).sessions[0]).toMatchObject({
-        context: { key: "global", version: 5 },
-        documents: [{ key: "approval", version: 2 }],
-        contextNote: null,
-      });
-    });
-
-    it("is read only for the agent's live session", async () => {
-      attached = { context: BIG, documents: [], skills: [], note: null };
-      const { commandId } = await (await call("POST", `/agents/${id}/messages`, { text: "Hello." })).json();
-      const start = queued().find((c) => c.id === commandId)!;
-      if (start.kind !== "start") throw new Error("not a start");
-      await call("POST", `/agents/${id}/stop`, { force: true });
-      expect((await call("GET", start.contextUrl!)).status).toBe(409);
-      const nobody = `/agents/${crypto.randomUUID()}/sessions/${start.sessionId}/context`;
-      expect((await call("GET", nobody)).status).toBe(404);
-    });
-
-    it("is refused, saying why, when not even the whole fits", async () => {
-      attached = { context: null, documents: [], skills: [], note: "global v5 is 2000000 bytes, over the 1048576 a start can carry", cut: true };
-      const res = await call("POST", `/agents/${id}/messages`, { text: "Hello." });
-      expect(res.status).toBe(409);
-      expect((await res.json()).message).toMatch(/^Its context cannot be given whole, so no session was started: global v5 is 2000000 bytes/);
-      expect((await read(`/agents/${id}`)).session).toBeNull();
-    });
-  });
-
-  it("refuses a skill its source does not know, in its words, and workplace/global or one twice", async () => {
-    const res = await call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", documents: ["approval", "nope"] });
+  it("refuses a skill honed does not have, and a name that is not one", async () => {
+    const named = (skills: string[]) => call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", skills });
+    const res = await named(["team/nope"]);
     expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe("document-service answered 404 for nope: no document nope");
-    const named = (documents: string[]) => call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", documents });
-    expect((await named(["workplace/global"])).status).toBe(400);
-    expect((await named(["approval", "approval"])).status).toBe(400);
+    expect((await res.json()).message).toBe("honed has no skill named team/nope");
+    expect((await named(["a", "a"])).status).toBe(400);
     expect((await named(["a/b/c"])).status).toBe(400);
-    expect((await named(["Approval"])).status).toBe(400);
-    expect((await read("/agents")).agents).toHaveLength(1);
   });
 });
 
@@ -1631,114 +1505,7 @@ describe("an agent made without naming a host", () => {
   });
 });
 
-describe("a credential of an agent's own", () => {
-  /** Kept as Secrets Manager would keep them, apart from the store. */
-  class KeptSecrets implements AgentSecrets {
-    kept = new Map<string, string>();
-    async put(agentId: string, name: string, value: string) {
-      this.kept.set(`${agentId}/${name}`, value);
-    }
-    async get(agentId: string, name: string) {
-      return this.kept.get(`${agentId}/${name}`) ?? null;
-    }
-    async remove(agentId: string, names: string[]) {
-      for (const name of names) this.kept.delete(`${agentId}/${name}`);
-    }
-  }
-  let kept: KeptSecrets;
-  const shared = (prefix: string, url: string | null, value: string): Credential => ({
-    url,
-    urlVar: `${prefix}_URL`,
-    tokenVar: `${prefix}_TOKEN`,
-    token: { value: async () => value },
-  });
-  const known = () => ({
-    "document-service": shared("DS", "https://ds", "shared-ds"),
-    "agent-service": shared("AG", null, "secret"),
-  });
-
-  beforeEach(async () => {
-    kept = new KeptSecrets();
-    api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: known(), agentSecrets: kept });
-    await store.putConnection({ connectionId: "host", kind: "host", hostId: "laptop", connectedAt: now.toISOString() });
-    await beat("laptop", { capacity: 4 });
-  });
-
-  const pushed = () => poster.to("host").flatMap((m) => (m.type === "command" && m.command.kind === "start" ? [m.command] : []));
-  const judge = () =>
-    create({ name: "judge-1", brief: "Judge.", credentials: [{ name: "document-service", token: "judge-only" }, "agent-service"] });
-
-  it("is given as that name's token in place of the shared one, at each start and replay", async () => {
-    const made = await judge();
-    expect(pushed()[0]).toMatchObject({
-      env: { DS_URL: "https://ds", AG_URL: "http://local" },
-      secrets: { DS_TOKEN: "judge-only", AG_TOKEN: "secret" },
-    });
-    await call("POST", `/agents/${made.id}/stop`, { force: true });
-    await call("POST", `/agents/${made.id}/resume`);
-    expect(pushed().at(-1)).toMatchObject({ secrets: { DS_TOKEN: "judge-only" } });
-    await store.putConnection({ connectionId: "again", kind: "host", hostId: "laptop", connectedAt: now.toISOString() });
-    await new SocketHandler(store, TOKEN, poster, () => now, known(), kept).handle({
-      requestContext: { connectionId: "again", eventType: "MESSAGE" },
-      body: JSON.stringify({ type: "ping" }),
-    });
-    expect(poster.to("again")).toContainEqual({
-      type: "command",
-      command: expect.objectContaining({ kind: "start", secrets: { DS_TOKEN: "judge-only", AG_TOKEN: "secret" } }),
-    });
-  });
-
-  it("is never read back, listed or stored with the agent", async () => {
-    const made = await judge();
-    const all = JSON.stringify([
-      made,
-      queued(),
-      [...store.agents.values()],
-      await read(`/agents/${made.id}`),
-      await read(`/agents/${made.id}/commands`),
-      await read("/agents"),
-    ]);
-    expect(all).not.toContain("judge-only");
-    expect(made).toMatchObject({ credentials: ["document-service", "agent-service"] });
-  });
-
-  it("is deleted when the agent is retired, as by saying it is done", async () => {
-    const made = await judge();
-    expect(kept.kept.size).toBe(1);
-    await call("DELETE", `/agents/${made.id}`);
-    expect(kept.kept.size).toBe(0);
-    const reviewer = await create({ name: "reviewer-1", brief: "Go.", whenDone: "retire", credentials: [{ name: "document-service", token: "r" }] });
-    await call("PUT", `/agents/${reviewer.id}/status`, { status: "done", summary: "Done." });
-    await new SocketHandler(store, TOKEN, poster, () => now, known(), kept).handle({
-      requestContext: { connectionId: "host", eventType: "MESSAGE" },
-      body: JSON.stringify({ type: "report", agents: [{ id: reviewer.id, state: "waiting", sessionId: reviewer.session!.id }] }),
-    });
-    expect(await agent(reviewer.id)).toMatchObject({ state: "retired" });
-    expect(kept.kept.size).toBe(0);
-  });
-
-  it("is not kept for an agent that is not made", async () => {
-    await create({ name: "judge-1" });
-    const res = await call("POST", "/agents", { name: "judge-1", hostId: "laptop", credentials: [{ name: "document-service", token: "x" }] });
-    expect(res.status).toBe(409);
-    expect(kept.kept.size).toBe(0);
-  });
-
-  it("refuses a name the stage has not, one given twice, and any where none can be kept", async () => {
-    const make = (credentials: unknown) => call("POST", "/agents", { name: "x-1", hostId: "laptop", credentials });
-    expect((await make([{ name: "github", token: "x" }])).status).toBe(400);
-    expect((await make([{ name: "document-service", token: "x" }, "document-service"])).status).toBe(400);
-    expect((await make([{ name: "document-service", token: "" }])).status).toBe(400);
-    api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: known() });
-    const unkept = await make([{ name: "document-service", token: "x" }]);
-    expect(unkept.status).toBe(503);
-    expect((await unkept.json()).message).toMatch(/keeps no credential of an agent's own/);
-    expect((await read("/agents")).agents).toEqual([]);
-  });
-});
-
 describe("roles", () => {
-  const ADMIN = "admin-secret";
   let asked: string[][];
   const known = (name: string, url: string | null, prefix: string): Credential => ({
     url,
@@ -1750,18 +1517,18 @@ describe("roles", () => {
   beforeEach(async () => {
     asked = [];
     const context: ContextSource = {
-      forSession: async (documents) => {
-        asked.push(documents);
-        return { context: null, documents: [], skills: [], note: null };
+      forSession: async (skills) => {
+        asked.push(skills);
+        return { skills: [], note: null };
       },
-      refuse: async (documents) => (documents.includes("nope") ? "document-service answered 404 for nope" : null),
+      refuse: async (skills) => (skills.includes("team/nope") ? "honed has no skill named team/nope" : null),
     };
     api = new AgentServiceApi(store, TOKEN, {
       now: () => now,
       poster,
       socketUrl: SOCKET,
       context,
-      admin: { value: async () => ADMIN },
+      roles: testRoles(),
       credentials: {
         "document-service": known("document-service", "https://ds", "DS"),
         "work-tracker": known("work-tracker", "https://wt", "WT"),
@@ -1774,23 +1541,17 @@ describe("roles", () => {
 
   const start = (id: string) => queued().find((c) => c.kind === "start" && c.agentId === id) as Extract<Command, { kind: "start" }>;
 
-  it("lists the six seeded roles, highest priority first, each with all it gives", async () => {
+  it("lists the roles its source gives, highest priority first, each with all it gives", async () => {
     const { roles } = await read("/roles");
-    expect(roles.map((r: { name: string }) => r.name)).toEqual(["planner", "conflict", "investigator", "onboarder", "reviewer", "implementer"]);
-    expect(roles.find((r: { name: string }) => r.name === "reviewer")).toEqual({
-      name: "reviewer",
-      documents: ["workplace/reviewer"],
-      credentials: null,
-      whenDone: "retire",
-      label: "review",
-      description: expect.stringContaining("**Started by** approval-service"),
-      priority: 30,
-      brief: null,
-      updatedAt: null,
-    });
-    for (const role of roles) expect(role.description, role.name).toMatch(/\S/);
-    expect(await read("/roles/implementer")).toMatchObject({ documents: [], whenDone: "stop", priority: 10 });
+    expect(roles.map((r: { name: string }) => r.name)).toEqual(["planner", "onboarder", "reviewer", "implementer"]);
+    expect(roles.find((r: { name: string }) => r.name === "reviewer")).toEqual(SEEDED_ROLES.find((r) => r.name === "reviewer"));
+    expect(await read("/roles/implementer")).toMatchObject({ skills: ["agent-roles/implementer"], whenDone: "stop", priority: 10 });
     expect((await call("GET", "/roles/nobody")).status).toBe(404);
+  });
+
+  it("has no operation that writes a role: they are changed in honed", async () => {
+    expect((await call("POST", "/roles", { name: "scout", label: "scout", priority: 5 })).status).toBe(404);
+    expect((await call("PATCH", "/roles/reviewer", { priority: 1 })).status).toBe(404);
   });
 
   it("makes an agent from a role and a brief with exactly what the role names", async () => {
@@ -1801,7 +1562,7 @@ describe("roles", () => {
       role: "reviewer",
       label: "review",
       whenDone: "retire",
-      documents: ["workplace/reviewer"],
+      skills: ["agent-roles/reviewer"],
       // Naming none, it is given every service the stage has, at each start.
       credentials: null,
     });
@@ -1810,7 +1571,7 @@ describe("roles", () => {
       credentials: ["document-service", "work-tracker", "agent-service", "approval-service"],
       env: { DS_URL: "https://ds", WT_URL: "https://wt", AG_URL: "http://local", AS_URL: "https://as" },
     });
-    expect(asked.at(-1)).toEqual(["workplace/reviewer"]);
+    expect(asked.at(-1)).toEqual(["agent-roles/reviewer"]);
   });
 
   it("takes what a caller gives over the role's, field by field", async () => {
@@ -1824,19 +1585,19 @@ describe("roles", () => {
         credentials: ["work-tracker", "approval-service"],
       })
     ).json();
-    expect(made).toMatchObject({ role: "reviewer", label: "review: PR #9", documents: ["workplace/reviewer"], credentials: ["work-tracker", "approval-service"] });
+    expect(made).toMatchObject({ role: "reviewer", label: "review: PR #9", skills: ["agent-roles/reviewer"], credentials: ["work-tracker", "approval-service"] });
   });
 
   it("starts a planner on the role's own brief, so a caller names only the role", async () => {
     const made = await (await call("POST", "/agents", { name: "planner-1", hostId: "laptop", role: "planner" })).json();
-    expect(made).toMatchObject({ role: "planner", documents: ["workplace/planner"], whenDone: "stop", label: "plan: new work", state: "working" });
+    expect(made).toMatchObject({ role: "planner", skills: ["agent-roles/planner"], whenDone: "stop", label: "plan: new work", state: "working" });
     expect(start(made.id).text).toContain("You are a planner");
-    expect(asked.at(-1)).toEqual(["workplace/planner"]);
+    expect(asked.at(-1)).toEqual(["agent-roles/planner"]);
   });
 
-  it("still makes an agent from explicit documents and credentials, with no role", async () => {
-    const made = await create({ brief: "Go.", documents: ["tickets"], credentials: ["work-tracker"], whenDone: "stop" });
-    expect(made).toMatchObject({ role: null, documents: ["tickets"], credentials: ["work-tracker"], whenDone: "stop" });
+  it("still makes an agent from explicit skills and credentials, with no role", async () => {
+    const made = await create({ brief: "Go.", skills: ["team/tickets"], credentials: ["work-tracker"], whenDone: "stop" });
+    expect(made).toMatchObject({ role: null, skills: ["team/tickets"], credentials: ["work-tracker"], whenDone: "stop" });
   });
 
   it("refuses a role the stage does not have", async () => {
@@ -1851,46 +1612,5 @@ describe("roles", () => {
     await create({ name: "plain-1" });
     expect((await read("/agents?role=reviewer")).agents.map((w: { name: string }) => w.name)).toEqual(["reviewer-1"]);
     expect((await read("/agents")).agents.map((w: { role: string | null }) => w.role)).toEqual(["reviewer", "onboarder", null]);
-  });
-
-  it("writes roles only with the admin token, which also reads", async () => {
-    const role = { name: "scout", label: "scout", documents: ["tickets"], priority: 5 };
-    expect((await call("POST", "/roles", role)).status).toBe(403);
-    expect((await call("PATCH", "/roles/reviewer", { priority: 1 })).status).toBe(403);
-    expect((await call("GET", "/roles", undefined, ADMIN)).status).toBe(200);
-    expect((await call("GET", "/roles", undefined, "wrong")).status).toBe(401);
-
-    const made = await call("POST", "/roles", role, ADMIN);
-    expect(made.status).toBe(201);
-    expect(await made.json()).toEqual({ ...role, credentials: null, whenDone: "keep", brief: null, description: null, updatedAt: now.toISOString() });
-    expect((await call("POST", "/roles", role, ADMIN)).status).toBe(409);
-    expect((await call("POST", "/roles", { ...role, name: "other", documents: ["nope"] }, ADMIN)).status).toBe(400);
-    expect((await call("POST", "/roles", { ...role, name: "other", credentials: ["github"] }, ADMIN)).status).toBe(400);
-  });
-
-  it("changes a seeded role, and an agent made after gets what it names now", async () => {
-    const res = await call("PATCH", "/roles/implementer", { documents: ["tickets", "approval"], priority: 15 }, ADMIN);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ name: "implementer", documents: ["tickets", "approval"], priority: 15, whenDone: "stop" });
-    expect((await call("PATCH", "/roles/nobody", { priority: 1 }, ADMIN)).status).toBe(404);
-    const made = await (await call("POST", "/agents", { name: "impl-1", hostId: "laptop", role: "implementer", brief: "Go." })).json();
-    expect(made.documents).toEqual(["tickets", "approval"]);
-  });
-
-  it("changes a role's description, and clears it with null", async () => {
-    const changed = await call("PATCH", "/roles/onboarder", { description: "Onboards repos." }, ADMIN);
-    expect(changed.status).toBe(200);
-    expect((await read("/roles/onboarder")).description).toBe("Onboards repos.");
-    expect((await call("PATCH", "/roles/onboarder", { description: null }, ADMIN)).status).toBe(200);
-    expect((await read("/roles/onboarder")).description).toBeNull();
-    expect((await read("/roles")).roles.find((r: { name: string }) => r.name === "onboarder").description).toBeNull();
-  });
-
-  it("serves a role written before descriptions with its seed's", async () => {
-    const { description: _, ...old } = SEEDED_ROLES.find((r) => r.name === "reviewer")!;
-    await store.putRole({ ...old, priority: 25, updatedAt: now.toISOString() } as Role);
-    const role = await read("/roles/reviewer");
-    expect(role).toMatchObject({ priority: 25, description: SEEDED_ROLES.find((r) => r.name === "reviewer")!.description });
-    expect(role.description).toMatch(/\S/);
   });
 });

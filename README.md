@@ -27,13 +27,12 @@ contract disagree. Generate a client rather than writing types:
 
 ```sh
 npm ci
-AUTH_TOKEN=… ADMIN_TOKEN=… node src/cli.ts --port 4600 --db ~/.local/share/agent-service/agent-service.db \
+AUTH_TOKEN=… node src/cli.ts --port 4600 --db ~/.local/share/agent-service/agent-service.db \
   --public-url https://<host>.<tailnet>.ts.net:<port> --services services.json
 node src/cli.ts backup <file>     # a consistent copy while it serves
 ```
 
-`AUTH_TOKEN` is what every caller and host presents; `ADMIN_TOKEN` is a
-person's, which also writes roles. `--public-url` is the address agents and
+`AUTH_TOKEN` is what every caller and host presents. `--public-url` is the address agents and
 hosts reach it at, given to each session as `AG_URL`; without it, the address
 each request came to. `--services` names the other services a session may be
 given, with no token in the file:
@@ -145,50 +144,38 @@ too.
 
 An agent is made, by a person or a program, with what its job needs:
 
-- **documents**: the honed skills each session is given after
-  `workplace/global`, by name, at their current version. A name honed does
-  not have is refused at creation.
+- **role**: what kind of agent it is (`ListRoles`). Roles live in honed, not
+  here: each is a skill `agent-roles/<name>`, its `SKILL.md` what an agent in it
+  is told and its `role.json` the settings (`label`, `priority`, `whenDone`,
+  `services`, `brief`, `summary`, and any other `skills` it gives). They are
+  read from the honed the services file names `honed` at each use, the last
+  list read whole kept for when honed does not answer, and changed in honed:
+  no operation here writes one. A caller gives `role` and a brief; anything else
+  it gives overrides the role's. The agent keeps its role's name, and
+  `ListAgents?role=` filters by it.
+- **skills**: the honed skills each session is given, by name, at their
+  current version: its role's own first. Each is laid whole as a Claude Code
+  skill at `skills/<the name's last segment>/`. Each read whole is kept, so when
+  honed does not answer a start is given the last good copy and its session's
+  `contextNote` says so; one honed says it no longer has is left out, and one
+  it does not have is refused at creation. There is no shared context: what an
+  agent is told is its role's skill and the skills it names.
+- **clients**: every start also carries this service's own `page` and `title`
+  skills (`skill/`), as this build has them, so an agent calls the API that is
+  deployed.
 - **credentials**: the services it is given an address and token for, by name
   (`agent-service`, and each the services file names; without any, all of
   them). Only names are kept. The queued `start` holds the addresses; each
-  token is read from the service's environment as the `start` is pushed to its host's
-  socket, as `secrets`, so no token is stored, listed by `ListCommands`
+  token is read from the service's environment as the `start` is pushed to its
+  host's socket, as `secrets`, so no token is stored, listed by `ListCommands`
   or replayed stale, and a rotated secret reaches the next start. The host
   writes them to a file in the agent's folder only it can read, and the
-  session's environment is set from that file. A caller may give a name its
-  own token (`{name, token}`), in place of the shared one for this agent
-  alone: it is kept in a table of its own, never read back, and deleted when
-  the agent is retired. A request for an agent in a role (`CreateRequest`)
-  may give such tokens as `tokens` instead, keeping its role's services: each
-  must be for one of them.
+  session's environment is set from that file.
 - **label**, **whenDone**, and **createdBy**, the `claimed-by` header it was
   made with, by which `ListAgents` filters.
-- **item**: the work-tracker item it was started on, kept for its life.
+- **item**: the work item it was started on, kept for its life.
   `ListAgents?item=<id>` lists every agent started on it, retired ones
   included, so what they used is still there once they have gone.
-- **role**: what kind of agent it is (`GET /roles`). A role names the
-  documents, credentials, `whenDone`, label, brief and priority of the agents
-  made from it, so a caller gives `role` and a brief and nothing else; each
-  of those it does give overrides the role's, so a caller that names them all,
-  as before roles, gets what it names. The stage starts with `planner`,
-  `reviewer`, `conflict`, `investigator`, `onboarder` (approval-service's, which
-  drafts a repo's routine), `judge` and `implementer` seeded in
-  `src/roles.ts`, as their callers made them before; a role written with
-  `POST /roles` or `PATCH /roles/<name>` is kept in the table and
-  replaces its seed. Writing one takes the admin token (`ADMIN_TOKEN`), a
-  person's, which does all the stage's token does too. The agent keeps its role's name, and `ListAgents?role=`
-  filters by it.
-
-## Instructions, from honed
-
-Every session's instructions are honed skills, read when it starts from the
-honed the services file names `honed`: `workplace/global`, whose `SKILL.md`
-(without its front matter) is the session's `CLAUDE.md`, then each skill the
-agent's role names, laid whole as a Claude Code skill at `skills/<the name's
-last segment>/`. Each skill read whole is kept in the database, so when honed
-does not answer, a start is given the last good copy and its session's
-`contextNote` says so; a skill honed says it no longer has is left out. The
-session records the version of each in `context` and `documents`.
 
 ## Picking up waypoint's tasks
 
@@ -217,32 +204,13 @@ the host with the most room, and the request is `started` with its
 `agentId`. A request is claimed (on its `rev`) before its agent is made, so
 two admissions at once never start it twice; one whose agent could not be
 made goes back to waiting, saying why. Each one left waiting says `why`.
-`DELETE /requests/<id>` withdraws a waiting one, and deletes any token
-of its own it was given.
+`DELETE /requests/<id>` withdraws a waiting one.
 
 Admission runs when a request is made and on every heartbeat. That is the
 schedule: nothing can be admitted without a connected host, and every
 connected host beats every 30 seconds, carrying its capacity, so room a host
 gains, a session ending or a usage reading falling is acted on within 30
 seconds.
-
-Each start also carries the **clients** of the services it is given: for each
-credential, that service's `GET /skill` (`bin/` and `reference/` of its skill),
-read at the address and with the token this stage has for it, and this
-service's own (`skill/`: `page` and `title`, served at `GET /skill`).
-They are written over `workplace/global`'s files at the same paths, so an agent
-calls the API that is deployed where its tokens reach. A `SKILL.md` or
-`CLAUDE.md` another service sends is dropped: guidance reaches an agent through
-honed; this service's own `page` and `title` `SKILL.md`s are the exception, as
-no honed skill says when to use them. A service with no client answers 404 and
-is skipped. Every skill's `bin/` is laid first, then the honed skills beside
-`workplace/global`, then each `reference/` while the start has room, so a
-client and a role always fit before a reference does. A skill that cannot be
-read, or whose `bin/` would take the start past its size limit, is left out
-and `workplace/global`'s copy stays; a `reference/` that does not fit is left
-out alone. The
-session's `contextNote` says why; the session records each skill it got in
-`skills`.
 
 ## Whether an agent needs the person
 

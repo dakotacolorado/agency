@@ -15,7 +15,7 @@
             "description": "Unique among agents not retired. Names its home folder and tmux session on its host."
           },
           "role": {
-            "description": "The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
+            "description": "The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]{0,39}$"
           },
@@ -61,40 +61,16 @@
             ]
           },
           "credentials": {
-            "description": "The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired.",
+            "description": "The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.",
             "maxItems": 16,
             "type": "array",
             "items": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                    },
-                    "token": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 4096
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "token"
-                  ],
-                  "additionalProperties": false,
-                  "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
-                }
-              ]
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
             }
           },
-          "documents": {
-            "description": "Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`.",
+          "skills": {
+            "description": "Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none.",
             "maxItems": 8,
             "type": "array",
             "items": {
@@ -163,167 +139,17 @@
             }
           },
           "credentials": {
-            "description": "In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn.",
+            "description": "In place of the role's, as `CreateAgent` takes them.",
             "maxItems": 16,
             "type": "array",
             "items": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                    },
-                    "token": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 4096
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "token"
-                  ],
-                  "additionalProperties": false,
-                  "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
-                }
-              ]
-            }
-          },
-          "tokens": {
-            "description": "Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for.",
-            "minItems": 1,
-            "maxItems": 16,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                },
-                "token": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096
-                }
-              },
-              "required": [
-                "name",
-                "token"
-              ],
-              "additionalProperties": false,
-              "description": "A name with a token of the caller's, given this agent in place of the name's shared secret."
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
             }
           }
         },
         "required": [
           "role"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "create_role",
-      "title": "Create a role",
-      "description": "Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.",
-      "inputSchema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "A role's name, such as `reviewer`: what kind of agent it makes."
-          },
-          "documents": {
-            "description": "Absent, only `workplace/global`.",
-            "maxItems": 8,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 100,
-              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$"
-            }
-          },
-          "credentials": {
-            "description": "Absent, null: the stage's defaults.",
-            "anyOf": [
-              {
-                "maxItems": 16,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                }
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "whenDone": {
-            "description": "Absent, `keep`.",
-            "type": "string",
-            "enum": [
-              "keep",
-              "stop",
-              "retire"
-            ]
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 40,
-            "description": "A short tag shown beside the agent's name, so sessions can be told apart."
-          },
-          "description": {
-            "description": "Absent, null.",
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 16384
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "priority": {
-            "description": "Absent, 0.",
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 1000
-          },
-          "brief": {
-            "description": "Absent, null.",
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 16384
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "name",
-          "label"
         ]
       },
       "annotations": {
@@ -416,7 +242,7 @@
     {
       "name": "get_role",
       "title": "Get a role",
-      "description": "Get one role.",
+      "description": "Get one role, as `ListRoles` gives it.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -589,7 +415,7 @@
     {
       "name": "list_roles",
       "title": "List roles",
-      "description": "Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `CreateRole` or `UpdateRole` is served as written.",
+      "description": "Every role an agent can be made from, highest `priority` first: each skill in honed's `agent-roles/` group, read now, or as last read when honed does not answer. A role is changed in honed, never here.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -924,105 +750,6 @@
         },
         "required": [
           "id"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "update_role",
-      "title": "Update a role",
-      "description": "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.",
-      "inputSchema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9-]{0,39}$",
-            "description": "A role's name, such as `reviewer`: what kind of agent it makes."
-          },
-          "documents": {
-            "description": "The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.",
-            "maxItems": 8,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 100,
-              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$"
-            }
-          },
-          "credentials": {
-            "description": "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.",
-            "anyOf": [
-              {
-                "maxItems": 16,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
-                }
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "whenDone": {
-            "description": "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.",
-            "type": "string",
-            "enum": [
-              "keep",
-              "stop",
-              "retire"
-            ]
-          },
-          "label": {
-            "description": "A short tag shown beside the agent's name, so sessions can be told apart.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 40
-          },
-          "description": {
-            "description": "What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.",
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 16384
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "priority": {
-            "description": "Of two requests waiting to start, the higher starts first.",
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 1000
-          },
-          "brief": {
-            "description": "The first message of an agent made from it with no `brief` of its own; null when the caller must give one.",
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 16384
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "name"
         ]
       },
       "annotations": {

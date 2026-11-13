@@ -26,8 +26,6 @@ export interface AgentRequest {
   labels: string[];
   /** Names, in place of the role's; null for the role's. */
   credentials: string[] | null;
-  /** Of `credentials`, those given a token of the requester's own, kept under `id`. */
-  ownCredentials: string[];
   requester: string | null;
   state: RequestState;
   /** Why it has not started, as the last admission found; null once it has, or before any looked. */

@@ -3,7 +3,6 @@ import { withdrawn } from "./domain.ts";
 import { hash, same } from "./secret.ts";
 import { Credentials, selfCredential, type Credential } from "./credentials.ts";
 import { Fleet } from "./fleet.ts";
-import type { AgentSecrets } from "./agent-secrets.ts";
 import { Push, type Poster } from "./push.ts";
 import { SocketInboundSchema, type SocketInbound } from "./schema.ts";
 import type { Connection, Store } from "./store.ts";
@@ -45,12 +44,11 @@ export class SocketHandler {
     poster: Poster,
     now: () => Date = () => new Date(),
     credentials: Record<string, Credential> = { "agent-service": selfCredential(token) },
-    agentSecrets?: AgentSecrets,
   ) {
     this.store = store;
     this.token = token;
     this.now = now;
-    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials, agentSecrets));
+    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials));
   }
 
   async handle(event: SocketEvent): Promise<SocketResult> {

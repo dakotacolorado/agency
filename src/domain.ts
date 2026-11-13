@@ -199,12 +199,10 @@ export interface Agent {
   role?: string | null;
   createdBy?: string | null;
   whenDone?: WhenDone;
-  /** Document keys each session reads after `global`. */
-  documents?: string[];
-  /** The services each session is given, by name; absent, the stage's defaults. */
+  /** The honed skills each session is given, by name. */
+  skills?: string[];
+  /** The services each session is given, by name; absent, every one the stage has. */
   credentials?: string[];
-  /** Of `credentials`, those given a value of the agent's own, kept in `AgentSecrets`; never served. */
-  ownCredentials?: string[];
   /** Kept so a start knows whether to resume without reading the sessions; never served. */
   hadSession: boolean;
   /** The session its host has reported it started; never served. */
@@ -295,13 +293,11 @@ export interface Session {
   startedAt: string;
   endedAt: string | null;
   ended: SessionEnding | null;
-  /** The context it was given, by document and version; null when it was given none. */
-  context: { key: string; version: number } | null;
-  /** The documents it was given beside the context; none on a session recorded before them. */
-  documents: { key: string; version: number }[];
-  /** The services' clients laid over the context's files; none on a session recorded before them. */
-  skills: { key: string; version: number; commit: string }[];
-  /** Why it was given no context, or a document or skill was left out. */
+  /** The honed skills it was given, by name and version. */
+  skills: { name: string; version: number }[];
+  /** The build of agent-service whose `page` and `title` it was given; null for none. */
+  clients: { version: number; commit: string } | null;
+  /** Why a skill was left out, or given from honed's last good copy. */
   contextNote: string | null;
 }
 

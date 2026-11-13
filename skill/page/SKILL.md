@@ -5,7 +5,7 @@ description: Tell the person whether you need them. Use before you end every tur
 
 # Page
 
-The person sees one line for each agent, and is notified only when a agent
+The person sees one line for each agent, and is notified only when an agent
 is **waiting** on them. From outside, a turn that ends on a question, one that
 ends with the work done and one that ends to wait on your own subagents all
 look the same, so you say which it is.

@@ -32,7 +32,6 @@ Options:
 
 Environment:
   AUTH_TOKEN      the bearer token every caller and host presents
-  ADMIN_TOKEN     a person's token: all AUTH_TOKEN does, and writing roles
 
 Without AUTH_TOKEN, every call but /health and /openapi.json answers 503.
 `;
@@ -99,14 +98,14 @@ const publicUrl = values["public-url"] ?? env.AGENT_SERVICE_URL ?? null;
 const pickUp = values["pick-up"] ?? (env.AGENT_SERVICE_PICK_UP || null);
 const starting = (): Running => {
   try {
-    return start({ db: path, token: env.AUTH_TOKEN || null, adminToken: env.ADMIN_TOKEN || null, services, publicUrl, pickUp });
+    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, pickUp });
   } catch (err) {
     return fail((err as Error).message);
   }
 };
 const running = starting();
 const server = serve({ fetch: running.api.fetch, hostname: host, port }, (info) => {
-  const missing = [!env.AUTH_TOKEN && "AUTH_TOKEN", !env.ADMIN_TOKEN && "ADMIN_TOKEN"].filter(Boolean);
+  const missing = [!env.AUTH_TOKEN && "AUTH_TOKEN"].filter(Boolean);
   process.stdout.write(
     `agent-service v${PACKAGE_VERSION} on http://${host.includes(":") ? `[${host}]` : host}:${info.port}, data in ${path}` +
       `, services: ${Object.keys(services).join(", ") || "none"}` +

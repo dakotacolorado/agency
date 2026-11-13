@@ -137,11 +137,6 @@ export class Fleet {
       release: agent.name,
       guarded: true,
     });
-    try {
-      await this.credentials.own.remove(agent.id, agent.ownCredentials ?? []);
-    } catch (err) {
-      console.error(`Could not delete ${agent.id}'s own credentials:`, (err as Error).name);
-    }
     return retire.id;
   }
 
@@ -365,7 +360,7 @@ const starting = (offered: Queued[], sessionId: string) =>
 
 /** An agent as it is served, which `hadSession` and `begun` are not. */
 export const agentView = (agent: Agent, host: Host | null, now: Date) => {
-  const { hadSession: _, begun: __, ownCredentials: ____, rev: ________, sessionTokens, item, role, title, label, createdBy, whenDone, documents, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
+  const { hadSession: _, begun: __, rev: ________, sessionTokens, item, role, title, label, createdBy, whenDone, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
   const { turn: ______, paged: _______, ...rest } = served as typeof served & { turn?: unknown; paged?: unknown };
@@ -378,7 +373,7 @@ export const agentView = (agent: Agent, host: Host | null, now: Date) => {
     tokens: summed(sessionTokens),
     createdBy: createdBy ?? null,
     whenDone: whenDone ?? "keep",
-    documents: documents ?? [],
+    skills: skills ?? [],
     // An agent made before credentials were chosen was given today's defaults at each start.
     credentials: credentials ?? null,
     status: statusOf(agent),
@@ -403,18 +398,17 @@ export function begin(
   agent: Agent,
   at: string,
   text?: string,
-  attached: Attached = { context: null, documents: [], skills: [], env: {}, credentials: [], ownCredentials: [], note: null },
+  attached: Attached | null = null,
 ): { agent: Agent; session: Session; command: Command } {
-  const { context, documents, skills, env, credentials, ownCredentials, note, mcpServers = {} } = attached;
+  const { clients = null, skills = [], env = {}, credentials = [], note = null, mcpServers = {} } = attached ?? {};
   const session: Session = {
     id: randomUUID(),
     agentId: agent.id,
     startedAt: at,
     endedAt: null,
     ended: null,
-    context: context && { key: context.key, version: context.version },
-    documents: documents.map(({ key, version }) => ({ key, version })),
-    skills,
+    skills: skills.map(({ key, version }) => ({ name: key, version })),
+    clients: clients && { version: clients.version, commit: clients.commit },
     contextNote: note,
   };
   return {
@@ -438,11 +432,10 @@ export function begin(
       sessionId: session.id,
       resume: agent.hadSession,
       ...(text !== undefined && { text }),
-      ...(context && { context }),
-      ...(documents.length && { documents }),
+      ...(clients && { context: { key: clients.key, version: clients.version, files: clients.files } }),
+      ...(skills.length && { documents: skills }),
       ...(Object.keys(env).length && { env }),
       ...(credentials.length && { credentials }),
-      ...(ownCredentials.length && { ownCredentials }),
       ...(Object.keys(mcpServers).length && { mcpServers }),
     },
   };

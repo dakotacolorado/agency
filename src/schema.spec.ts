@@ -82,8 +82,8 @@ describe("the line between hosts and everyone else", async () => {
     expect(all.filter((op) => op.tags.length !== 1 || !groups.includes(op.tags[0]!)).map((op) => op.operationId)).toEqual([]);
   });
 
-  it("gives hosts their own two calls, apart from everyone else's", () => {
-    expect(tagged(TAGS.hostProtocol).map((op) => op.operationId)).toEqual(["SendHeartbeat", "GetSessionContext"]);
+  it("gives hosts their own call, apart from everyone else's", () => {
+    expect(tagged(TAGS.hostProtocol).map((op) => op.operationId)).toEqual(["SendHeartbeat"]);
   });
 
   it("reads without changing anything, and takes no host's report from anyone but a host", () => {
@@ -166,10 +166,10 @@ describe("the shapes", async () => {
     expect(fields("Agent")).toEqual(
       [
         "createdAt", "hostId", "hostStatus", "id", "name", "reportedAt", "session", "state", "title",
-        "label", "item", "role", "tokens", "createdBy", "whenDone", "documents", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told",
+        "label", "item", "role", "tokens", "createdBy", "whenDone", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told",
       ].sort(),
     );
-    expect(fields("Session")).toEqual(["context", "contextNote", "documents", "endedAt", "ended", "id", "skills", "startedAt", "agentId"].sort());
+    expect(fields("Session")).toEqual(["clients", "contextNote", "endedAt", "ended", "id", "skills", "startedAt", "agentId"].sort());
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
     expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
     expect(fields("AgentReport")).toEqual(["id", "sessionId", "state", "tasks", "told"]);
@@ -184,12 +184,11 @@ describe("the shapes", async () => {
     expect(fields("Usage")).toEqual(["fiveHour", "readAt", "sevenDay"]);
     expect(fields("UsageWindow")).toEqual(["hostId", "readAt", "resetsAt", "utilization"]);
     expect(fields("CreateCommand")).toEqual(["id", "kind", "name", "agentId"].sort());
-    expect(fields("StartCommand")).toEqual(["context", "contextUrl", "credentials", "documents", "env", "id", "kind", "mcpServers", "ownCredentials", "resume", "secrets", "sessionId", "text", "agentId"].sort());
-    expect(fields("NewAgent")).toEqual(["brief", "credentials", "documents", "hostId", "item", "label", "labels", "name", "role", "whenDone"]);
+    expect(fields("StartCommand")).toEqual(["context", "credentials", "documents", "env", "id", "kind", "mcpServers", "resume", "secrets", "sessionId", "text", "agentId"].sort());
+    expect(fields("NewAgent")).toEqual(["brief", "credentials", "hostId", "item", "label", "labels", "name", "role", "skills", "whenDone"]);
     expect(fields("Message")).toEqual(["interrupt", "text"]);
     expect(fields("SocketTicket")).toEqual(["expiresAt", "socketUrl", "ticket"]);
     expect(fields("Accepted")).toEqual(["commandId"]);
-    expect(fields("SessionContext")).toEqual(["context", "documents"]);
     expect(fields("AgentStatus")).toEqual(["headline", "status", "summary"]);
   });
 

@@ -128,7 +128,7 @@ function signIn() {
       },
     },
     h("h2", {}, "Sign in"),
-    h("p", { class: "muted" }, "Paste this stage's token: its AUTH_TOKEN, or a person's ADMIN_TOKEN. It stays in this browser."),
+    h("p", { class: "muted" }, "Paste this stage's token, its AUTH_TOKEN. It stays in this browser."),
     input,
     box,
     h("div", { class: "row" }, h("button", { class: "primary", type: "submit" }, "Sign in")),
@@ -234,7 +234,7 @@ async function agentPage(id) {
       agent.label && ["Label", agent.label],
       agent.item && ["Item", h("span", { class: "mono" }, agent.item)],
       ["When done", agent.whenDone],
-      ["Skills", agent.documents.length ? agent.documents.join(", ") : "none"],
+      ["Skills", agent.skills.length ? agent.skills.join(", ") : "none"],
       ["Tokens", tokens(agent.tokens)],
       ["Session", agent.session ? [h("span", { class: "mono" }, short(agent.session.id)), `, since ${when(agent.session.startedAt)}`] : "none live"],
       ["Made by", agent.createdBy ?? "unknown"],
@@ -295,7 +295,7 @@ async function agentPage(id) {
 
   const sessionsPanel = h("div", { class: "panel" }, h("h2", {}, "Sessions"));
   const drawSessions = ({ sessions }) => {
-    const { el, draw } = table(["Session", "Started", "Ended", "Context", "Skills", "Note"], "No sessions yet.");
+    const { el, draw } = table(["Session", "Started", "Ended", "Skills", "Clients", "Note"], "No sessions yet.");
     draw(
       sessions.map((s) =>
         h(
@@ -304,8 +304,8 @@ async function agentPage(id) {
           h("td", { class: "mono" }, short(s.id)),
           h("td", {}, when(s.startedAt)),
           h("td", {}, s.endedAt ? `${when(s.endedAt)}${s.ended ? `, ${s.ended}` : ""}` : "live"),
-          h("td", { class: "mono" }, s.context ? `${s.context.key} v${s.context.version}` : "none"),
-          h("td", { class: "mono" }, s.documents.map((d) => `${d.key} v${d.version}`).join(", ")),
+          h("td", { class: "mono" }, s.skills.map((k) => `${k.name} v${k.version}`).join(", ") || "none"),
+          h("td", { class: "mono" }, s.clients ? short(s.clients.commit) : "none"),
           h("td", { class: "text" }, s.contextNote ?? ""),
         ),
       ),
@@ -550,7 +550,7 @@ async function roles() {
           h("td", {}, role.priority),
           h("td", {}, role.label),
           h("td", {}, role.whenDone),
-          h("td", { class: "mono" }, role.documents.join(", ")),
+          h("td", { class: "mono" }, role.skills.join(", ")),
           h("td", { class: "text" }, role.description ?? ""),
         ),
       ),

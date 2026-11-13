@@ -3,6 +3,7 @@ import { AgentServiceApi, fixedToken } from "./api.ts";
 import { FakeStore } from "./fake-store.ts";
 import { PER_TICK, Pickup, PICKER, type Self } from "./pickup.ts";
 import { start } from "./server.ts";
+import { testRoles } from "./test-roles.ts";
 
 const TOKEN = "t";
 
@@ -72,7 +73,7 @@ const pickup = () => new Pickup({ url: "https://wp", token: { value: async () =>
 
 beforeEach(() => {
   store = new FakeStore();
-  api = new AgentServiceApi(store, fixedToken(TOKEN));
+  api = new AgentServiceApi(store, fixedToken(TOKEN), { roles: testRoles() });
   tasks = [];
   up = true;
   refusePatch = false;
@@ -143,6 +144,6 @@ describe("picking up waypoint's ready tasks", () => {
 
 describe("the served process", () => {
   it("refuses to pick up tasks when the services name no waypoint", () => {
-    expect(() => start({ db: ":memory:", token: TOKEN, adminToken: null, services: {}, pickUp: "implementer" })).toThrow("picking up tasks needs the services to name waypoint");
+    expect(() => start({ db: ":memory:", token: TOKEN, services: {}, pickUp: "implementer" })).toThrow("picking up tasks needs the services to name waypoint");
   });
 });
