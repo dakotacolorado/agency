@@ -31,6 +31,9 @@ import { CONTEXT_LIMIT, FETCH_LIMIT, NO_CONTEXT, type Attached, type ContextSour
 import { Credentials, selfCredential, type Credential } from "./credentials.ts";
 import type { AgentSecrets } from "./agent-secrets.ts";
 import { ownSkill, type Skill } from "./skill.ts";
+import { readFileSync } from "node:fs";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { LOCAL_URL, mcpServer, type Call } from "./mcp.ts";
 import { buildOf, PACKAGE_VERSION, type Build } from "./build.ts";
 import { NO_SKILLS, type SkillSource } from "./skills.ts";
 import { rolesOf, type Role } from "./roles.ts";
@@ -39,7 +42,7 @@ import { inStartOrder, nameFor, usageAdmits, type AgentRequest } from "./admissi
 export const SPEC_PATH = "/openapi.json";
 
 /** What answers without a token: whether it is up, and what it serves. */
-export const OPEN_PATHS = ["/health", SPEC_PATH];
+export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp"];
 
 export interface TokenSource {
   value(): Promise<string | null>;
@@ -115,7 +118,50 @@ export class AgentServiceApi {
     });
     this.auth();
     this.routes();
+    this.mcp();
+    this.docs();
     this.spec();
+  }
+
+  /**
+   * The MCP server, at `/mcp`, stateless: each request gets its own, whose
+   * tools make their API requests in-process with the request's own
+   * `authorization` and `claimed-by`.
+   */
+  private mcp(): void {
+    this.hono.all("/mcp", async (c) => {
+      const authorization = c.req.header("authorization")!;
+      const claimedBy = c.req.header("claimed-by");
+      const origin = new URL(c.req.url).origin;
+      const call: Call = async (method, path, { body, headers }) => {
+        const res = await this.hono.fetch(
+          new Request(`${origin}${path}`, {
+            method,
+            headers: { authorization, "content-type": "application/json", ...headers },
+            body: body === undefined ? undefined : JSON.stringify(body),
+          }),
+        );
+        return { status: res.status, body: res.status === 204 ? null : await res.json() };
+      };
+      const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      await mcpServer(PACKAGE_VERSION, call, claimedBy).connect(transport);
+      return transport.handleRequest(c.req.raw);
+    });
+  }
+
+  /** The API's and the MCP server's docs, read once: none needs a token, and none holds data. */
+  private docs(): void {
+    const file = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    const serve = (content: () => string, type: string) => (c: Context) => c.body(content(), 200, { "content-type": `${type}; charset=utf-8` });
+    const once = (read: () => string) => {
+      let held: string | undefined;
+      return () => (held ??= read());
+    };
+    this.hono.get("/docs/api", serve(once(() => file("docs/index.html")), "text/html"));
+    this.hono.get("/mcp.json", serve(once(() => file("mcp.json")), "application/json"));
+    // The docs' example address is a local one; served, they give this deployment's own.
+    const mcpPage = once(() => file("docs/mcp.html"));
+    this.hono.get("/docs/mcp", (c) => serve(() => mcpPage().replaceAll(LOCAL_URL, this.origin(c)), "text/html")(c));
   }
 
   /** This service's address as agents reach it: the one it was given, else the one the request came to. */
@@ -859,11 +905,11 @@ export class AgentServiceApi {
         description:
           "The API for agents: lasting agents, each living on one host, run in sessions. Hosts " +
           "send a heartbeat every 30 seconds, which keeps them `connected` and says what they " +
-          "offer. Clients read state and issue commands. Every route under every route needs the " +
+          "offer. Clients read state and issue commands. Every operation but `GetHealth` needs the " +
           "stage's bearer token.\n\n" +
           "Commands and reports go by WebSocket at `socketUrl` alone: a host connects with " +
           "`?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with " +
-          "`?ticket=<one-time ticket>` from `createSocketTicket`. What goes up is a " +
+          "`?ticket=<one-time ticket>` from `CreateSocketTicket`. What goes up is a " +
           "`SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's " +
           "sockets get each `command` as it is queued, and a host's socket, once open, every " +
           "command still pending for it; every viewer gets each `agent` as it changes, `lines` " +
@@ -885,7 +931,7 @@ export class AgentServiceApi {
 
 
 
-/** What an agent is made with: a `createAgent` body, its role read, or an admitted request. */
+/** What an agent is made with: a `CreateAgent` body, its role read, or an admitted request. */
 interface NewAgent {
   id?: string;
   name: string;

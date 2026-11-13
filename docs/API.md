@@ -1,4357 +1,4127 @@
-# agent-service
+# agent-service API reference
 
-> Version 0.1.0
+API version 0.1.0
 
-The API for agents: lasting agents, each living on one host, run in sessions. Hosts send a heartbeat every 30 seconds, which keeps them `connected` and says what they offer. Clients read state and issue commands. Every route under every route needs the stage's bearer token.
+The API for agents: lasting agents, each living on one host, run in sessions. Hosts send a heartbeat every 30 seconds, which keeps them `connected` and says what they offer. Clients read state and issue commands. Every operation but `GetHealth` needs the stage's bearer token.
 
-Commands and reports go by WebSocket at `socketUrl` alone: a host connects with `?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with `?ticket=<one-time ticket>` from `createSocketTicket`. What goes up is a `SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's sockets get each `command` as it is queued, and a host's socket, once open, every command still pending for it; every viewer gets each `agent` as it changes, `lines` as they arrive and the `host` on each heartbeat. A command stays queued until a report names it, so a dropped socket loses nothing: it is replayed on the next.
+Commands and reports go by WebSocket at `socketUrl` alone: a host connects with `?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with `?ticket=<one-time ticket>` from `CreateSocketTicket`. What goes up is a `SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's sockets get each `command` as it is queued, and a host's socket, once open, every command still pending for it; every viewer gets each `agent` as it changes, `lines` as they arrive and the `host` on each heartbeat. A command stays queued until a report names it, so a dropped socket loses nothing: it is replayed on the next.
 
 No body carries the server's time: a response's `Date` header is when it was made, and so when a host's `status` was computed.
 
-
-## Path Table
-
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | [/health](#gethealth) | Health check |
-| GET | [/skill](#getskill) | Read the clients agents call this deployment with |
-| POST | [/hosts/{id}/heartbeat](#posthostsidheartbeat) | Keep the host connected, and say what it offers |
-| GET | [/hosts](#gethosts) | List hosts |
-| DELETE | [/hosts/{id}](#deletehostsid) | Deregister a host |
-| GET | [/roles](#getroles) | List roles |
-| POST | [/roles](#postroles) | Create a role |
-| GET | [/roles/{name}](#getrolesname) | Get one role |
-| PATCH | [/roles/{name}](#patchrolesname) | Change a role |
-| POST | [/requests](#postrequests) | Ask for an agent in a role, to start when usage and a host allow |
-| GET | [/requests](#getrequests) | List requests for agents |
-| GET | [/requests/{id}](#getrequestsid) | Get one request for an agent |
-| DELETE | [/requests/{id}](#deleterequestsid) | Withdraw a waiting request, so it never starts |
-| POST | [/agents](#postagents) | Create an agent on a host |
-| GET | [/agents](#getagents) | List agents |
-| GET | [/agents/{id}](#getagentsid) | Get one agent |
-| PATCH | [/agents/{id}](#patchagentsid) | Rename an agent, or change or clear its title or label |
-| DELETE | [/agents/{id}](#deleteagentsid) | Retire an agent |
-| POST | [/agents/{id}/messages](#postagentsidmessages) | Send an agent a message, or interrupt it |
-| POST | [/agents/{id}/stop](#postagentsidstop) | Stop an agent's session, or force it idle |
-| POST | [/agents/{id}/resume](#postagentsidresume) | Start a session continuing the agent's last conversation |
-| PUT | [/agents/{id}/status](#putagentsidstatus) | Say whether the agent needs the person, is in review or done, and what on |
-| PUT | [/agents/{id}/title](#putagentsidtitle) | Name the agent for its work, once |
-| GET | [/agents/{id}/transcript](#getagentsidtranscript) | List an agent's transcript lines after a cursor, oldest first, across its sessions |
-| GET | [/agents/{id}/sessions](#getagentsidsessions) | List an agent's sessions, oldest first |
-| GET | [/agents/{id}/sessions/{sessionId}/context](#getagentsidsessionssessionidcontext) | Read a live session's whole context, when its start was too large to carry it |
-| GET | [/agents/{id}/commands](#getagentsidcommands) | List the commands sent to an agent, oldest first, with their delivery |
-| GET | [/usage](#getusage) | Read how much of the Claude account's 5-hour and weekly allowance is used |
-| POST | [/socket-tickets](#postsocket-tickets) | Trade the bearer token for a one-time socket ticket |
-
-## Reference Table
-
-| Name | Path | Description |
-| --- | --- | --- |
-| bearerAuth | [#/components/securitySchemes/bearerAuth](#componentssecurityschemesbearerauth) |  |
-| SocketInbound | [#/components/schemas/SocketInbound](#componentsschemassocketinbound) |  |
-| SocketReport | [#/components/schemas/SocketReport](#componentsschemassocketreport) | Host to service, the only way a host reports: whenever something changes, and in full (every agent, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`agentId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it. |
-| AgentReport | [#/components/schemas/AgentReport](#componentsschemasagentreport) |  |
-| LineReport | [#/components/schemas/LineReport](#componentsschemaslinereport) |  |
-| CommandReport | [#/components/schemas/CommandReport](#componentsschemascommandreport) |  |
-| SessionTokensReport | [#/components/schemas/SessionTokensReport](#componentsschemassessiontokensreport) | A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice. |
-| UsageReport | [#/components/schemas/UsageReport](#componentsschemasusagereport) | The account's usage, when a session's stream has said it since the last report. |
-| UsageWindowReport | [#/components/schemas/UsageWindowReport](#componentsschemasusagewindowreport) | The 5-hour window; absent when the event did not carry it. |
-| SocketPing | [#/components/schemas/SocketPing](#componentsschemassocketping) | Either side's keep-alive, beside the server's WebSocket pings, which close a socket that misses one. |
-| SocketOutbound | [#/components/schemas/SocketOutbound](#componentsschemassocketoutbound) |  |
-| CommandPush | [#/components/schemas/CommandPush](#componentsschemascommandpush) | To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`. |
-| Command | [#/components/schemas/Command](#componentsschemascommand) |  |
-| CreateCommand | [#/components/schemas/CreateCommand](#componentsschemascreatecommand) | Make the agent's home folder. |
-| StartCommand | [#/components/schemas/StartCommand](#componentsschemasstartcommand) |  |
-| MessageCommand | [#/components/schemas/MessageCommand](#componentsschemasmessagecommand) | Deliver `text` at the session's next turn. |
-| InterruptCommand | [#/components/schemas/InterruptCommand](#componentsschemasinterruptcommand) |  |
-| StopCommand | [#/components/schemas/StopCommand](#componentsschemasstopcommand) | End the session; the agent becomes idle. |
-| RetireCommand | [#/components/schemas/RetireCommand](#componentsschemasretirecommand) | Stop any session and take the agent off the host. Its home folder is kept. |
-| AgentPush | [#/components/schemas/AgentPush](#componentsschemasagentpush) | To viewers, whenever an agent changes. |
-| Agent | [#/components/schemas/Agent](#componentsschemasagent) |  |
-| Tokens | [#/components/schemas/Tokens](#componentsschemastokens) | Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows. |
-| LinesPush | [#/components/schemas/LinesPush](#componentsschemaslinespush) | To viewers, as lines arrive. |
-| TranscriptLine | [#/components/schemas/TranscriptLine](#componentsschemastranscriptline) |  |
-| SentPush | [#/components/schemas/SentPush](#componentsschemassentpush) | To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listAgentCommands` says. |
-| SentCommand | [#/components/schemas/SentCommand](#componentsschemassentcommand) |  |
-| HostPush | [#/components/schemas/HostPush](#componentsschemashostpush) | To viewers, on every heartbeat. |
-| Host | [#/components/schemas/Host](#componentsschemashost) |  |
-| UsagePush | [#/components/schemas/UsagePush](#componentsschemasusagepush) | To viewers, when a report brings a newer reading of the account's usage. |
-| Usage | [#/components/schemas/Usage](#componentsschemasusage) | How much of the Claude account's 5-hour and weekly allowance is used, as last reported. |
-| UsageWindow | [#/components/schemas/UsageWindow](#componentsschemasusagewindow) | The 5-hour window's newest reading; null when none has been reported. |
-| SocketError | [#/components/schemas/SocketError](#componentsschemassocketerror) | To the socket whose message could not be handled, saying why. |
-| Skill | [#/components/schemas/Skill](#componentsschemasskill) |  |
-| Error | [#/components/schemas/Error](#componentsschemaserror) |  |
-| HeartbeatResponse | [#/components/schemas/HeartbeatResponse](#componentsschemasheartbeatresponse) |  |
-| Heartbeat | [#/components/schemas/Heartbeat](#componentsschemasheartbeat) |  |
-| HostList | [#/components/schemas/HostList](#componentsschemashostlist) |  |
-| RoleList | [#/components/schemas/RoleList](#componentsschemasrolelist) |  |
-| Role | [#/components/schemas/Role](#componentsschemasrole) |  |
-| NewRole | [#/components/schemas/NewRole](#componentsschemasnewrole) |  |
-| RoleChange | [#/components/schemas/RoleChange](#componentsschemasrolechange) |  |
-| AgentRequest | [#/components/schemas/AgentRequest](#componentsschemasagentrequest) |  |
-| NewAgentRequest | [#/components/schemas/NewAgentRequest](#componentsschemasnewagentrequest) |  |
-| AgentRequestList | [#/components/schemas/AgentRequestList](#componentsschemasagentrequestlist) |  |
-| NewAgent | [#/components/schemas/NewAgent](#componentsschemasnewagent) |  |
-| AgentList | [#/components/schemas/AgentList](#componentsschemasagentlist) |  |
-| Accepted | [#/components/schemas/Accepted](#componentsschemasaccepted) |  |
-| Message | [#/components/schemas/Message](#componentsschemasmessage) |  |
-| Stop | [#/components/schemas/Stop](#componentsschemasstop) |  |
-| AgentRename | [#/components/schemas/AgentRename](#componentsschemasagentrename) |  |
-| AgentStatus | [#/components/schemas/AgentStatus](#componentsschemasagentstatus) |  |
-| AgentTitle | [#/components/schemas/AgentTitle](#componentsschemasagenttitle) |  |
-| Transcript | [#/components/schemas/Transcript](#componentsschemastranscript) |  |
-| Cursor | [#/components/schemas/Cursor](#componentsschemascursor) | Pass as `after` to read what follows. Unchanged when nothing does yet. |
-| SessionList | [#/components/schemas/SessionList](#componentsschemassessionlist) |  |
-| Session | [#/components/schemas/Session](#componentsschemassession) |  |
-| SessionContext | [#/components/schemas/SessionContext](#componentsschemassessioncontext) |  |
-| AgentCommands | [#/components/schemas/AgentCommands](#componentsschemasagentcommands) |  |
-| SocketTicket | [#/components/schemas/SocketTicket](#componentsschemassocketticket) |  |
-
-## Path Details
-
-***
-
-### [GET]/health
-
-- Summary  
-  Health check
-
-- Operation id  
-  healthCheck
-
-- Tags  
-  meta
-
-#### Responses
+## Operations
+
+- [GetHealth](#gethealth): Health check
+- [GetSkill](#getskill): Read the clients agents call this deployment with
+- [SendHeartbeat](#sendheartbeat): Keep the host connected, and say what it offers
+- [ListHosts](#listhosts): List hosts
+- [DeleteHost](#deletehost): Deregister a host
+- [ListRoles](#listroles): List roles
+- [CreateRole](#createrole): Create a role
+- [GetRole](#getrole): Get one role
+- [UpdateRole](#updaterole): Change a role
+- [CreateRequest](#createrequest): Ask for an agent in a role, to start when usage and a host allow
+- [ListRequests](#listrequests): List requests for agents
+- [GetRequest](#getrequest): Get one request for an agent
+- [WithdrawRequest](#withdrawrequest): Withdraw a waiting request, so it never starts
+- [CreateAgent](#createagent): Create an agent on a host
+- [ListAgents](#listagents): List agents
+- [GetAgent](#getagent): Get one agent
+- [UpdateAgent](#updateagent): Rename an agent, or change or clear its title or label
+- [RetireAgent](#retireagent): Retire an agent
+- [SendMessage](#sendmessage): Send an agent a message, or interrupt it
+- [StopAgent](#stopagent): Stop an agent's session, or force it idle
+- [ResumeAgent](#resumeagent): Start a session continuing the agent's last conversation
+- [PutAgentStatus](#putagentstatus): Say whether the agent needs the person, is in review or done, and what on
+- [PutAgentTitle](#putagenttitle): Name the agent for its work, once
+- [ListTranscriptLines](#listtranscriptlines): List an agent's transcript lines after a cursor, oldest first, across its sessions
+- [ListSessions](#listsessions): List an agent's sessions, oldest first
+- [GetSessionContext](#getsessioncontext): Read a live session's whole context, when its start was too large to carry it
+- [ListCommands](#listcommands): List the commands sent to an agent, oldest first, with their delivery
+- [GetUsage](#getusage): Read how much of the Claude account's 5-hour and weekly allowance is used
+- [CreateSocketTicket](#createsocketticket): Trade the bearer token for a one-time socket ticket
+
+## Data types
+
+- [SocketInbound](#socketinbound)
+- [SocketReport](#socketreport)
+- [AgentReport](#agentreport)
+- [LineReport](#linereport)
+- [CommandReport](#commandreport)
+- [SessionTokensReport](#sessiontokensreport)
+- [UsageReport](#usagereport)
+- [UsageWindowReport](#usagewindowreport)
+- [SocketPing](#socketping)
+- [SocketOutbound](#socketoutbound)
+- [CommandPush](#commandpush)
+- [Command](#command)
+- [CreateCommand](#createcommand)
+- [StartCommand](#startcommand)
+- [MessageCommand](#messagecommand)
+- [InterruptCommand](#interruptcommand)
+- [StopCommand](#stopcommand)
+- [RetireCommand](#retirecommand)
+- [AgentPush](#agentpush)
+- [Agent](#agent)
+- [Tokens](#tokens)
+- [LinesPush](#linespush)
+- [TranscriptLine](#transcriptline)
+- [SentPush](#sentpush)
+- [SentCommand](#sentcommand)
+- [HostPush](#hostpush)
+- [Host](#host)
+- [UsagePush](#usagepush)
+- [Usage](#usage)
+- [UsageWindow](#usagewindow)
+- [SocketError](#socketerror)
+- [Skill](#skill)
+- [Error](#error)
+- [Heartbeat](#heartbeat)
+- [HostList](#hostlist)
+- [RoleList](#rolelist)
+- [Role](#role)
+- [NewRole](#newrole)
+- [RoleChange](#rolechange)
+- [AgentRequest](#agentrequest)
+- [NewAgentRequest](#newagentrequest)
+- [AgentRequestList](#agentrequestlist)
+- [NewAgent](#newagent)
+- [AgentList](#agentlist)
+- [Accepted](#accepted)
+- [Message](#message)
+- [Stop](#stop)
+- [AgentRename](#agentrename)
+- [AgentStatus](#agentstatus)
+- [AgentTitle](#agenttitle)
+- [Transcript](#transcript)
+- [Cursor](#cursor)
+- [SessionList](#sessionlist)
+- [Session](#session)
+- [SessionContext](#sessioncontext)
+- [AgentCommands](#agentcommands)
+- [SocketTicket](#socketticket)
+
+---
+
+## GetHealth
+
+Health check.
+
+### Request syntax
+
+```http
+GET /health HTTP/1.1
+```
 
-- 200 Service is up.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  ok: enum[true]
-  // The package's version.
-  version: string
-  // The commit it was built from, ending `-dirty` when built with uncommitted changes.
-  commit: string
+   "ok": "true",
+   "version": "string",
+   "commit": "string"
 }
 ```
-
-***
 
-### [GET]/skill
+### Response elements
 
-- Summary  
-  Read the clients agents call this deployment with
+**ok**  
+Type: Boolean.
 
-- Operation id  
-  getSkill
+**version**  
+The package's version.  
+Type: String.
 
-- Description  
-  The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over `workplace/global`'s files at the same paths, so an agent calls the API that is deployed.
+**commit**  
+The commit it was built from, ending `-dirty` when built with uncommitted changes.  
+Type: String.
 
-- Tags  
-  clients, reading
+---
 
-- Security  
-  bearerAuth
+## GetSkill
 
-#### Responses
+The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over `workplace/global`'s files at the same paths, so an agent calls the API that is deployed.
 
-- 200 The skills' files.
+### Request syntax
 
-`application/json`
-
-```typescript
-{
-  // Whose skills these are: `agent-service`.
-  key: string
-  // The deployed tree's commit count, 0 when deployed from outside git.
-  version: integer
-  // The deployed commit, ending `-dirty` when deployed with uncommitted changes.
-  commit: string
-  files: {
-    // Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`.
-    path: string
-    content: string
-    executable: boolean
-  }[]
-}
+```http
+GET /skill HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 401 Missing or incorrect bearer token.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "key": "string",
+   "version": number,
+   "commit": "string",
+   "files": [ {
+      "path": "string",
+      "content": "string",
+      "executable": boolean
+   } ]
 }
 ```
-
-- 503 No API token is configured.
 
-`application/json`
-
-```typescript
-{
-  error: string
-}
-```
+### Response elements
 
-***
+**key**  
+Whose skills these are: `agent-service`.  
+Type: String.
 
-### [POST]/hosts/{id}/heartbeat
+**version**  
+The deployed tree's commit count, 0 when deployed from outside git.  
+Type: Integer.
 
-- Summary  
-  Keep the host connected, and say what it offers
+**commit**  
+The deployed commit, ending `-dirty` when deployed with uncommitted changes.  
+Type: String.
 
-- Operation id  
-  heartbeat
+**files**  
+Type: Array of Object.
 
-- Description  
-  Liveness and what the host offers, nothing more: commands come down the host's socket at `socketUrl`, and reports go up it. The host chooses its id; the first heartbeat from an id registers it. Only a heartbeat keeps a host `connected`.
+### Errors
 
-- Tags  
-  hosts
+**401**  
+Missing or incorrect bearer token.  
 
-- Security  
-  bearerAuth
+**503**  
+No API token is configured.  
 
-#### Parameters(Path)
+---
 
-```typescript
-id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-```
+## SendHeartbeat
 
-#### RequestBody
+Liveness and what the host offers, nothing more: commands come down the host's socket at `socketUrl`, and reports go up it. The host chooses its id; the first heartbeat from an id registers it. Only a heartbeat keeps a host `connected`.
 
-What the host is and offers.
+### Request syntax
 
-- application/json
+```http
+POST /hosts/{id}/heartbeat HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
 
-```typescript
 {
-  // The agent-host build that sent the heartbeat.
-  version: string //maxLength: 64
-  labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  // How many sessions the host will run at once. Absent, capacity is unknown.
-  capacity?: integer //minimum: 0 //maximum: 256
+   "version": "string",
+   "labels": [ "string" ],
+   "capacity": number
 }
 ```
-
-#### Responses
 
-- 200 Accepted.
+### URI request parameters
 
-`application/json`
+**id**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: Yes.
 
-```typescript
-{
-  // Seconds until the host should send its next heartbeat.
-  heartbeatInterval: integer //exclusiveMinimum: 0
-  // Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as `Authorization: Bearer`. Commands and reports go by the socket alone, so on a server with none (null) no command reaches the host.
-  socketUrl: string | null
-}
-```
+### Request body
 
-- 400 The request failed validation.
+**version**  
+The agent-host build that sent the heartbeat.  
+Type: String. Length: 0 to 64. Required: Yes.
 
-`application/json`
+**labels**  
+What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host).  
+Type: Array of strings. At most 64 items. Required: No.
 
-```typescript
-{
-  error: string
-}
-```
+**capacity**  
+How many sessions the host will run at once. Absent, capacity is unknown.  
+Type: Integer. Range: 0 to 256. Required: No.
 
-- 401 Missing or incorrect bearer token.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "heartbeatInterval": number,
+   "socketUrl": "string"
 }
 ```
 
-- 503 No API token is configured.
+### Response elements
 
-`application/json`
+**heartbeatInterval**  
+Seconds until the host should send its next heartbeat.  
+Type: Integer.
 
-```typescript
-{
-  error: string
-}
-```
+**socketUrl**  
+Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as `Authorization: Bearer`. Commands and reports go by the socket alone, so on a server with none (null) no command reaches the host.  
+Type: String. Nullable: Yes.
 
-***
+### Errors
 
-### [GET]/hosts
+**400**  
+The request failed validation.  
 
-- Summary  
-  List hosts
+**401**  
+Missing or incorrect bearer token.  
 
-- Operation id  
-  listHosts
+**503**  
+No API token is configured.  
 
-- Description  
-  Every host that has sent a heartbeat since it was last deregistered with `deleteHost`, however long it has been `lost`. With `status`, only the hosts with one of those statuses.
+---
 
-- Tags  
-  clients, reading
+## ListHosts
 
-- Security  
-  bearerAuth
+Every host that has sent a heartbeat since it was last deregistered with `DeleteHost`, however long it has been `lost`. With `status`, only the hosts with one of those statuses.
 
-#### Parameters(Query)
+### Request syntax
 
-```typescript
-// Comma-separated, any of `connected`, `disconnected`, `lost`.
-// Comma-separated, any of `connected`, `disconnected`, `lost`.
-status?: string //pattern: ^(connected|disconnected|lost)(,(connected|disconnected|lost))*$
+```http
+GET /hosts?status=status HTTP/1.1
+Authorization: Bearer token
 ```
+
+### Query parameters
 
-#### Responses
+**status**  
+Comma-separated, any of `connected`, `disconnected`, `lost`.  
+Type: String. Pattern: `^(connected|disconnected|lost)(,(connected|disconnected|lost))*$`. Required: No.
 
-- 200 The hosts listed.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  hosts: {
-    id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-    heartbeatAt: string //format: date-time
-    // The agent-host build of its last heartbeat.
-    version: string | null
-    // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
-    status: enum[connected, disconnected, lost]
-    labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-    // How many sessions the host will run at once; null if it has never said.
-    capacity: integer | null //minimum: 0 //maximum: 256
-    // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
-    available: integer | null //minimum: 0 //maximum: 256
-  }[]
+   "hosts": [ {
+      "id": "string",
+      "heartbeatAt": "string",
+      "version": "string",
+      "status": "connected | disconnected | lost",
+      "labels": [ "string" ],
+      "capacity": number,
+      "available": number
+   } ]
 }
 ```
 
-- 400 The request failed validation.
+### Response elements
 
-`application/json`
+**hosts**  
+Type: Array of [Host](#host) objects.
 
-```typescript
-{
-  error: string
-}
-```
+### Errors
 
-- 401 Missing or incorrect bearer token.
+**400**  
+The request failed validation.  
 
-`application/json`
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-{
-  error: string
-}
-```
+**503**  
+No API token is configured.  
 
-- 503 No API token is configured.
+---
 
-`application/json`
+## DeleteHost
 
-```typescript
-{
-  error: string
-}
+Deletes the host's record, which is how a host leaves `ListHosts`. Its agents, their transcripts and the commands sent to them stay on record, and its agents read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.
+
+### Request syntax
+
+```http
+DELETE /hosts/{id} HTTP/1.1
+Authorization: Bearer token
 ```
 
-***
+### URI request parameters
 
-### [DELETE]/hosts/{id}
+**id**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: Yes.
 
-- Summary  
-  Deregister a host
+### Response syntax
 
-- Operation id  
-  deleteHost
+```http
+HTTP/1.1 204
+```
 
-- Description  
-  Deletes the host's record, which is how a host leaves `listHosts`. Its agents, their transcripts and the commands sent to them stay on record, and its agents read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.
+### Errors
 
-- Tags  
-  clients, acting
+**400**  
+The request failed validation.  
 
-- Security  
-  bearerAuth
+**401**  
+Missing or incorrect bearer token.  
 
-#### Parameters(Path)
+**404**  
+No host has this id.  
 
-```typescript
-id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-```
+**503**  
+No API token is configured.  
 
-#### Responses
+---
 
-- 204 Deregistered.
+## ListRoles
 
-- 400 The request failed validation.
+Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `CreateRole` or `UpdateRole` is served as written.
 
-`application/json`
+### Request syntax
 
-```typescript
-{
-  error: string
-}
+```http
+GET /roles HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 401 Missing or incorrect bearer token.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "roles": [ {
+      "name": "string",
+      "documents": [ "string" ],
+      "credentials": [ "string" ],
+      "whenDone": "keep | stop | retire",
+      "label": "string",
+      "description": "string",
+      "priority": number,
+      "brief": "string",
+      "updatedAt": "string"
+   } ]
 }
 ```
 
-- 404 No host has this id.
+### Response elements
 
-`application/json`
+**roles**  
+Type: Array of [Role](#role) objects.
 
-```typescript
-{
-  error: string
-}
-```
+### Errors
+
+**400**  
+The request failed validation.  
+
+**401**  
+Missing or incorrect bearer token.  
+
+**503**  
+No API token is configured.  
 
-- 503 No API token is configured.
+---
 
-`application/json`
+## CreateRole
 
-```typescript
+Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.
+
+### Request syntax
+
+```http
+POST /roles HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
+
 {
-  error: string
+   "name": "string",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "whenDone": "keep | stop | retire",
+   "label": "string",
+   "description": "string",
+   "priority": number,
+   "brief": "string"
 }
 ```
+
+### Request body
 
-***
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
 
-### [GET]/roles
+**documents**  
+Absent, only `workplace/global`.  
+Type: Array of strings. At most 8 items. Required: No.
 
-- Summary  
-  List roles
+**credentials**  
+Absent, null: the stage's defaults.  
+Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
 
-- Operation id  
-  listRoles
+**whenDone**  
+Absent, `keep`.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
 
-- Description  
-  Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `createRole` or `updateRole` is served as written.
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40. Required: Yes.
 
-- Tags  
-  clients, reading
+**description**  
+Absent, null.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
 
-- Security  
-  bearerAuth
+**priority**  
+Absent, 0.  
+Type: Integer. Range: 0 to 1000. Required: No.
 
-#### Responses
+**brief**  
+Absent, null.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
 
-- 200 The roles.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 201
+Content-type: application/json
 
-```typescript
 {
-  roles: {
-    // A role's name, such as `reviewer`: what kind of agent it makes.
-    name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-    documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-    // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-    credentials: array | null //maxItems: 16
-    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-    whenDone: enum[keep, stop, retire]
-    // A short tag shown beside the agent's name, so sessions can be told apart.
-    label: string //minLength: 1 //maxLength: 40
-    // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-    description: string | null //minLength: 1 //maxLength: 16384
-    // Of two requests waiting to start, the higher starts first.
-    priority: integer //minimum: 0 //maximum: 1000
-    // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-    brief: string | null //minLength: 1 //maxLength: 16384
-    // When it was last written; null for a role as the stage was seeded with it.
-    updatedAt: string | null //format: date-time
-  }[]
+   "name": "string",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "whenDone": "keep | stop | retire",
+   "label": "string",
+   "description": "string",
+   "priority": number,
+   "brief": "string",
+   "updatedAt": "string"
 }
 ```
 
-- 400 The request failed validation.
+### Response elements
 
-`application/json`
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
 
-```typescript
-{
-  error: string
-}
-```
+**documents**  
+The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
+Type: Array of strings. At most 8 items.
 
-- 401 Missing or incorrect bearer token.
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+Type: Array of strings. At most 16 items. Nullable: Yes.
 
-`application/json`
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-```typescript
-{
-  error: string
-}
-```
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40.
 
-- 503 No API token is configured.
+**description**  
+What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+Type: String. Length: 1 to 16384. Nullable: Yes.
 
-`application/json`
+**priority**  
+Of two requests waiting to start, the higher starts first.  
+Type: Integer. Range: 0 to 1000.
 
-```typescript
-{
-  error: string
-}
-```
+**brief**  
+The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
+Type: String. Length: 1 to 16384. Nullable: Yes.
 
-***
+**updatedAt**  
+When it was last written; null for a role as the stage was seeded with it.  
+Type: String. Nullable: Yes.
 
-### [POST]/roles
+### Errors
 
-- Summary  
-  Create a role
+**400**  
+The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.  
 
-- Operation id  
-  createRole
+**401**  
+Missing or incorrect bearer token.  
 
-- Description  
-  Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.
+**403**  
+Writing a role takes the stage's admin token.  
 
-- Tags  
-  clients, acting
+**409**  
+A role has this name already.  
 
-- Security  
-  bearerAuth
+**503**  
+No API token is configured.  
 
-#### RequestBody
+---
 
-The role.
+## GetRole
 
-- application/json
+Get one role.
 
-```typescript
-{
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // Absent, null: the stage's defaults.
-  credentials?: array | null //maxItems: 16
-  // Absent, `keep`.
-  whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label: string //minLength: 1 //maxLength: 40
-  // Absent, null.
-  description?: string | null //minLength: 1 //maxLength: 16384
-  // Absent, 0.
-  priority?: integer //minimum: 0 //maximum: 1000
-  // Absent, null.
-  brief?: string | null //minLength: 1 //maxLength: 16384
-}
+### Request syntax
+
+```http
+GET /roles/{name} HTTP/1.1
+Authorization: Bearer token
 ```
 
-#### Responses
+### URI request parameters
 
-- 201 Created.
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
 
-`application/json`
+### Response syntax
 
-```typescript
+```http
+HTTP/1.1 200
+Content-type: application/json
+
 {
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-  credentials: array | null //maxItems: 16
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label: string //minLength: 1 //maxLength: 40
-  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-  description: string | null //minLength: 1 //maxLength: 16384
-  // Of two requests waiting to start, the higher starts first.
-  priority: integer //minimum: 0 //maximum: 1000
-  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-  brief: string | null //minLength: 1 //maxLength: 16384
-  // When it was last written; null for a role as the stage was seeded with it.
-  updatedAt: string | null //format: date-time
+   "name": "string",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "whenDone": "keep | stop | retire",
+   "label": "string",
+   "description": "string",
+   "priority": number,
+   "brief": "string",
+   "updatedAt": "string"
 }
 ```
 
-- 400 The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.
+### Response elements
 
-`application/json`
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
 
-```typescript
-{
-  error: string
-}
-```
+**documents**  
+The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
+Type: Array of strings. At most 8 items.
 
-- 401 Missing or incorrect bearer token.
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+Type: Array of strings. At most 16 items. Nullable: Yes.
 
-`application/json`
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-```typescript
-{
-  error: string
-}
-```
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40.
 
-- 403 Writing a role takes the stage's admin token.
+**description**  
+What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+Type: String. Length: 1 to 16384. Nullable: Yes.
 
-`application/json`
+**priority**  
+Of two requests waiting to start, the higher starts first.  
+Type: Integer. Range: 0 to 1000.
 
-```typescript
-{
-  error: string
-}
-```
+**brief**  
+The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
+Type: String. Length: 1 to 16384. Nullable: Yes.
 
-- 409 A role has this name already.
+**updatedAt**  
+When it was last written; null for a role as the stage was seeded with it.  
+Type: String. Nullable: Yes.
 
-`application/json`
+### Errors
 
-```typescript
-{
-  error: string
-}
-```
+**400**  
+The request failed validation.  
+
+**401**  
+Missing or incorrect bearer token.  
+
+**404**  
+No role has this name.  
+
+**503**  
+No API token is configured.  
 
-- 503 No API token is configured.
+---
 
-`application/json`
+## UpdateRole
 
-```typescript
+Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.
+
+### Request syntax
+
+```http
+PATCH /roles/{name} HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
+
 {
-  error: string
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "whenDone": "keep | stop | retire",
+   "label": "string",
+   "description": "string",
+   "priority": number,
+   "brief": "string"
 }
 ```
-
-***
 
-### [GET]/roles/{name}
+### URI request parameters
 
-- Summary  
-  Get one role
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
 
-- Operation id  
-  getRole
+### Request body
 
-- Tags  
-  clients, reading
+**documents**  
+The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
+Type: Array of strings. At most 8 items. Required: No.
 
-- Security  
-  bearerAuth
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
 
-#### Parameters(Path)
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
 
-```typescript
-// A role's name, such as `reviewer`: what kind of agent it makes.
-// A role's name, such as `reviewer`: what kind of agent it makes.
-name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-```
-
-#### Responses
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40. Required: No.
 
-- 200 The role.
+**description**  
+What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
 
-`application/json`
+**priority**  
+Of two requests waiting to start, the higher starts first.  
+Type: Integer. Range: 0 to 1000. Required: No.
 
-```typescript
-{
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-  credentials: array | null //maxItems: 16
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label: string //minLength: 1 //maxLength: 40
-  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-  description: string | null //minLength: 1 //maxLength: 16384
-  // Of two requests waiting to start, the higher starts first.
-  priority: integer //minimum: 0 //maximum: 1000
-  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-  brief: string | null //minLength: 1 //maxLength: 16384
-  // When it was last written; null for a role as the stage was seeded with it.
-  updatedAt: string | null //format: date-time
-}
-```
+**brief**  
+The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
 
-- 400 The request failed validation.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "name": "string",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "whenDone": "keep | stop | retire",
+   "label": "string",
+   "description": "string",
+   "priority": number,
+   "brief": "string",
+   "updatedAt": "string"
 }
 ```
 
-- 401 Missing or incorrect bearer token.
+### Response elements
 
-`application/json`
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
 
-```typescript
-{
-  error: string
-}
-```
+**documents**  
+The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
+Type: Array of strings. At most 8 items.
 
-- 404 No role has this name.
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+Type: Array of strings. At most 16 items. Nullable: Yes.
 
-`application/json`
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-```typescript
-{
-  error: string
-}
-```
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40.
 
-- 503 No API token is configured.
+**description**  
+What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+Type: String. Length: 1 to 16384. Nullable: Yes.
 
-`application/json`
+**priority**  
+Of two requests waiting to start, the higher starts first.  
+Type: Integer. Range: 0 to 1000.
 
-```typescript
-{
-  error: string
-}
-```
+**brief**  
+The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
+Type: String. Length: 1 to 16384. Nullable: Yes.
 
-***
+**updatedAt**  
+When it was last written; null for a role as the stage was seeded with it.  
+Type: String. Nullable: Yes.
 
-### [PATCH]/roles/{name}
+### Errors
 
-- Summary  
-  Change a role
+**400**  
+The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.  
 
-- Operation id  
-  updateRole
+**401**  
+Missing or incorrect bearer token.  
 
-- Description  
-  Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.
+**403**  
+Writing a role takes the stage's admin token.  
 
-- Tags  
-  clients, acting
+**404**  
+No role has this name.  
 
-- Security  
-  bearerAuth
+**503**  
+No API token is configured.  
 
-#### Parameters(Path)
+---
 
-```typescript
-// A role's name, such as `reviewer`: what kind of agent it makes.
-// A role's name, such as `reviewer`: what kind of agent it makes.
-name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-```
+## CreateRequest
 
-#### RequestBody
+Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name.
 
-What changes.
+### Request syntax
 
-- application/json
+```http
+POST /requests HTTP/1.1
+Authorization: Bearer token
+claimed-by: string
+Content-type: application/json
 
-```typescript
 {
-  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-  credentials?: array | null //maxItems: 16
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label?: string //minLength: 1 //maxLength: 40
-  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-  description?: string | null //minLength: 1 //maxLength: 16384
-  // Of two requests waiting to start, the higher starts first.
-  priority?: integer //minimum: 0 //maximum: 1000
-  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-  brief?: string | null //minLength: 1 //maxLength: 16384
+   "role": "string",
+   "brief": "string",
+   "item": "string",
+   "subject": "string",
+   "label": "string",
+   "labels": [ "string" ],
+   "credentials": [ "string" ],
+   "tokens": [ {
+      "name": "string",
+      "token": "string"
+   } ]
 }
 ```
 
-#### Responses
+### Request headers
 
-- 200 Changed.
+**claimed-by**  
+Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.  
+Type: String. Length: 1 to 200. Required: No.
 
-`application/json`
+### Request body
 
-```typescript
-{
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-  credentials: array | null //maxItems: 16
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label: string //minLength: 1 //maxLength: 40
-  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-  description: string | null //minLength: 1 //maxLength: 16384
-  // Of two requests waiting to start, the higher starts first.
-  priority: integer //minimum: 0 //maximum: 1000
-  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-  brief: string | null //minLength: 1 //maxLength: 16384
-  // When it was last written; null for a role as the stage was seeded with it.
-  updatedAt: string | null //format: date-time
-}
-```
+**role**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
 
-- 400 The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.
+**brief**  
+The first message. Absent, the role's own; a role without one needs it.  
+Type: String. Length: 1 to 16384. Required: No.
 
-`application/json`
+**item**  
+A work-tracker item's id: the epic, story or task the agent was started on. Never changes.  
+Type: String. Length: 1 to 64. Required: No.
 
-```typescript
-{
-  error: string
-}
-```
+**subject**  
+What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.  
+Type: String. Length: 1 to 200. Required: No.
 
-- 401 Missing or incorrect bearer token.
+**label**  
+Absent, the role's.  
+Type: String. Length: 1 to 40. Required: No.
 
-`application/json`
+**labels**  
+What the host it is placed on must all carry. Absent, none.  
+Type: Array of strings. At most 64 items. Required: No.
 
-```typescript
-{
-  error: string
-}
-```
+**credentials**  
+In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn.  
+Type: Array of strings. At most 16 items. Required: No.
 
-- 403 Writing a role takes the stage's admin token.
+**tokens**  
+Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for.  
+Type: Array of Object. At most 16 items. Required: No.
 
-`application/json`
+### Response syntax
 
-```typescript
+```http
+HTTP/1.1 201
+Content-type: application/json
+
 {
-  error: string
+   "id": "string",
+   "role": "string",
+   "brief": "string",
+   "item": "string",
+   "subject": "string",
+   "label": "string",
+   "labels": [ "string" ],
+   "credentials": [ "string" ],
+   "requester": "string",
+   "state": "waiting | started | withdrawn",
+   "why": "string",
+   "priority": number,
+   "position": number,
+   "createdAt": "string",
+   "startedAt": "string",
+   "agentId": "string",
+   "withdrawnAt": "string"
 }
 ```
 
-- 404 No role has this name.
+### Response elements
 
-`application/json`
+**id**  
+Assigned by the service; also the id of the agent it starts.  
+Type: String.
 
-```typescript
-{
-  error: string
-}
-```
+**role**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
 
-- 503 No API token is configured.
+**brief**  
+The first message; null to start on the role's own.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**item**  
+A work-tracker item's id: the epic, story or task the agent was started on. Never changes.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**subject**  
+What it is for when that is no work item; null for none.  
+Type: String. Nullable: Yes.
 
-***
+**label**  
+In place of the role's label; null for the role's.  
+Type: String. Nullable: Yes.
 
-### [POST]/requests
+**labels**  
+What the host it is placed on must all carry.  
+Type: Array of strings.
 
-- Summary  
-  Ask for an agent in a role, to start when usage and a host allow
+**credentials**  
+In place of the role's, by name; null for the role's. Never a token.  
+Type: Array of strings. Nullable: Yes.
 
-- Operation id  
-  createRequest
+**requester**  
+The `claimed-by` header it was made with, unverified; null for none.  
+Type: String. Nullable: Yes.
 
-- Description  
-  Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `createAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name.
+**state**  
+`waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.  
+Type: String. Valid values: `waiting` | `started` | `withdrawn`.
 
-- Tags  
-  clients, acting
+**why**  
+While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.  
+Type: String. Nullable: Yes.
 
-- Security  
-  bearerAuth
+**priority**  
+Its role's, now.  
+Type: Integer. Range: 0 to 1000.
 
-#### Headers
+**position**  
+Where it stands among those waiting, 1 starting next; null once it is not waiting.  
+Type: Integer. Range: 1 to any. Nullable: Yes.
 
-```typescript
-// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
-// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
-claimed-by?: string //minLength: 1 //maxLength: 200
-```
+**createdAt**  
+Type: String.
 
-#### RequestBody
+**startedAt**  
+Type: String. Nullable: Yes.
 
-What kind of agent, and what it is for.
+**agentId**  
+The agent it started; null until it has.  
+Type: String. Nullable: Yes.
 
-- application/json
+**withdrawnAt**  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // The first message. Absent, the role's own; a role without one needs it.
-  brief?: string //minLength: 1 //maxLength: 16384
-  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-  item?: string //minLength: 1 //maxLength: 64
-  // What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.
-  subject?: string //minLength: 1 //maxLength: 200
-  // Absent, the role's.
-  label?: string //minLength: 1 //maxLength: 40
-  labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
-{
-     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
-     token: string //minLength: 1 //maxLength: 4096
-   })[] //maxItems: 16
-  // A name with a token of the caller's, given this agent in place of the name's shared secret.
-  tokens: {
-    name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
-    token: string //minLength: 1 //maxLength: 4096
-  }[] //minItems: 1 //maxItems: 16
-}
-```
+### Errors
 
-#### Responses
+**400**  
+The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.  
 
-- 201 Recorded, and `started` if it was admitted at once.
+**401**  
+Missing or incorrect bearer token.  
 
-`application/json`
+**503**  
+No API token is configured, or a token of its own could not be kept.  
 
-```typescript
-{
-  // Assigned by the service; also the id of the agent it starts.
-  id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // The first message; null to start on the role's own.
-  brief: string | null
-  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-  item: string | null //minLength: 1 //maxLength: 64
-  // What it is for when that is no work item; null for none.
-  subject: string | null
-  // In place of the role's label; null for the role's.
-  label: string | null
-  labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-  // In place of the role's, by name; null for the role's. Never a token.
-  credentials: array | null
-  // The `claimed-by` header it was made with, unverified; null for none.
-  requester: string | null
-  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
-  state: enum[waiting, started, withdrawn]
-  // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
-  why: string | null
-  // Its role's, now.
-  priority: integer //minimum: 0 //maximum: 1000
-  // Where it stands among those waiting, 1 starting next; null once it is not waiting.
-  position: integer | null //minimum: 1
-  createdAt: string //format: date-time
-  startedAt: string | null //format: date-time
-  // The agent it started; null until it has.
-  agentId: string | null //format: uuid
-  withdrawnAt: string | null //format: date-time
-}
-```
+---
 
-- 400 The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.
+## ListRequests
 
-`application/json`
+Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading.
 
-```typescript
-{
-  error: string
-}
+### Request syntax
+
+```http
+GET /requests?all=all&requester=requester&item=item HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 401 Missing or incorrect bearer token.
+### Query parameters
 
-`application/json`
+**all**  
+`true` includes those started and withdrawn.  
+Type: String. Valid values: `true` | `false`. Required: No.
 
-```typescript
-{
-  error: string
-}
-```
+**requester**  
+Only those made with this `claimed-by`.  
+Type: String. Length: 1 to 200. Required: No.
+
+**item**  
+Only those for this work item.  
+Type: String. Length: 1 to 64. Required: No.
 
-- 503 No API token is configured, or a token of its own could not be kept.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "requests": [ {
+      "id": "string",
+      "role": "string",
+      "brief": "string",
+      "item": "string",
+      "subject": "string",
+      "label": "string",
+      "labels": [ "string" ],
+      "credentials": [ "string" ],
+      "requester": "string",
+      "state": "waiting | started | withdrawn",
+      "why": "string",
+      "priority": number,
+      "position": number,
+      "createdAt": "string",
+      "startedAt": "string",
+      "agentId": "string",
+      "withdrawnAt": "string"
+   } ]
 }
 ```
 
-***
+### Response elements
 
-### [GET]/requests
+**requests**  
+Type: Array of [AgentRequest](#agentrequest) objects.
 
-- Summary  
-  List requests for agents
+### Errors
 
-- Operation id  
-  listRequests
+**400**  
+The request failed validation.  
 
-- Description  
-  Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading.
+**401**  
+Missing or incorrect bearer token.  
 
-- Tags  
-  clients, reading
+**503**  
+No API token is configured.  
 
-- Security  
-  bearerAuth
+---
 
-#### Parameters(Query)
+## GetRequest
 
-```typescript
-// `true` includes those started and withdrawn.
-// `true` includes those started and withdrawn.
-all?: enum[true, false]
-```
+Get one request for an agent.
 
-```typescript
-// Only those made with this `claimed-by`.
-// Only those made with this `claimed-by`.
-requester?: string //minLength: 1 //maxLength: 200
-```
+### Request syntax
 
-```typescript
-// Only those for this work item.
-// Only those for this work item.
-item?: string //minLength: 1 //maxLength: 64
+```http
+GET /requests/{id} HTTP/1.1
+Authorization: Bearer token
 ```
 
-#### Responses
+### URI request parameters
 
-- 200 The requests.
+**id**  
+Assigned by the service; also the id of the agent it starts.  
+Type: String. Required: Yes.
 
-`application/json`
+### Response syntax
 
-```typescript
+```http
+HTTP/1.1 200
+Content-type: application/json
+
 {
-  requests: {
-    // Assigned by the service; also the id of the agent it starts.
-    id: string //format: uuid
-    // A role's name, such as `reviewer`: what kind of agent it makes.
-    role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-    // The first message; null to start on the role's own.
-    brief: string | null
-    // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-    item: string | null //minLength: 1 //maxLength: 64
-    // What it is for when that is no work item; null for none.
-    subject: string | null
-    // In place of the role's label; null for the role's.
-    label: string | null
-    labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-    // In place of the role's, by name; null for the role's. Never a token.
-    credentials: array | null
-    // The `claimed-by` header it was made with, unverified; null for none.
-    requester: string | null
-    // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
-    state: enum[waiting, started, withdrawn]
-    // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
-    why: string | null
-    // Its role's, now.
-    priority: integer //minimum: 0 //maximum: 1000
-    // Where it stands among those waiting, 1 starting next; null once it is not waiting.
-    position: integer | null //minimum: 1
-    createdAt: string //format: date-time
-    startedAt: string | null //format: date-time
-    // The agent it started; null until it has.
-    agentId: string | null //format: uuid
-    withdrawnAt: string | null //format: date-time
-  }[]
+   "id": "string",
+   "role": "string",
+   "brief": "string",
+   "item": "string",
+   "subject": "string",
+   "label": "string",
+   "labels": [ "string" ],
+   "credentials": [ "string" ],
+   "requester": "string",
+   "state": "waiting | started | withdrawn",
+   "why": "string",
+   "priority": number,
+   "position": number,
+   "createdAt": "string",
+   "startedAt": "string",
+   "agentId": "string",
+   "withdrawnAt": "string"
 }
 ```
 
-- 400 The request failed validation.
+### Response elements
 
-`application/json`
+**id**  
+Assigned by the service; also the id of the agent it starts.  
+Type: String.
 
-```typescript
-{
-  error: string
-}
-```
+**role**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
 
-- 401 Missing or incorrect bearer token.
+**brief**  
+The first message; null to start on the role's own.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**item**  
+A work-tracker item's id: the epic, story or task the agent was started on. Never changes.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**subject**  
+What it is for when that is no work item; null for none.  
+Type: String. Nullable: Yes.
 
-- 503 No API token is configured.
+**label**  
+In place of the role's label; null for the role's.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**labels**  
+What the host it is placed on must all carry.  
+Type: Array of strings.
 
-```typescript
-{
-  error: string
-}
-```
+**credentials**  
+In place of the role's, by name; null for the role's. Never a token.  
+Type: Array of strings. Nullable: Yes.
 
-***
+**requester**  
+The `claimed-by` header it was made with, unverified; null for none.  
+Type: String. Nullable: Yes.
 
-### [GET]/requests/{id}
+**state**  
+`waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.  
+Type: String. Valid values: `waiting` | `started` | `withdrawn`.
 
-- Summary  
-  Get one request for an agent
+**why**  
+While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.  
+Type: String. Nullable: Yes.
 
-- Operation id  
-  getRequest
+**priority**  
+Its role's, now.  
+Type: Integer. Range: 0 to 1000.
 
-- Tags  
-  clients, reading
+**position**  
+Where it stands among those waiting, 1 starting next; null once it is not waiting.  
+Type: Integer. Range: 1 to any. Nullable: Yes.
 
-- Security  
-  bearerAuth
+**createdAt**  
+Type: String.
 
-#### Parameters(Path)
+**startedAt**  
+Type: String. Nullable: Yes.
 
-```typescript
-// Assigned by the service; also the id of the agent it starts.
-// Assigned by the service; also the id of the agent it starts.
-id: string //format: uuid
-```
+**agentId**  
+The agent it started; null until it has.  
+Type: String. Nullable: Yes.
 
-#### Responses
+**withdrawnAt**  
+Type: String. Nullable: Yes.
 
-- 200 The request.
+### Errors
 
-`application/json`
+**400**  
+The request failed validation.  
 
-```typescript
-{
-  // Assigned by the service; also the id of the agent it starts.
-  id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // The first message; null to start on the role's own.
-  brief: string | null
-  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-  item: string | null //minLength: 1 //maxLength: 64
-  // What it is for when that is no work item; null for none.
-  subject: string | null
-  // In place of the role's label; null for the role's.
-  label: string | null
-  labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-  // In place of the role's, by name; null for the role's. Never a token.
-  credentials: array | null
-  // The `claimed-by` header it was made with, unverified; null for none.
-  requester: string | null
-  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
-  state: enum[waiting, started, withdrawn]
-  // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
-  why: string | null
-  // Its role's, now.
-  priority: integer //minimum: 0 //maximum: 1000
-  // Where it stands among those waiting, 1 starting next; null once it is not waiting.
-  position: integer | null //minimum: 1
-  createdAt: string //format: date-time
-  startedAt: string | null //format: date-time
-  // The agent it started; null until it has.
-  agentId: string | null //format: uuid
-  withdrawnAt: string | null //format: date-time
-}
-```
+**401**  
+Missing or incorrect bearer token.  
 
-- 400 The request failed validation.
+**404**  
+No request has this id.  
 
-`application/json`
+**503**  
+No API token is configured.  
 
-```typescript
-{
-  error: string
-}
-```
+---
 
-- 401 Missing or incorrect bearer token.
+## WithdrawRequest
 
-`application/json`
+Withdraw a waiting request, so it never starts.
 
-```typescript
-{
-  error: string
-}
+### Request syntax
+
+```http
+DELETE /requests/{id} HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 404 No request has this id.
+### URI request parameters
 
-`application/json`
+**id**  
+Assigned by the service; also the id of the agent it starts.  
+Type: String. Required: Yes.
 
-```typescript
+### Response syntax
+
+```http
+HTTP/1.1 200
+Content-type: application/json
+
 {
-  error: string
+   "id": "string",
+   "role": "string",
+   "brief": "string",
+   "item": "string",
+   "subject": "string",
+   "label": "string",
+   "labels": [ "string" ],
+   "credentials": [ "string" ],
+   "requester": "string",
+   "state": "waiting | started | withdrawn",
+   "why": "string",
+   "priority": number,
+   "position": number,
+   "createdAt": "string",
+   "startedAt": "string",
+   "agentId": "string",
+   "withdrawnAt": "string"
 }
 ```
 
-- 503 No API token is configured.
+### Response elements
 
-`application/json`
+**id**  
+Assigned by the service; also the id of the agent it starts.  
+Type: String.
 
-```typescript
-{
-  error: string
-}
-```
+**role**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
 
-***
+**brief**  
+The first message; null to start on the role's own.  
+Type: String. Nullable: Yes.
 
-### [DELETE]/requests/{id}
+**item**  
+A work-tracker item's id: the epic, story or task the agent was started on. Never changes.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-- Summary  
-  Withdraw a waiting request, so it never starts
+**subject**  
+What it is for when that is no work item; null for none.  
+Type: String. Nullable: Yes.
 
-- Operation id  
-  withdrawRequest
+**label**  
+In place of the role's label; null for the role's.  
+Type: String. Nullable: Yes.
 
-- Tags  
-  clients, acting
+**labels**  
+What the host it is placed on must all carry.  
+Type: Array of strings.
 
-- Security  
-  bearerAuth
+**credentials**  
+In place of the role's, by name; null for the role's. Never a token.  
+Type: Array of strings. Nullable: Yes.
 
-#### Parameters(Path)
+**requester**  
+The `claimed-by` header it was made with, unverified; null for none.  
+Type: String. Nullable: Yes.
 
-```typescript
-// Assigned by the service; also the id of the agent it starts.
-// Assigned by the service; also the id of the agent it starts.
-id: string //format: uuid
-```
+**state**  
+`waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.  
+Type: String. Valid values: `waiting` | `started` | `withdrawn`.
 
-#### Responses
+**why**  
+While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.  
+Type: String. Nullable: Yes.
 
-- 200 Withdrawn.
+**priority**  
+Its role's, now.  
+Type: Integer. Range: 0 to 1000.
 
-`application/json`
+**position**  
+Where it stands among those waiting, 1 starting next; null once it is not waiting.  
+Type: Integer. Range: 1 to any. Nullable: Yes.
 
-```typescript
-{
-  // Assigned by the service; also the id of the agent it starts.
-  id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // The first message; null to start on the role's own.
-  brief: string | null
-  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-  item: string | null //minLength: 1 //maxLength: 64
-  // What it is for when that is no work item; null for none.
-  subject: string | null
-  // In place of the role's label; null for the role's.
-  label: string | null
-  labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-  // In place of the role's, by name; null for the role's. Never a token.
-  credentials: array | null
-  // The `claimed-by` header it was made with, unverified; null for none.
-  requester: string | null
-  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
-  state: enum[waiting, started, withdrawn]
-  // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
-  why: string | null
-  // Its role's, now.
-  priority: integer //minimum: 0 //maximum: 1000
-  // Where it stands among those waiting, 1 starting next; null once it is not waiting.
-  position: integer | null //minimum: 1
-  createdAt: string //format: date-time
-  startedAt: string | null //format: date-time
-  // The agent it started; null until it has.
-  agentId: string | null //format: uuid
-  withdrawnAt: string | null //format: date-time
-}
-```
+**createdAt**  
+Type: String.
 
-- 400 The request failed validation.
+**startedAt**  
+Type: String. Nullable: Yes.
 
-`application/json`
+**agentId**  
+The agent it started; null until it has.  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**withdrawnAt**  
+Type: String. Nullable: Yes.
 
-- 401 Missing or incorrect bearer token.
+### Errors
 
-`application/json`
+**400**  
+The request failed validation.  
 
-```typescript
-{
-  error: string
-}
-```
+**401**  
+Missing or incorrect bearer token.  
 
-- 404 No request has this id.
+**404**  
+No request has this id.  
 
-`application/json`
+**409**  
+It has started, or was withdrawn already.  
 
-```typescript
-{
-  error: string
-}
-```
+**503**  
+No API token is configured.  
 
-- 409 It has started, or was withdrawn already.
+---
 
-`application/json`
+## CreateAgent
 
-```typescript
-{
-  error: string
-}
-```
+Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.
 
-- 503 No API token is configured.
+### Request syntax
 
-`application/json`
+```http
+POST /agents HTTP/1.1
+Authorization: Bearer token
+claimed-by: string
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "name": "string",
+   "role": "string",
+   "hostId": "string",
+   "labels": [ "string" ],
+   "brief": "string",
+   "label": "string",
+   "item": "string",
+   "whenDone": "keep | stop | retire",
+   "credentials": [ "string" ],
+   "documents": [ "string" ]
 }
 ```
 
-***
+### Request headers
 
-### [POST]/agents
+**claimed-by**  
+Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.  
+Type: String. Length: 1 to 200. Required: No.
 
-- Summary  
-  Create an agent on a host
+### Request body
 
-- Operation id  
-  createAgent
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
-- Description  
-  Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.
+**role**  
+The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: No.
 
-- Tags  
-  clients, acting
+**hostId**  
+Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`.  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: No.
 
-- Security  
-  bearerAuth
+**labels**  
+Without `hostId`, what the host it is placed on must all carry.  
+Type: Array of strings. At most 64 items. Required: No.
 
-#### Headers
+**brief**  
+The first session's first message. Absent, the role's, if it has one; otherwise no session starts.  
+Type: String. Length: 1 to 16384. Required: No.
 
-```typescript
-// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
-// Who is making the agent: a person's name, or a service's own, such as `approval-service`. Recorded as `createdBy`, as said and not checked, since every caller holds the same token.
-claimed-by?: string //minLength: 1 //maxLength: 200
-```
+**label**  
+Absent, the role's, or without one none.  
+Type: String. Length: 1 to 40. Required: No.
 
-#### RequestBody
+**item**  
+The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none.  
+Type: String. Length: 1 to 64. Required: No.
 
-Who the agent is and where it lives.
+**whenDone**  
+Absent, the role's, or without one `keep`.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
 
-- application/json
+**credentials**  
+The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired.  
+Type: Array of strings. At most 16 items. Required: No.
 
-```typescript
-{
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.
-  role?: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`.
-  hostId?: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  // The first session's first message. Absent, the role's, if it has one; otherwise no session starts.
-  brief?: string //minLength: 1 //maxLength: 16384
-  // Absent, the role's, or without one none.
-  label?: string //minLength: 1 //maxLength: 40
-  // The work item it is started on, kept for its life so `listAgents` with `item` finds it. Absent, none.
-  item?: string //minLength: 1 //maxLength: 64
-  // Absent, the role's, or without one `keep`.
-  whenDone?: enum[keep, stop, retire]
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
+**documents**  
+Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`.  
+Type: Array of strings. At most 8 items. Required: No.
+
+### Response syntax
+
+```http
+HTTP/1.1 201
+Content-type: application/json
+
 {
-     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
-     token: string //minLength: 1 //maxLength: 4096
-   })[] //maxItems: 16
-  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
+   "id": "string",
+   "name": "string",
+   "title": "string",
+   "label": "string",
+   "item": "string",
+   "role": "string",
+   "tokens": {
+      "inputTokens": number,
+      "outputTokens": number,
+      "cacheCreationInputTokens": number,
+      "cacheReadInputTokens": number
+   },
+   "createdBy": "string",
+   "whenDone": "keep | stop | retire",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "hostId": "string",
+   "state": "idle | working | waiting | interrupted | retired",
+   "session": {
+      "id": "string",
+      "startedAt": "string"
+   },
+   "createdAt": "string",
+   "reportedAt": "string",
+   "status": "working | idle | waiting | review | done | ",
+   "summary": "string",
+   "headline": "string",
+   "saidAt": "string",
+   "activity": {
+      "text": "string",
+      "at": "string"
+   },
+   "tasks": number,
+   "told": boolean,
+   "hostStatus": "connected | disconnected | lost"
 }
 ```
 
-#### Responses
+### Response elements
 
-- 201 Created; its `create` is queued for the host.
+**id**  
+Assigned by the service when the agent is created.  
+Type: String.
 
-`application/json`
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
-```typescript
-{
-  // Assigned by the service when the agent is created.
-  id: string //format: uuid
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-  title: string | null
-  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-  label: string | null
-  // The work item it was started on, as given when it was made; null for none.
-  item: string | null //minLength: 1 //maxLength: 64
-  // The role it was made from, as given when it was made; null for one made without.
-  role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-  tokens: {
-    // Input tokens not read from or written to the prompt cache.
-    inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Output tokens.
-    outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens written to the prompt cache.
-    cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens read from the prompt cache.
-    cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  }
-  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-  createdBy: string | null
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  documents: string[]
-  // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-  credentials: array | null
-  hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-  state: enum[idle, working, waiting, interrupted, retired]
-  // The live session, or null for none.
-  session: object | null
-  createdAt: string //format: date-time
-  // When its host last reported a change to it; null until its host first reports it.
-  reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-  status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-  summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-  headline: string | null
-  // When `summary` was said; null when there is none.
-  saidAt: string | null //format: date-time
-  // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-  activity: object | null
-  // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-  tasks: integer //minimum: 0
-  // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-  told: boolean | null
-  // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-  hostStatus: enum[connected, disconnected, lost]
-}
-```
+**title**  
+What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.  
+Type: String. Nullable: Yes.
 
-- 400 The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.
+**label**  
+A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**item**  
+The work item it was started on, as given when it was made; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**role**  
+The role it was made from, as given when it was made; null for one made without.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes.
 
-- 401 Missing or incorrect bearer token.
+**tokens**  
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.  
+Type: [Tokens](#tokens) object.
 
-`application/json`
+**createdBy**  
+The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none.  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-- 404 No host has the id `hostId`.
+**documents**  
+The honed skills each session is given after `workplace/global`, by name.  
+Type: Array of strings.
 
-`application/json`
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+Type: Array of strings. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**hostId**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
-- 409 Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.
+**state**  
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
 
-`application/json`
+**session**  
+The live session, or null for none.  
+Type: Object. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**createdAt**  
+Type: String.
 
-- 503 No API token is configured, or no `hostId` was given and no connected host fits and has room.
+**reportedAt**  
+When its host last reported a change to it; null until its host first reports it.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**status**  
+What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.  
+Type: String. Valid values: `working` | `idle` | `waiting` | `review` | `done` | `null`. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**summary**  
+One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.  
+Type: String. Nullable: Yes.
 
-***
+**headline**  
+A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.  
+Type: String. Nullable: Yes.
 
-### [GET]/agents
+**saidAt**  
+When `summary` was said; null when there is none.  
+Type: String. Nullable: Yes.
 
-- Summary  
-  List agents
+**activity**  
+What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.  
+Type: Object. Nullable: Yes.
 
-- Operation id  
-  listAgents
+**tasks**  
+Background tasks and subagents its live session has open, as its host last reported; 0 without one.  
+Type: Integer. Range: 0 to any.
 
-- Description  
-  Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
+**told**  
+Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
+Type: Boolean. Nullable: Yes.
 
-- Tags  
-  clients, reading
+**hostStatus**  
+Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`.
 
-- Security  
-  bearerAuth
+### Errors
 
-#### Parameters(Query)
+**400**  
+The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.  
 
-```typescript
-createdBy?: string //minLength: 1 //maxLength: 200
-```
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-// A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-// A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-item?: string //minLength: 1 //maxLength: 64
-```
+**404**  
+No host has the id `hostId`.  
 
-```typescript
-// Only the agents made from this role.
-// Only the agents made from this role.
-role?: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-```
+**409**  
+Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.  
 
-```typescript
-// `true` includes retired agents.
-// `true` includes retired agents.
-all?: enum[true, false]
-```
+**503**  
+No API token is configured, or no `hostId` was given and no connected host fits and has room.  
 
-#### Responses
+---
 
-- 200 Matching agents.
+## ListAgents
 
-`application/json`
+Retired agents are listed only with `all=true`, or with `item`. With `createdBy`, only the agents made by that `claimed-by`, so a service can list its own. With `item`, only those started on that work item, retired ones included, so what they used is still there once they have gone. With `role`, only those made from that role.
 
-```typescript
-{
-  agents: {
-    // Assigned by the service when the agent is created.
-    id: string //format: uuid
-    // Unique among agents not retired. Names its home folder and tmux session on its host.
-    name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-    // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-    title: string | null
-    // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-    label: string | null
-    // The work item it was started on, as given when it was made; null for none.
-    item: string | null //minLength: 1 //maxLength: 64
-    // The role it was made from, as given when it was made; null for one made without.
-    role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-    // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-    tokens: {
-      // Input tokens not read from or written to the prompt cache.
-      inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Output tokens.
-      outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Input tokens written to the prompt cache.
-      cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Input tokens read from the prompt cache.
-      cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    }
-    // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-    createdBy: string | null
-    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-    whenDone: enum[keep, stop, retire]
-    documents: string[]
-    // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-    credentials: array | null
-    hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-    // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-    state: enum[idle, working, waiting, interrupted, retired]
-    // The live session, or null for none.
-    session: object | null
-    createdAt: string //format: date-time
-    // When its host last reported a change to it; null until its host first reports it.
-    reportedAt: string | null //format: date-time
-    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-    status: enum[working, idle, waiting, review, done, ] | null
-    // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-    summary: string | null
-    // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-    headline: string | null
-    // When `summary` was said; null when there is none.
-    saidAt: string | null //format: date-time
-    // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-    activity: object | null
-    // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-    tasks: integer //minimum: 0
-    // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-    told: boolean | null
-    // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-    hostStatus: enum[connected, disconnected, lost]
-  }[]
-}
+### Request syntax
+
+```http
+GET /agents?createdBy=createdBy&item=item&role=role&all=all HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 400 The request failed validation.
+### Query parameters
 
-`application/json`
+**createdBy**  
+Type: String. Length: 1 to 200. Required: No.
 
-```typescript
-{
-  error: string
-}
-```
+**item**  
+A work-tracker item's id: the epic, story or task the agent was started on. Never changes.  
+Type: String. Length: 1 to 64. Required: No.
+
+**role**  
+Only the agents made from this role.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: No.
+
+**all**  
+`true` includes retired agents.  
+Type: String. Valid values: `true` | `false`. Required: No.
 
-- 401 Missing or incorrect bearer token.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "agents": [ {
+      "id": "string",
+      "name": "string",
+      "title": "string",
+      "label": "string",
+      "item": "string",
+      "role": "string",
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "createdBy": "string",
+      "whenDone": "keep | stop | retire",
+      "documents": [ "string" ],
+      "credentials": [ "string" ],
+      "hostId": "string",
+      "state": "idle | working | waiting | interrupted | retired",
+      "session": {
+         "id": "string",
+         "startedAt": "string"
+      },
+      "createdAt": "string",
+      "reportedAt": "string",
+      "status": "working | idle | waiting | review | done | ",
+      "summary": "string",
+      "headline": "string",
+      "saidAt": "string",
+      "activity": {
+         "text": "string",
+         "at": "string"
+      },
+      "tasks": number,
+      "told": boolean,
+      "hostStatus": "connected | disconnected | lost"
+   } ]
 }
 ```
 
-- 503 No API token is configured.
+### Response elements
 
-`application/json`
+**agents**  
+Type: Array of [Agent](#agent) objects.
 
-```typescript
-{
-  error: string
-}
-```
+### Errors
 
-***
+**400**  
+The request failed validation.  
 
-### [GET]/agents/{id}
+**401**  
+Missing or incorrect bearer token.  
 
-- Summary  
-  Get one agent
+**503**  
+No API token is configured.  
 
-- Operation id  
-  getAgent
+---
 
-- Tags  
-  clients, reading
+## GetAgent
 
-- Security  
-  bearerAuth
+Get one agent.
 
-#### Parameters(Path)
+### Request syntax
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
+```http
+GET /agents/{id} HTTP/1.1
+Authorization: Bearer token
 ```
+
+### URI request parameters
 
-#### Responses
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-- 200 The agent.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  // Assigned by the service when the agent is created.
-  id: string //format: uuid
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-  title: string | null
-  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-  label: string | null
-  // The work item it was started on, as given when it was made; null for none.
-  item: string | null //minLength: 1 //maxLength: 64
-  // The role it was made from, as given when it was made; null for one made without.
-  role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-  tokens: {
-    // Input tokens not read from or written to the prompt cache.
-    inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Output tokens.
-    outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens written to the prompt cache.
-    cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens read from the prompt cache.
-    cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  }
-  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-  createdBy: string | null
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  documents: string[]
-  // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-  credentials: array | null
-  hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-  state: enum[idle, working, waiting, interrupted, retired]
-  // The live session, or null for none.
-  session: object | null
-  createdAt: string //format: date-time
-  // When its host last reported a change to it; null until its host first reports it.
-  reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-  status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-  summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-  headline: string | null
-  // When `summary` was said; null when there is none.
-  saidAt: string | null //format: date-time
-  // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-  activity: object | null
-  // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-  tasks: integer //minimum: 0
-  // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-  told: boolean | null
-  // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-  hostStatus: enum[connected, disconnected, lost]
+   "id": "string",
+   "name": "string",
+   "title": "string",
+   "label": "string",
+   "item": "string",
+   "role": "string",
+   "tokens": {
+      "inputTokens": number,
+      "outputTokens": number,
+      "cacheCreationInputTokens": number,
+      "cacheReadInputTokens": number
+   },
+   "createdBy": "string",
+   "whenDone": "keep | stop | retire",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "hostId": "string",
+   "state": "idle | working | waiting | interrupted | retired",
+   "session": {
+      "id": "string",
+      "startedAt": "string"
+   },
+   "createdAt": "string",
+   "reportedAt": "string",
+   "status": "working | idle | waiting | review | done | ",
+   "summary": "string",
+   "headline": "string",
+   "saidAt": "string",
+   "activity": {
+      "text": "string",
+      "at": "string"
+   },
+   "tasks": number,
+   "told": boolean,
+   "hostStatus": "connected | disconnected | lost"
 }
 ```
 
-- 400 The request failed validation.
+### Response elements
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String.
 
-```typescript
-{
-  error: string
-}
-```
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
-- 401 Missing or incorrect bearer token.
+**title**  
+What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**label**  
+A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none.  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**item**  
+The work item it was started on, as given when it was made; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-- 404 No agent has this id.
+**role**  
+The role it was made from, as given when it was made; null for one made without.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes.
 
-`application/json`
+**tokens**  
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.  
+Type: [Tokens](#tokens) object.
 
-```typescript
-{
-  error: string
-}
-```
+**createdBy**  
+The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none.  
+Type: String. Nullable: Yes.
 
-- 503 No API token is configured.
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-`application/json`
+**documents**  
+The honed skills each session is given after `workplace/global`, by name.  
+Type: Array of strings.
 
-```typescript
-{
-  error: string
-}
-```
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+Type: Array of strings. Nullable: Yes.
 
-***
+**hostId**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
-### [PATCH]/agents/{id}
+**state**  
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
 
-- Summary  
-  Rename an agent, or change or clear its title or label
+**session**  
+The live session, or null for none.  
+Type: Object. Nullable: Yes.
 
-- Operation id  
-  renameAgent
+**createdAt**  
+Type: String.
 
-- Description  
-  A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the agent's, or with null clears it, whether or not the agent gave it. `label` likewise.
+**reportedAt**  
+When its host last reported a change to it; null until its host first reports it.  
+Type: String. Nullable: Yes.
 
-- Tags  
-  clients, acting
+**status**  
+What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.  
+Type: String. Valid values: `working` | `idle` | `waiting` | `review` | `done` | `null`. Nullable: Yes.
 
-- Security  
-  bearerAuth
+**summary**  
+One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.  
+Type: String. Nullable: Yes.
 
-#### Parameters(Path)
+**headline**  
+A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.  
+Type: String. Nullable: Yes.
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+**saidAt**  
+When `summary` was said; null when there is none.  
+Type: String. Nullable: Yes.
 
-#### RequestBody
+**activity**  
+What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.  
+Type: Object. Nullable: Yes.
 
-The agent's new name, title or label.
+**tasks**  
+Background tasks and subagents its live session has open, as its host last reported; 0 without one.  
+Type: Integer. Range: 0 to any.
 
-- application/json
+**told**  
+Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
+Type: Boolean. Nullable: Yes.
 
-```typescript
-{
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name?: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent is there to do, in a few words.
-  title?: string | null //minLength: 1 //maxLength: 40
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label?: string | null //minLength: 1 //maxLength: 40
-}
-```
+**hostStatus**  
+Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`.
 
-#### Responses
+### Errors
 
-- 200 Renamed.
+**400**  
+The request failed validation.  
 
-`application/json`
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-{
-  // Assigned by the service when the agent is created.
-  id: string //format: uuid
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-  title: string | null
-  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-  label: string | null
-  // The work item it was started on, as given when it was made; null for none.
-  item: string | null //minLength: 1 //maxLength: 64
-  // The role it was made from, as given when it was made; null for one made without.
-  role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-  tokens: {
-    // Input tokens not read from or written to the prompt cache.
-    inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Output tokens.
-    outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens written to the prompt cache.
-    cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens read from the prompt cache.
-    cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  }
-  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-  createdBy: string | null
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  documents: string[]
-  // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-  credentials: array | null
-  hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-  state: enum[idle, working, waiting, interrupted, retired]
-  // The live session, or null for none.
-  session: object | null
-  createdAt: string //format: date-time
-  // When its host last reported a change to it; null until its host first reports it.
-  reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-  status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-  summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-  headline: string | null
-  // When `summary` was said; null when there is none.
-  saidAt: string | null //format: date-time
-  // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-  activity: object | null
-  // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-  tasks: integer //minimum: 0
-  // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-  told: boolean | null
-  // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-  hostStatus: enum[connected, disconnected, lost]
-}
-```
+**404**  
+No agent has this id.  
 
-- 400 The request failed validation.
+**503**  
+No API token is configured.  
 
-`application/json`
+---
 
-```typescript
-{
-  error: string
-}
-```
+## UpdateAgent
 
-- 401 Missing or incorrect bearer token.
+A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the agent's, or with null clears it, whether or not the agent gave it. `label` likewise.
 
-`application/json`
+### Request syntax
 
-```typescript
+```http
+PATCH /agents/{id} HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
+
 {
-  error: string
+   "name": "string",
+   "title": "string",
+   "label": "string"
 }
 ```
 
-- 404 No agent has this id.
+### URI request parameters
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+### Request body
 
-- 409 Nothing was queued: the agent is retired, or an agent not retired already has `name`.
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: No.
 
-`application/json`
+**title**  
+What the agent is there to do, in a few words.  
+Type: String. Length: 1 to 40. Nullable: Yes. Required: No.
 
-```typescript
-{
-  error: string
-}
-```
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40. Nullable: Yes. Required: No.
 
-- 503 No API token is configured.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "id": "string",
+   "name": "string",
+   "title": "string",
+   "label": "string",
+   "item": "string",
+   "role": "string",
+   "tokens": {
+      "inputTokens": number,
+      "outputTokens": number,
+      "cacheCreationInputTokens": number,
+      "cacheReadInputTokens": number
+   },
+   "createdBy": "string",
+   "whenDone": "keep | stop | retire",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "hostId": "string",
+   "state": "idle | working | waiting | interrupted | retired",
+   "session": {
+      "id": "string",
+      "startedAt": "string"
+   },
+   "createdAt": "string",
+   "reportedAt": "string",
+   "status": "working | idle | waiting | review | done | ",
+   "summary": "string",
+   "headline": "string",
+   "saidAt": "string",
+   "activity": {
+      "text": "string",
+      "at": "string"
+   },
+   "tasks": number,
+   "told": boolean,
+   "hostStatus": "connected | disconnected | lost"
 }
 ```
 
-***
+### Response elements
 
-### [DELETE]/agents/{id}
+**id**  
+Assigned by the service when the agent is created.  
+Type: String.
 
-- Summary  
-  Retire an agent
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
-- Operation id  
-  retireAgent
+**title**  
+What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.  
+Type: String. Nullable: Yes.
 
-- Description  
-  Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
+**label**  
+A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none.  
+Type: String. Nullable: Yes.
 
-- Tags  
-  clients, acting
+**item**  
+The work item it was started on, as given when it was made; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-- Security  
-  bearerAuth
+**role**  
+The role it was made from, as given when it was made; null for one made without.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes.
 
-#### Parameters(Path)
+**tokens**  
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.  
+Type: [Tokens](#tokens) object.
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+**createdBy**  
+The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none.  
+Type: String. Nullable: Yes.
 
-#### Responses
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-- 202 Retired; `commandId` is the `retire`'s.
+**documents**  
+The honed skills each session is given after `workplace/global`, by name.  
+Type: Array of strings.
 
-`application/json`
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+Type: Array of strings. Nullable: Yes.
 
-```typescript
-{
-  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
-  commandId: string | null
-}
-```
+**hostId**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
-- 400 The request failed validation.
+**state**  
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
 
-`application/json`
+**session**  
+The live session, or null for none.  
+Type: Object. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**createdAt**  
+Type: String.
 
-- 401 Missing or incorrect bearer token.
+**reportedAt**  
+When its host last reported a change to it; null until its host first reports it.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**status**  
+What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.  
+Type: String. Valid values: `working` | `idle` | `waiting` | `review` | `done` | `null`. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**summary**  
+One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.  
+Type: String. Nullable: Yes.
 
-- 404 No agent has this id.
+**headline**  
+A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**saidAt**  
+When `summary` was said; null when there is none.  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**activity**  
+What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.  
+Type: Object. Nullable: Yes.
 
-- 409 Nothing was queued: the agent is retired already.
+**tasks**  
+Background tasks and subagents its live session has open, as its host last reported; 0 without one.  
+Type: Integer. Range: 0 to any.
 
-`application/json`
+**told**  
+Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
+Type: Boolean. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**hostStatus**  
+Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`.
 
-- 503 No API token is configured.
+### Errors
 
-`application/json`
+**400**  
+The request failed validation.  
 
-```typescript
-{
-  error: string
-}
-```
-
-***
+**401**  
+Missing or incorrect bearer token.  
 
-### [POST]/agents/{id}/messages
+**404**  
+No agent has this id.  
 
-- Summary  
-  Send an agent a message, or interrupt it
+**409**  
+Nothing was queued: the agent is retired, or an agent not retired already has `name`.  
 
-- Operation id  
-  messageAgent
+**503**  
+No API token is configured.  
 
-- Description  
-  To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.
+---
 
-- Tags  
-  clients, acting
+## RetireAgent
 
-- Security  
-  bearerAuth
+Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
 
-#### Parameters(Path)
+### Request syntax
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
+```http
+DELETE /agents/{id} HTTP/1.1
+Authorization: Bearer token
 ```
 
-#### RequestBody
+### URI request parameters
 
-*Required*
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-What to tell it.
+### Response syntax
 
-- application/json
+```http
+HTTP/1.1 202
+Content-type: application/json
 
-```typescript
 {
-  // Required unless `interrupt` is true.
-  text?: string //minLength: 1 //maxLength: 16384
-  // `true` stops the current turn before `text` is sent.
-  interrupt?: boolean
+   "commandId": "string"
 }
 ```
 
-#### Responses
+### Response elements
 
-- 202 Queued, and not yet delivered.
+**commandId**  
+Follow it in `ListCommands`. Null when nothing was sent to the host.  
+Type: String. Nullable: Yes.
 
-`application/json`
+### Errors
 
-```typescript
-{
-  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
-  commandId: string | null
-}
-```
+**400**  
+The request failed validation.  
 
-- 400 The request failed validation.
+**401**  
+Missing or incorrect bearer token.  
 
-`application/json`
+**404**  
+No agent has this id.  
 
-```typescript
-{
-  error: string
-}
-```
+**409**  
+Nothing was queued: the agent is retired already.  
 
-- 401 Missing or incorrect bearer token.
+**503**  
+No API token is configured.  
 
-`application/json`
+---
 
-```typescript
-{
-  error: string
-}
-```
+## SendMessage
+
+To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.
 
-- 404 No agent has this id.
+### Request syntax
 
-`application/json`
+```http
+POST /agents/{id}/messages HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "text": "string",
+   "interrupt": boolean
 }
 ```
 
-- 409 Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.
+### URI request parameters
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+### Request body
+
+**text**  
+Required unless `interrupt` is true.  
+Type: String. Length: 1 to 16384. Required: No.
 
-- 503 No API token is configured.
+**interrupt**  
+`true` stops the current turn before `text` is sent.  
+Type: Boolean. Required: No.
 
-`application/json`
+### Response syntax
 
-```typescript
+```http
+HTTP/1.1 202
+Content-type: application/json
+
 {
-  error: string
+   "commandId": "string"
 }
 ```
 
-***
+### Response elements
 
-### [POST]/agents/{id}/stop
+**commandId**  
+Follow it in `ListCommands`. Null when nothing was sent to the host.  
+Type: String. Nullable: Yes.
 
-- Summary  
-  Stop an agent's session, or force it idle
+### Errors
 
-- Operation id  
-  stopAgent
+**400**  
+The request failed validation.  
 
-- Description  
-  Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.
+**401**  
+Missing or incorrect bearer token.  
 
-- Tags  
-  clients, acting
+**404**  
+No agent has this id.  
 
-- Security  
-  bearerAuth
+**409**  
+Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.  
 
-#### Parameters(Path)
+**503**  
+No API token is configured.  
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+---
 
-#### RequestBody
+## StopAgent
 
-Optional. Absent, the host is asked to stop it.
+Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.
 
-- application/json
+### Request syntax
 
-```typescript
+```http
+POST /agents/{id}/stop HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
+
 {
-  // `true` ends it on record without waiting for the host, even one still connected.
-  force?: boolean
+   "force": boolean
 }
 ```
 
-#### Responses
+### URI request parameters
 
-- 202 The `stop` is queued; ended on record (its host `lost`, or `force`), and `commandId` is null.
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-`application/json`
+### Request body
 
-```typescript
-{
-  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
-  commandId: string | null
-}
-```
+**force**  
+`true` ends it on record without waiting for the host, even one still connected.  
+Type: Boolean. Required: No.
 
-- 400 The request failed validation.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 202
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "commandId": "string"
 }
 ```
 
-- 401 Missing or incorrect bearer token.
+### Response elements
 
-`application/json`
+**commandId**  
+Follow it in `ListCommands`. Null when nothing was sent to the host.  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+### Errors
 
-- 404 No agent has this id.
+**400**  
+The request failed validation.  
 
-`application/json`
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-{
-  error: string
-}
-```
+**404**  
+No agent has this id.  
 
-- 409 Nothing was queued: the agent has no live session.
+**409**  
+Nothing was queued: the agent has no live session.  
 
-`application/json`
+**503**  
+No API token is configured.  
 
-```typescript
-{
-  error: string
-}
+---
+
+## ResumeAgent
+
+Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.
+
+### Request syntax
+
+```http
+POST /agents/{id}/resume HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 503 No API token is configured.
+### URI request parameters
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
+### Response syntax
+
+```http
+HTTP/1.1 202
+Content-type: application/json
+
 {
-  error: string
+   "commandId": "string"
 }
 ```
 
-***
+### Response elements
 
-### [POST]/agents/{id}/resume
+**commandId**  
+Follow it in `ListCommands`. Null when nothing was sent to the host.  
+Type: String. Nullable: Yes.
 
-- Summary  
-  Start a session continuing the agent's last conversation
+### Errors
 
-- Operation id  
-  resumeAgent
+**400**  
+The request failed validation.  
 
-- Description  
-  Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.
+**401**  
+Missing or incorrect bearer token.  
 
-- Tags  
-  clients, acting
+**404**  
+No agent has this id.  
 
-- Security  
-  bearerAuth
+**409**  
+Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.  
 
-#### Parameters(Path)
+**503**  
+No API token is configured.  
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+---
+
+## PutAgentStatus
 
-#### Responses
+Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).
 
-- 202 The `start` is queued.
+### Request syntax
 
-`application/json`
+```http
+PUT /agents/{id}/status HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
 
-```typescript
 {
-  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
-  commandId: string | null
+   "status": "working | waiting | review | done",
+   "summary": "string",
+   "headline": "string"
 }
 ```
 
-- 400 The request failed validation.
+### URI request parameters
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+### Request body
 
-- 401 Missing or incorrect bearer token.
+**status**  
+Type: String. Valid values: `working` | `waiting` | `review` | `done`. Required: Yes.
 
-`application/json`
+**summary**  
+One line: what it is doing, while `waiting` what it needs from the person, in `review` what it submitted, or when `done` the result.  
+Type: String. Length: 1 to 280. Required: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**headline**  
+The summary in a few words a person can scan in a list, e.g. "Needs merge OK". Omitted, it is null.  
+Type: String. Length: 1 to 29. Required: No.
 
-- 404 No agent has this id.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "id": "string",
+   "name": "string",
+   "title": "string",
+   "label": "string",
+   "item": "string",
+   "role": "string",
+   "tokens": {
+      "inputTokens": number,
+      "outputTokens": number,
+      "cacheCreationInputTokens": number,
+      "cacheReadInputTokens": number
+   },
+   "createdBy": "string",
+   "whenDone": "keep | stop | retire",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "hostId": "string",
+   "state": "idle | working | waiting | interrupted | retired",
+   "session": {
+      "id": "string",
+      "startedAt": "string"
+   },
+   "createdAt": "string",
+   "reportedAt": "string",
+   "status": "working | idle | waiting | review | done | ",
+   "summary": "string",
+   "headline": "string",
+   "saidAt": "string",
+   "activity": {
+      "text": "string",
+      "at": "string"
+   },
+   "tasks": number,
+   "told": boolean,
+   "hostStatus": "connected | disconnected | lost"
 }
 ```
 
-- 409 Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.
+### Response elements
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String.
 
-```typescript
-{
-  error: string
-}
-```
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
-- 503 No API token is configured.
+**title**  
+What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**label**  
+A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none.  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**item**  
+The work item it was started on, as given when it was made; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-***
+**role**  
+The role it was made from, as given when it was made; null for one made without.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes.
 
-### [PUT]/agents/{id}/status
+**tokens**  
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.  
+Type: [Tokens](#tokens) object.
 
-- Summary  
-  Say whether the agent needs the person, is in review or done, and what on
+**createdBy**  
+The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none.  
+Type: String. Nullable: Yes.
 
-- Operation id  
-  setAgentStatus
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-- Description  
-  Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).
+**documents**  
+The honed skills each session is given after `workplace/global`, by name.  
+Type: Array of strings.
 
-- Tags  
-  agents, of themselves
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+Type: Array of strings. Nullable: Yes.
 
-- Security  
-  bearerAuth
+**hostId**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
-#### Parameters(Path)
+**state**  
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+**session**  
+The live session, or null for none.  
+Type: Object. Nullable: Yes.
 
-#### RequestBody
+**createdAt**  
+Type: String.
 
-What the agent says of itself.
+**reportedAt**  
+When its host last reported a change to it; null until its host first reports it.  
+Type: String. Nullable: Yes.
 
-- application/json
+**status**  
+What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.  
+Type: String. Valid values: `working` | `idle` | `waiting` | `review` | `done` | `null`. Nullable: Yes.
 
-```typescript
-{
-  status: enum[working, waiting, review, done]
-  // One line: what it is doing, while `waiting` what it needs from the person, in `review` what it submitted, or when `done` the result.
-  summary: string //minLength: 1 //maxLength: 280
-  // The summary in a few words a person can scan in a list, e.g. "Needs merge OK". Omitted, it is null.
-  headline?: string //minLength: 1 //maxLength: 29
-}
-```
+**summary**  
+One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.  
+Type: String. Nullable: Yes.
 
-#### Responses
+**headline**  
+A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.  
+Type: String. Nullable: Yes.
 
-- 200 Recorded.
+**saidAt**  
+When `summary` was said; null when there is none.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**activity**  
+What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.  
+Type: Object. Nullable: Yes.
 
-```typescript
-{
-  // Assigned by the service when the agent is created.
-  id: string //format: uuid
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-  title: string | null
-  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-  label: string | null
-  // The work item it was started on, as given when it was made; null for none.
-  item: string | null //minLength: 1 //maxLength: 64
-  // The role it was made from, as given when it was made; null for one made without.
-  role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-  tokens: {
-    // Input tokens not read from or written to the prompt cache.
-    inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Output tokens.
-    outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens written to the prompt cache.
-    cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens read from the prompt cache.
-    cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  }
-  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-  createdBy: string | null
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  documents: string[]
-  // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-  credentials: array | null
-  hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-  state: enum[idle, working, waiting, interrupted, retired]
-  // The live session, or null for none.
-  session: object | null
-  createdAt: string //format: date-time
-  // When its host last reported a change to it; null until its host first reports it.
-  reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-  status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-  summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-  headline: string | null
-  // When `summary` was said; null when there is none.
-  saidAt: string | null //format: date-time
-  // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-  activity: object | null
-  // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-  tasks: integer //minimum: 0
-  // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-  told: boolean | null
-  // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-  hostStatus: enum[connected, disconnected, lost]
-}
-```
+**tasks**  
+Background tasks and subagents its live session has open, as its host last reported; 0 without one.  
+Type: Integer. Range: 0 to any.
 
-- 400 The request failed validation.
+**told**  
+Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
+Type: Boolean. Nullable: Yes.
 
-`application/json`
+**hostStatus**  
+Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`.
 
-```typescript
-{
-  error: string
-}
-```
+### Errors
 
-- 401 Missing or incorrect bearer token.
+**400**  
+The request failed validation.  
 
-`application/json`
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-{
-  error: string
-}
-```
+**404**  
+No agent has this id.  
 
-- 404 No agent has this id.
+**409**  
+The agent is retired, or has no live session to be `working` or `waiting`.  
 
-`application/json`
+**503**  
+No API token is configured.  
 
-```typescript
-{
-  error: string
-}
-```
+---
 
-- 409 The agent is retired, or has no live session to be `working` or `waiting`.
+## PutAgentTitle
 
-`application/json`
+Called by the agent itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `UpdateAgent`.
 
-```typescript
+### Request syntax
+
+```http
+PUT /agents/{id}/title HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
+
 {
-  error: string
+   "title": "string"
 }
 ```
+
+### URI request parameters
+
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-- 503 No API token is configured.
+### Request body
 
-`application/json`
+**title**  
+What the agent is there to do, in a few words.  
+Type: String. Length: 1 to 40. Required: Yes.
 
-```typescript
+### Response syntax
+
+```http
+HTTP/1.1 200
+Content-type: application/json
+
 {
-  error: string
+   "id": "string",
+   "name": "string",
+   "title": "string",
+   "label": "string",
+   "item": "string",
+   "role": "string",
+   "tokens": {
+      "inputTokens": number,
+      "outputTokens": number,
+      "cacheCreationInputTokens": number,
+      "cacheReadInputTokens": number
+   },
+   "createdBy": "string",
+   "whenDone": "keep | stop | retire",
+   "documents": [ "string" ],
+   "credentials": [ "string" ],
+   "hostId": "string",
+   "state": "idle | working | waiting | interrupted | retired",
+   "session": {
+      "id": "string",
+      "startedAt": "string"
+   },
+   "createdAt": "string",
+   "reportedAt": "string",
+   "status": "working | idle | waiting | review | done | ",
+   "summary": "string",
+   "headline": "string",
+   "saidAt": "string",
+   "activity": {
+      "text": "string",
+      "at": "string"
+   },
+   "tasks": number,
+   "told": boolean,
+   "hostStatus": "connected | disconnected | lost"
 }
 ```
 
-***
+### Response elements
 
-### [PUT]/agents/{id}/title
+**id**  
+Assigned by the service when the agent is created.  
+Type: String.
 
-- Summary  
-  Name the agent for its work, once
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
 
-- Operation id  
-  setAgentTitle
+**title**  
+What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.  
+Type: String. Nullable: Yes.
 
-- Description  
-  Called by the agent itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `renameAgent`.
+**label**  
+A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none.  
+Type: String. Nullable: Yes.
 
-- Tags  
-  agents, of themselves
+**item**  
+The work item it was started on, as given when it was made; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes.
 
-- Security  
-  bearerAuth
+**role**  
+The role it was made from, as given when it was made; null for one made without.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes.
 
-#### Parameters(Path)
+**tokens**  
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.  
+Type: [Tokens](#tokens) object.
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+**createdBy**  
+The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none.  
+Type: String. Nullable: Yes.
 
-#### RequestBody
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`.
 
-What the agent names itself.
+**documents**  
+The honed skills each session is given after `workplace/global`, by name.  
+Type: Array of strings.
 
-- application/json
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+Type: Array of strings. Nullable: Yes.
 
-```typescript
-{
-  // What the agent is there to do, in a few words.
-  title: string //minLength: 1 //maxLength: 40
-}
-```
+**hostId**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
 
-#### Responses
+**state**  
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`.
 
-- 200 Recorded.
+**session**  
+The live session, or null for none.  
+Type: Object. Nullable: Yes.
 
-`application/json`
+**createdAt**  
+Type: String.
 
-```typescript
-{
-  // Assigned by the service when the agent is created.
-  id: string //format: uuid
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-  title: string | null
-  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-  label: string | null
-  // The work item it was started on, as given when it was made; null for none.
-  item: string | null //minLength: 1 //maxLength: 64
-  // The role it was made from, as given when it was made; null for one made without.
-  role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-  tokens: {
-    // Input tokens not read from or written to the prompt cache.
-    inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Output tokens.
-    outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens written to the prompt cache.
-    cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens read from the prompt cache.
-    cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  }
-  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-  createdBy: string | null
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  documents: string[]
-  // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-  credentials: array | null
-  hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-  state: enum[idle, working, waiting, interrupted, retired]
-  // The live session, or null for none.
-  session: object | null
-  createdAt: string //format: date-time
-  // When its host last reported a change to it; null until its host first reports it.
-  reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-  status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-  summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-  headline: string | null
-  // When `summary` was said; null when there is none.
-  saidAt: string | null //format: date-time
-  // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-  activity: object | null
-  // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-  tasks: integer //minimum: 0
-  // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-  told: boolean | null
-  // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-  hostStatus: enum[connected, disconnected, lost]
-}
-```
+**reportedAt**  
+When its host last reported a change to it; null until its host first reports it.  
+Type: String. Nullable: Yes.
 
-- 400 The request failed validation.
+**status**  
+What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.  
+Type: String. Valid values: `working` | `idle` | `waiting` | `review` | `done` | `null`. Nullable: Yes.
 
-`application/json`
+**summary**  
+One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.  
+Type: String. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**headline**  
+A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.  
+Type: String. Nullable: Yes.
 
-- 401 Missing or incorrect bearer token.
+**saidAt**  
+When `summary` was said; null when there is none.  
+Type: String. Nullable: Yes.
 
-`application/json`
+**activity**  
+What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.  
+Type: Object. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**tasks**  
+Background tasks and subagents its live session has open, as its host last reported; 0 without one.  
+Type: Integer. Range: 0 to any.
 
-- 404 No agent has this id.
+**told**  
+Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
+Type: Boolean. Nullable: Yes.
 
-`application/json`
+**hostStatus**  
+Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`.
 
-```typescript
-{
-  error: string
-}
-```
+### Errors
 
-- 409 The agent is retired, or has a title already.
+**400**  
+The request failed validation.  
 
-`application/json`
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-{
-  error: string
-}
-```
+**404**  
+No agent has this id.  
 
-- 503 No API token is configured.
+**409**  
+The agent is retired, or has a title already.  
 
-`application/json`
+**503**  
+No API token is configured.  
 
-```typescript
-{
-  error: string
-}
-```
+---
 
-***
+## ListTranscriptLines
 
-### [GET]/agents/{id}/transcript
+Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.
 
-- Summary  
-  List an agent's transcript lines after a cursor, oldest first, across its sessions
+### Request syntax
 
-- Operation id  
-  listTranscript
+```http
+GET /agents/{id}/transcript?after=after&limit=limit HTTP/1.1
+Authorization: Bearer token
+```
 
-- Description  
-  Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.
+### URI request parameters
 
-- Tags  
-  clients, reading
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-- Security  
-  bearerAuth
+### Query parameters
 
-#### Parameters(Path)
+**after**  
+The `next` from the previous read. Absent reads from the start.  
+Type: Any value. Required: No.
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+**limit**  
+Type: Integer. Range: 1 to 1000. Required: No.
 
-#### Parameters(Query)
+### Response syntax
 
-```typescript
-// The `next` from the previous read. Absent reads from the start.
-after?: #/components/schemas/Cursor & 
-```
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
-limit?: integer //minimum: 1 //maximum: 1000 //default: 500
+{
+   "lines": [ {
+      "seq": number,
+      "at": "string",
+      "sessionId": "string",
+      "from": "agent | tool | instruction",
+      "text": "string",
+      "commandId": "string"
+   } ],
+   "next": "string"
+}
 ```
 
-#### Responses
+### Response elements
 
-- 200 Lines after the cursor.
+**lines**  
+Type: Array of [TranscriptLine](#transcriptline) objects.
 
-`application/json`
+**next**  
+Pass as `after` to read what follows. Unchanged when nothing does yet.  
+Type: [Cursor](#cursor) object. Length: 1 to 512.
 
-```typescript
-{
-  lines: {
-    // Line number per agent, from 0, continuing across its sessions.
-    seq: integer //minimum: 0
-    at: string //format: date-time
-    // Assigned by the service when it queues the session's `start`.
-    sessionId: string //format: uuid
-    // `instruction`: a message sent to the agent.
-    from: enum[agent, tool, instruction]
-    // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
-    text: string
-    // On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.
-    commandId?: string //minLength: 1 //maxLength: 128
-  }[]
-  // Pass as `after` to read what follows. Unchanged when nothing does yet.
-  next: string //minLength: 1 //maxLength: 512
-}
-```
+### Errors
 
-- 400 The request failed validation.
+**400**  
+The request failed validation.  
 
-`application/json`
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-{
-  error: string
-}
-```
+**404**  
+No agent has this id.  
 
-- 401 Missing or incorrect bearer token.
+**503**  
+No API token is configured.  
 
-`application/json`
+---
 
-```typescript
-{
-  error: string
-}
-```
+## ListSessions
 
-- 404 No agent has this id.
+List an agent's sessions, oldest first.
 
-`application/json`
+### Request syntax
 
-```typescript
-{
-  error: string
-}
+```http
+GET /agents/{id}/sessions HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 503 No API token is configured.
+### URI request parameters
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
+### Response syntax
+
+```http
+HTTP/1.1 200
+Content-type: application/json
+
 {
-  error: string
+   "sessions": [ {
+      "id": "string",
+      "agentId": "string",
+      "startedAt": "string",
+      "endedAt": "string",
+      "ended": "stopped | interrupted | ",
+      "context": {
+         "key": "string",
+         "version": number
+      },
+      "documents": [ {
+         "key": "string",
+         "version": number
+      } ],
+      "skills": [ {
+         "key": "string",
+         "version": number,
+         "commit": "string"
+      } ],
+      "contextNote": "string"
+   } ]
 }
 ```
 
-***
+### Response elements
 
-### [GET]/agents/{id}/sessions
+**sessions**  
+Type: Array of [Session](#session) objects.
 
-- Summary  
-  List an agent's sessions, oldest first
+### Errors
 
-- Operation id  
-  listSessions
+**400**  
+The request failed validation.  
 
-- Tags  
-  clients, reading
+**401**  
+Missing or incorrect bearer token.  
 
-- Security  
-  bearerAuth
+**404**  
+No agent has this id.  
 
-#### Parameters(Path)
+**503**  
+No API token is configured.  
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+---
 
-#### Responses
+## GetSessionContext
 
-- 200 Every session.
+Read at the moment it is asked, as a start's is, and recorded on the session in place of what its start carried, so the session's `contextNote` says what it was given.
 
-`application/json`
+### Request syntax
 
-```typescript
-{
-  sessions: {
-    // Assigned by the service when it queues the session's `start`.
-    id: string //format: uuid
-    // Assigned by the service when the agent is created.
-    agentId: string //format: uuid
-    // When its `start` was queued.
-    startedAt: string //format: date-time
-    endedAt: string | null //format: date-time
-    // `stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.
-    ended: enum[stopped, interrupted, ] | null
-    // The `workplace/global` it started with, from honed; null when it was given none.
-    context: object | null
-    documents: {
-      key: string
-      version: integer
-    }[]
-    skills: {
-      key: string
-      version: integer
-      commit: string
-    }[]
-    // Why it was given no context, or why a document it was made with, or a service's skill, was left out.
-    contextNote: string | null
-  }[]
-}
+```http
+GET /agents/{id}/sessions/{sessionId}/context HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 400 The request failed validation.
+### URI request parameters
 
-`application/json`
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**sessionId**  
+Assigned by the service when it queues the session's `start`.  
+Type: String. Required: Yes.
 
-- 401 Missing or incorrect bearer token.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "context": {
+      "key": "string",
+      "version": number,
+      "files": [ {
+         "path": "string",
+         "content": "string",
+         "executable": boolean
+      } ]
+   },
+   "documents": [ {
+      "key": "string",
+      "version": number,
+      "files": [ {
+         "path": "string",
+         "content": "string",
+         "executable": boolean
+      } ]
+   } ]
 }
 ```
 
-- 404 No agent has this id.
+### Response elements
 
-`application/json`
+**context**  
+Written as a start's `context` is; null when there is none to give.  
+Type: Object. Nullable: Yes.
 
-```typescript
-{
-  error: string
-}
-```
-
-- 503 No API token is configured.
+**documents**  
+Written after it, as a start's `documents` are.  
+Type: Array of Object.
 
-`application/json`
+### Errors
 
-```typescript
-{
-  error: string
-}
-```
+**400**  
+The request failed validation.  
 
-***
+**401**  
+Missing or incorrect bearer token.  
 
-### [GET]/agents/{id}/sessions/{sessionId}/context
+**404**  
+No agent has this id.  
 
-- Summary  
-  Read a live session's whole context, when its start was too large to carry it
+**409**  
+The session is not the agent's live one.  
 
-- Operation id  
-  getSessionContext
+**503**  
+No API token is configured.  
 
-- Description  
-  Read at the moment it is asked, as a start's is, and recorded on the session in place of what its start carried, so the session's `contextNote` says what it was given.
+---
 
-- Tags  
-  hosts
+## ListCommands
 
-- Security  
-  bearerAuth
+Each is kept 7 days from when it was queued, then deleted.
 
-#### Parameters(Path)
+### Request syntax
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
+```http
+GET /agents/{id}/commands HTTP/1.1
+Authorization: Bearer token
 ```
 
-```typescript
-// Assigned by the service when it queues the session's `start`.
-// Assigned by the service when it queues the session's `start`.
-sessionId: string //format: uuid
-```
+### URI request parameters
 
-#### Responses
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-- 200 Its context and documents.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  // Written as a start's `context` is; null when there is none to give.
-  context: object | null
-  documents: {
-    key: string
-    version: integer
-    files: {
-      path: string
-      content: string
-      executable: boolean
-    }[]
-  }[]
+   "commands": [ {
+      "command": value,
+      "queuedAt": "string",
+      "delivery": "queued | written | withdrawn | done | rejected",
+      "reportedAt": "string",
+      "error": "string"
+   } ]
 }
 ```
 
-- 400 The request failed validation.
+### Response elements
 
-`application/json`
+**commands**  
+Type: Array of [SentCommand](#sentcommand) objects.
 
-```typescript
-{
-  error: string
-}
-```
+### Errors
 
-- 401 Missing or incorrect bearer token.
+**400**  
+The request failed validation.  
 
-`application/json`
+**401**  
+Missing or incorrect bearer token.  
 
-```typescript
-{
-  error: string
-}
-```
+**404**  
+No agent has this id.  
 
-- 404 No agent has this id.
+**503**  
+No API token is configured.  
 
-`application/json`
+---
 
-```typescript
-{
-  error: string
-}
-```
+## GetUsage
 
-- 409 The session is not the agent's live one.
+The newest reading of each window any host has reported. A window whose `resetsAt` has passed has since started again from 0; the reading says only what was true at `readAt`. With nothing reported yet, every field is null.
 
-`application/json`
+### Request syntax
 
-```typescript
-{
-  error: string
-}
+```http
+GET /usage HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 503 No API token is configured.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 200
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "readAt": "string",
+   "fiveHour": {
+      "utilization": number,
+      "resetsAt": "string",
+      "readAt": "string",
+      "hostId": "string"
+   },
+   "sevenDay": value
 }
 ```
-
-***
 
-### [GET]/agents/{id}/commands
+### Response elements
 
-- Summary  
-  List the commands sent to an agent, oldest first, with their delivery
+**readAt**  
+The newest of the windows' `readAt`; null when nothing has been reported.  
+Type: String. Nullable: Yes.
 
-- Operation id  
-  listAgentCommands
+**fiveHour**  
+The 5-hour window's newest reading; null when none has been reported.  
+Type: [UsageWindow](#usagewindow) object.
 
-- Description  
-  Each is kept 7 days from when it was queued, then deleted.
+**sevenDay**  
+Type: Any value.
 
-- Tags  
-  clients, reading
+### Errors
 
-- Security  
-  bearerAuth
+**401**  
+Missing or incorrect bearer token.  
 
-#### Parameters(Path)
+**503**  
+No API token is configured.  
 
-```typescript
-// Assigned by the service when the agent is created.
-// Assigned by the service when the agent is created.
-id: string //format: uuid
-```
+---
 
-#### Responses
+## CreateSocketTicket
 
-- 200 Every command kept.
+A browser cannot set a header on a WebSocket, and a long-lived token must never go in a URL, so a page opens `<socketUrl>?ticket=<ticket>` instead. Good once, for 60 seconds. The socket then receives `SocketOutbound` messages: `agent`, `lines` and `host`.
 
-`application/json`
+### Request syntax
 
-```typescript
-{
-  commands: {
-    // discriminator: kind
-    command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
-    queuedAt: string //format: date-time
-    // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
-    delivery: enum[queued, written, withdrawn, done, rejected]
-    // When the host last reported it; null until then.
-    reportedAt: string | null //format: date-time
-    // The host's words when it could not do the command; null otherwise.
-    error: string | null
-  }[]
-}
+```http
+POST /socket-tickets HTTP/1.1
+Authorization: Bearer token
 ```
 
-- 400 The request failed validation.
+### Response syntax
 
-`application/json`
+```http
+HTTP/1.1 201
+Content-type: application/json
 
-```typescript
 {
-  error: string
+   "ticket": "string",
+   "socketUrl": "string",
+   "expiresAt": "string"
 }
 ```
 
-- 401 Missing or incorrect bearer token.
+### Response elements
 
-`application/json`
+**ticket**  
+Type: String.
 
-```typescript
-{
-  error: string
-}
-```
+**socketUrl**  
+Type: String.
 
-- 404 No agent has this id.
+**expiresAt**  
+Type: String.
 
-`application/json`
+### Errors
 
-```typescript
-{
-  error: string
-}
-```
+**400**  
+The request failed validation.  
 
-- 503 No API token is configured.
+**401**  
+Missing or incorrect bearer token.  
 
-`application/json`
+**503**  
+No API token is configured, or this server has no socket.  
 
-```typescript
-{
-  error: string
-}
-```
+---
 
-***
+# Data types
 
-### [GET]/usage
+## SocketInbound
 
-- Summary  
-  Read how much of the Claude account's 5-hour and weekly allowance is used
+### Contents
 
-- Operation id  
-  getUsage
+## SocketReport
 
-- Description  
-  The newest reading of each window any host has reported. A window whose `resetsAt` has passed has since started again from 0; the reading says only what was true at `readAt`. With nothing reported yet, every field is null.
+Host to service, the only way a host reports: whenever something changes, and in full (every agent, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`agentId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it.
 
-- Tags  
-  clients, reading
+### Contents
 
-- Security  
-  bearerAuth
+**type**  
+Type: String. Valid values: `report`. Required: Yes.
 
-#### Responses
+**agents**  
+Agents on the host and what each is doing. One not named is unchanged.  
+Type: Array of [AgentReport](#agentreport) objects. At most 256 items. Required: No.
 
-- 200 The newest reading.
+**lines**  
+Transcript lines not yet sent on a socket that took them.  
+Type: Array of [LineReport](#linereport) objects. At most 1000 items. Required: No.
 
-`application/json`
+**commandResults**  
+One per command taken since it was last reported. A reported command is delivered, and is neither pushed again nor replayed to a socket that connects.  
+Type: Array of [CommandReport](#commandreport) objects. At most 1000 items. Required: No.
 
-```typescript
-// How much of the Claude account's 5-hour and weekly allowance is used, as last reported.
-{
-  // The newest of the windows' `readAt`; null when nothing has been reported.
-  readAt: string | null //format: date-time
-  // The 5-hour window's newest reading; null when none has been reported.
-  fiveHour: object | null
-  sevenDay: #/components/schemas/UsageWindow & 
-}
-```
+**tokens**  
+Running token totals of sessions whose count has grown since it was last reported.  
+Type: Array of [SessionTokensReport](#sessiontokensreport) objects. At most 256 items. Required: No.
 
-- 401 Missing or incorrect bearer token.
+**usage**  
+The account's usage, when a session's stream has said it since the last report.  
+Type: [UsageReport](#usagereport) object. Required: No.
 
-`application/json`
+## AgentReport
 
-```typescript
-{
-  error: string
-}
-```
+### Contents
 
-- 503 No API token is configured.
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-`application/json`
+**state**  
+`idle`: no session running. `working`: its session is taking a turn (from Claude Code's `system` `init` to its `result`). `waiting`: its session is running and between turns. `interrupted`: a session the service started is not running, and was not stopped (a crash, a restart, or a session it does not know).  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted`. Required: Yes.
 
-```typescript
-{
-  error: string
-}
-```
+**sessionId**  
+The session running, or null for none.  
+Type: String. Nullable: Yes. Required: Yes.
 
-***
+**tasks**  
+Background tasks and subagents its session has open, as Claude Code's latest `background_tasks_changed` lists them, whether or not a turn is running; 0 once its session ends. Absent from a host that does not say, read as 0.  
+Type: Integer. Range: 0 to 1000. Required: No.
 
-### [POST]/socket-tickets
+**told**  
+Whether the turn running, or the last one, began with a message the host delivered (its echo came back in that turn), rather than by itself, as a turn a background task's end begins does. Absent from a host that does not say, read as unknown.  
+Type: Boolean. Required: No.
 
-- Summary  
-  Trade the bearer token for a one-time socket ticket
+## LineReport
 
-- Operation id  
-  createSocketTicket
+### Contents
 
-- Description  
-  A browser cannot set a header on a WebSocket, and a long-lived token must never go in a URL, so a page opens `<socketUrl>?ticket=<ticket>` instead. Good once, for 60 seconds. The socket then receives `SocketOutbound` messages: `agent`, `lines` and `host`.
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-- Tags  
-  clients, acting
+**sessionId**  
+Assigned by the service when it queues the session's `start`.  
+Type: String. Required: Yes.
 
-- Security  
-  bearerAuth
+**seq**  
+Deduplicated by (`agentId`, `seq`), so resending is safe.  
+Type: Integer. Range: 0 to any. Required: Yes.
 
-#### Responses
+**at**  
+Type: String. Required: Yes.
 
-- 201 The ticket.
+**from**  
+`instruction`: a message sent to the agent.  
+Type: String. Valid values: `agent` | `tool` | `instruction`. Required: Yes.
 
-`application/json`
+**text**  
+Kept whole up to 65536 characters, and past that cut rather than refused, so the rest of its report is not lost with it. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.  
+Type: String. Required: Yes.
 
-```typescript
-{
-  ticket: string
-  socketUrl: string
-  expiresAt: string //format: date-time
-}
-```
+**commandId**  
+On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.  
+Type: String. Length: 1 to 128. Required: No.
 
-- 400 The request failed validation.
+## CommandReport
 
-`application/json`
+### Contents
 
-```typescript
-{
-  error: string
-}
-```
+**commandId**  
+Type: String. Length: 1 to 128. Required: Yes.
 
-- 401 Missing or incorrect bearer token.
+**ok**  
+False when the host could not do the command.  
+Type: Boolean. Required: Yes.
 
-`application/json`
+**error**  
+Why not, when `ok` is false, in the host's words.  
+Type: String. Length: 0 to 4096. Required: No.
 
-```typescript
-{
-  error: string
-}
-```
+**taken**  
+`false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.  
+Type: Boolean. Required: No.
 
-- 503 No API token is configured, or this server has no socket.
+## SessionTokensReport
 
-`application/json`
+A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice.
 
-```typescript
-{
-  error: string
-}
-```
+### Contents
 
-## References
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-### #/components/securitySchemes/bearerAuth
+**sessionId**  
+Assigned by the service when it queues the session's `start`.  
+Type: String. Required: Yes.
 
-- Type: http
-- Scheme: bearer
+**inputTokens**  
+Input tokens not read from or written to the prompt cache.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-### #/components/schemas/SocketInbound
+**outputTokens**  
+Output tokens.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-```typescript
-// discriminator: type
-#/components/schemas/SocketReport | #/components/schemas/SocketPing
-```
+**cacheCreationInputTokens**  
+Input tokens written to the prompt cache.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-### #/components/schemas/SocketReport
+**cacheReadInputTokens**  
+Input tokens read from the prompt cache.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-```typescript
-// Host to service, the only way a host reports: whenever something changes, and in full (every agent, every line and result not yet sent) whenever its socket connects. Pushed on to viewers. Idempotent: lines by (`agentId`, `seq`), results by `commandId`. Does not count as a heartbeat. A socket message is at most 128 KB, sent in frames of 32 KB at most, so lines that would not fit go in the reports after it.
-{
-  type: enum[report]
-  agents: {
-    // Assigned by the service when the agent is created.
-    id: string //format: uuid
-    // `idle`: no session running. `working`: its session is taking a turn (from Claude Code's `system` `init` to its `result`). `waiting`: its session is running and between turns. `interrupted`: a session the service started is not running, and was not stopped (a crash, a restart, or a session it does not know).
-    state: enum[idle, working, waiting, interrupted]
-    // The session running, or null for none.
-    sessionId: string | null //format: uuid
-    // Background tasks and subagents its session has open, as Claude Code's latest `background_tasks_changed` lists them, whether or not a turn is running; 0 once its session ends. Absent from a host that does not say, read as 0.
-    tasks?: integer //minimum: 0 //maximum: 1000
-    // Whether the turn running, or the last one, began with a message the host delivered (its echo came back in that turn), rather than by itself, as a turn a background task's end begins does. Absent from a host that does not say, read as unknown.
-    told?: boolean
-  }[] //maxItems: 256
-  lines: {
-    // Assigned by the service when the agent is created.
-    agentId: string //format: uuid
-    // Assigned by the service when it queues the session's `start`.
-    sessionId: string //format: uuid
-    // Deduplicated by (`agentId`, `seq`), so resending is safe.
-    seq: integer //minimum: 0
-    at: string //format: date-time
-    // `instruction`: a message sent to the agent.
-    from: enum[agent, tool, instruction]
-    // Kept whole up to 65536 characters, and past that cut rather than refused, so the rest of its report is not lost with it. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
-    text: string
-    // On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.
-    commandId?: string //minLength: 1 //maxLength: 128
-  }[] //maxItems: 1000
-  commandResults: {
-    commandId: string //minLength: 1 //maxLength: 128
-    // False when the host could not do the command.
-    ok: boolean
-    // Why not, when `ok` is false, in the host's words.
-    error?: string //maxLength: 4096
-    // `false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.
-    taken?: boolean
-  }[] //maxItems: 1000
-  // A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice.
-  tokens: {
-    // Assigned by the service when the agent is created.
-    agentId: string //format: uuid
-    // Assigned by the service when it queues the session's `start`.
-    sessionId: string //format: uuid
-    // Input tokens not read from or written to the prompt cache.
-    inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Output tokens.
-    outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens written to the prompt cache.
-    cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens read from the prompt cache.
-    cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  }[] //maxItems: 256
-  // The account's usage, when a session's stream has said it since the last report.
-  usage: {
-    // When the session's stream said it: its `rate_limit_event`'s time.
-    readAt: string //format: date-time
-    // The 5-hour window; absent when the event did not carry it.
-    fiveHour: {
-      // How much of the window's allowance is used, 0 to 1 (1 is all of it).
-      utilization: number //minimum: 0
-      // When the window starts again from 0.
-      resetsAt: string //format: date-time
-    }
-    sevenDay?: #/components/schemas/UsageWindowReport & 
-  }
-}
-```
+## UsageReport
 
-### #/components/schemas/AgentReport
+The account's usage, when a session's stream has said it since the last report.
 
-```typescript
-{
-  // Assigned by the service when the agent is created.
-  id: string //format: uuid
-  // `idle`: no session running. `working`: its session is taking a turn (from Claude Code's `system` `init` to its `result`). `waiting`: its session is running and between turns. `interrupted`: a session the service started is not running, and was not stopped (a crash, a restart, or a session it does not know).
-  state: enum[idle, working, waiting, interrupted]
-  // The session running, or null for none.
-  sessionId: string | null //format: uuid
-  // Background tasks and subagents its session has open, as Claude Code's latest `background_tasks_changed` lists them, whether or not a turn is running; 0 once its session ends. Absent from a host that does not say, read as 0.
-  tasks?: integer //minimum: 0 //maximum: 1000
-  // Whether the turn running, or the last one, began with a message the host delivered (its echo came back in that turn), rather than by itself, as a turn a background task's end begins does. Absent from a host that does not say, read as unknown.
-  told?: boolean
-}
-```
+### Contents
 
-### #/components/schemas/LineReport
+**readAt**  
+When the session's stream said it: its `rate_limit_event`'s time.  
+Type: String. Required: Yes.
 
-```typescript
-{
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  // Assigned by the service when it queues the session's `start`.
-  sessionId: string //format: uuid
-  // Deduplicated by (`agentId`, `seq`), so resending is safe.
-  seq: integer //minimum: 0
-  at: string //format: date-time
-  // `instruction`: a message sent to the agent.
-  from: enum[agent, tool, instruction]
-  // Kept whole up to 65536 characters, and past that cut rather than refused, so the rest of its report is not lost with it. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
-  text: string
-  // On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.
-  commandId?: string //minLength: 1 //maxLength: 128
-}
-```
+**fiveHour**  
+The 5-hour window; absent when the event did not carry it.  
+Type: [UsageWindowReport](#usagewindowreport) object. Required: No.
 
-### #/components/schemas/CommandReport
+**sevenDay**  
+Type: Any value. Required: No.
 
-```typescript
-{
-  commandId: string //minLength: 1 //maxLength: 128
-  // False when the host could not do the command.
-  ok: boolean
-  // Why not, when `ok` is false, in the host's words.
-  error?: string //maxLength: 4096
-  // `false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.
-  taken?: boolean
-}
-```
+## UsageWindowReport
 
-### #/components/schemas/SessionTokensReport
+The 5-hour window; absent when the event did not carry it.
 
-```typescript
-// A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice.
-{
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  // Assigned by the service when it queues the session's `start`.
-  sessionId: string //format: uuid
-  // Input tokens not read from or written to the prompt cache.
-  inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  // Output tokens.
-  outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  // Input tokens written to the prompt cache.
-  cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  // Input tokens read from the prompt cache.
-  cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-}
-```
+### Contents
 
-### #/components/schemas/UsageReport
+**utilization**  
+How much of the window's allowance is used, 0 to 1 (1 is all of it).  
+Type: Number. Range: 0 to any. Required: Yes.
 
-```typescript
-// The account's usage, when a session's stream has said it since the last report.
-{
-  // When the session's stream said it: its `rate_limit_event`'s time.
-  readAt: string //format: date-time
-  // The 5-hour window; absent when the event did not carry it.
-  fiveHour: {
-    // How much of the window's allowance is used, 0 to 1 (1 is all of it).
-    utilization: number //minimum: 0
-    // When the window starts again from 0.
-    resetsAt: string //format: date-time
-  }
-  sevenDay?: #/components/schemas/UsageWindowReport & 
-}
-```
+**resetsAt**  
+When the window starts again from 0.  
+Type: String. Required: Yes.
 
-### #/components/schemas/UsageWindowReport
+## SocketPing
 
-```typescript
-// The 5-hour window; absent when the event did not carry it.
-{
-  // How much of the window's allowance is used, 0 to 1 (1 is all of it).
-  utilization: number //minimum: 0
-  // When the window starts again from 0.
-  resetsAt: string //format: date-time
-}
-```
+Either side's keep-alive, beside the server's WebSocket pings, which close a socket that misses one.
 
-### #/components/schemas/SocketPing
+### Contents
 
-```typescript
-// Either side's keep-alive, beside the server's WebSocket pings, which close a socket that misses one.
-{
-  type: enum[ping]
-}
-```
+**type**  
+Type: String. Valid values: `ping`. Required: Yes.
 
-### #/components/schemas/SocketOutbound
+## SocketOutbound
 
-```typescript
-// discriminator: type
-#/components/schemas/CommandPush | #/components/schemas/AgentPush | #/components/schemas/LinesPush | #/components/schemas/SentPush | #/components/schemas/HostPush | #/components/schemas/UsagePush | #/components/schemas/SocketError
-```
+### Contents
 
-### #/components/schemas/CommandPush
+## CommandPush
 
-```typescript
-// To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`.
-{
-  type: enum[command]
-  // discriminator: kind
-  command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
-}
-```
+To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`.
 
-### #/components/schemas/Command
+### Contents
 
-```typescript
-// discriminator: kind
-#/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
-```
+**type**  
+Type: String. Valid values: `command`. Required: Yes.
 
-### #/components/schemas/CreateCommand
+**command**  
+Type: [Command](#command) object. Required: Yes.
 
-```typescript
-// Make the agent's home folder.
-{
-  // Report the command by this id once it is taken.
-  id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  kind: enum[create]
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-}
-```
+## Command
 
-### #/components/schemas/StartCommand
+### Contents
 
-```typescript
-{
-  // Report the command by this id once it is taken.
-  id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  kind: enum[start]
-  // Assigned by the service when it queues the session's `start`.
-  sessionId: string //format: uuid
-  // True to carry on the agent's last conversation (`--continue`), false to begin one.
-  resume: boolean
-  // The session's first message, when it has one.
-  text?: string //minLength: 1 //maxLength: 16384
-  // Files to write into the agent's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand.
-  context: {
-    key: string
-    version: integer
-    files: {
-      path: string
-      content: string
-      executable: boolean
-    }[]
-  }
-  documents: {
-    key: string
-    version: integer
-    files: {
-      path: string
-      content: string
-      executable: boolean
-    }[]
-  }[]
-  // Present when the whole context is too large for a socket message: the path of `getSessionContext` for this session. A host reads it, with the stage's token, and writes what it answers in place of `context` and `documents`, which then hold only what fitted. A host that cannot read it writes them.
-  contextUrl?: string
-  // Set in the session's environment: the addresses of the services it is given. Never a secret.
-  env: {
-    [key: string]: string
-  }
-  credentials?: string[] //pattern: ^[a-z0-9][a-z0-9-]{0,63}$ //maxItems: 16
-  ownCredentials?: string[] //pattern: ^[a-z0-9][a-z0-9-]{0,63}$ //maxItems: 16
-  // The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the agent's folder that only it can read, and the session's environment is set from that file, never from a command line.
-  secrets: {
-    [key: string]: string
-  }
-  // The MCP servers the session may call, by service, as Claude Code's `mcpServers` takes them: each given service that serves one, its address and token written as `${URL_VAR}` and `${TOKEN_VAR}`, which the session's own environment fills, so the command holds no token. The host passes them to Claude Code with `--mcp-config`.
-  mcpServers: {
-    [key: string]: {
-      type: enum[http]
-      url: string
-      headers: {
-        [key: string]: string
-      }
-    }
-  }
-}
-```
+## CreateCommand
 
-### #/components/schemas/MessageCommand
+Make the agent's home folder.
 
-```typescript
-// Deliver `text` at the session's next turn.
-{
-  // Report the command by this id once it is taken.
-  id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  kind: enum[message]
-  text: string //minLength: 1 //maxLength: 16384
-}
-```
+### Contents
 
-### #/components/schemas/InterruptCommand
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
 
-```typescript
-{
-  // Report the command by this id once it is taken.
-  id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  kind: enum[interrupt]
-  // Sent to the agent once the current turn has stopped.
-  text?: string //minLength: 1 //maxLength: 16384
-}
-```
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-### #/components/schemas/StopCommand
+**kind**  
+Type: String. Valid values: `create`. Required: Yes.
 
-```typescript
-// End the session; the agent becomes idle.
-{
-  // Report the command by this id once it is taken.
-  id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  kind: enum[stop]
-}
-```
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
-### #/components/schemas/RetireCommand
+## StartCommand
 
-```typescript
-// Stop any session and take the agent off the host. Its home folder is kept.
-{
-  // Report the command by this id once it is taken.
-  id: string //minLength: 1 //maxLength: 128
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  kind: enum[retire]
-}
-```
+### Contents
 
-### #/components/schemas/AgentPush
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
 
-```typescript
-// To viewers, whenever an agent changes.
-{
-  type: enum[agent]
-  agent: {
-    // Assigned by the service when the agent is created.
-    id: string //format: uuid
-    // Unique among agents not retired. Names its home folder and tmux session on its host.
-    name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-    // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-    title: string | null
-    // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-    label: string | null
-    // The work item it was started on, as given when it was made; null for none.
-    item: string | null //minLength: 1 //maxLength: 64
-    // The role it was made from, as given when it was made; null for one made without.
-    role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-    // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-    tokens: {
-      // Input tokens not read from or written to the prompt cache.
-      inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Output tokens.
-      outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Input tokens written to the prompt cache.
-      cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Input tokens read from the prompt cache.
-      cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    }
-    // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-    createdBy: string | null
-    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-    whenDone: enum[keep, stop, retire]
-    documents: string[]
-    // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-    credentials: array | null
-    hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-    // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-    state: enum[idle, working, waiting, interrupted, retired]
-    // The live session, or null for none.
-    session: object | null
-    createdAt: string //format: date-time
-    // When its host last reported a change to it; null until its host first reports it.
-    reportedAt: string | null //format: date-time
-    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-    status: enum[working, idle, waiting, review, done, ] | null
-    // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-    summary: string | null
-    // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-    headline: string | null
-    // When `summary` was said; null when there is none.
-    saidAt: string | null //format: date-time
-    // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-    activity: object | null
-    // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-    tasks: integer //minimum: 0
-    // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-    told: boolean | null
-    // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-    hostStatus: enum[connected, disconnected, lost]
-  }
-}
-```
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-### #/components/schemas/Agent
+**kind**  
+Type: String. Valid values: `start`. Required: Yes.
 
-```typescript
-{
-  // Assigned by the service when the agent is created.
-  id: string //format: uuid
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-  title: string | null
-  // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-  label: string | null
-  // The work item it was started on, as given when it was made; null for none.
-  item: string | null //minLength: 1 //maxLength: 64
-  // The role it was made from, as given when it was made; null for one made without.
-  role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-  tokens: {
-    // Input tokens not read from or written to the prompt cache.
-    inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Output tokens.
-    outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens written to the prompt cache.
-    cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    // Input tokens read from the prompt cache.
-    cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  }
-  // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-  createdBy: string | null
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  documents: string[]
-  // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-  credentials: array | null
-  hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-  state: enum[idle, working, waiting, interrupted, retired]
-  // The live session, or null for none.
-  session: object | null
-  createdAt: string //format: date-time
-  // When its host last reported a change to it; null until its host first reports it.
-  reportedAt: string | null //format: date-time
-  // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-  status: enum[working, idle, waiting, review, done, ] | null
-  // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-  summary: string | null
-  // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-  headline: string | null
-  // When `summary` was said; null when there is none.
-  saidAt: string | null //format: date-time
-  // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-  activity: object | null
-  // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-  tasks: integer //minimum: 0
-  // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-  told: boolean | null
-  // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-  hostStatus: enum[connected, disconnected, lost]
-}
-```
+**sessionId**  
+Assigned by the service when it queues the session's `start`.  
+Type: String. Required: Yes.
 
-### #/components/schemas/Tokens
+**resume**  
+True to carry on the agent's last conversation (`--continue`), false to begin one.  
+Type: Boolean. Required: Yes.
 
-```typescript
-// Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-{
-  // Input tokens not read from or written to the prompt cache.
-  inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  // Output tokens.
-  outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  // Input tokens written to the prompt cache.
-  cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-  // Input tokens read from the prompt cache.
-  cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-}
-```
+**text**  
+The session's first message, when it has one.  
+Type: String. Length: 1 to 16384. Required: No.
 
-### #/components/schemas/LinesPush
+**context**  
+Files to write into the agent's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand.  
+Type: Object. Required: No.
 
-```typescript
-// To viewers, as lines arrive.
-{
-  type: enum[lines]
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  lines: {
-    // Line number per agent, from 0, continuing across its sessions.
-    seq: integer //minimum: 0
-    at: string //format: date-time
-    // Assigned by the service when it queues the session's `start`.
-    sessionId: string //format: uuid
-    // `instruction`: a message sent to the agent.
-    from: enum[agent, tool, instruction]
-    // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
-    text: string
-    // On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.
-    commandId?: string //minLength: 1 //maxLength: 128
-  }[]
-}
-```
+**documents**  
+Written after `context`, as it is, each with its own files and its `CLAUDE.md` after the one before; they replace the last start's. No two write the same file under `skills/`. Only with a `context`; absent with one, there are none.  
+Type: Array of Object. Required: No.
 
-### #/components/schemas/TranscriptLine
+**contextUrl**  
+Present when the whole context is too large for a socket message: the path of `GetSessionContext` for this session. A host reads it, with the stage's token, and writes what it answers in place of `context` and `documents`, which then hold only what fitted. A host that cannot read it writes them.  
+Type: String. Required: No.
 
-```typescript
-{
-  // Line number per agent, from 0, continuing across its sessions.
-  seq: integer //minimum: 0
-  at: string //format: date-time
-  // Assigned by the service when it queues the session's `start`.
-  sessionId: string //format: uuid
-  // `instruction`: a message sent to the agent.
-  from: enum[agent, tool, instruction]
-  // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
-  text: string
-  // On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.
-  commandId?: string //minLength: 1 //maxLength: 128
-}
-```
+**env**  
+Set in the session's environment: the addresses of the services it is given. Never a secret.  
+Type: Object. Required: No.
 
-### #/components/schemas/SentPush
+**credentials**  
+The services the session is given, by name, as kept on record. Their tokens are in `secrets`.  
+Type: Array of strings. At most 16 items. Required: No.
 
-```typescript
-// To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `listAgentCommands` says.
-{
-  type: enum[sent]
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  sent: {
-    // discriminator: kind
-    command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
-    queuedAt: string //format: date-time
-    // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
-    delivery: enum[queued, written, withdrawn, done, rejected]
-    // When the host last reported it; null until then.
-    reportedAt: string | null //format: date-time
-    // The host's words when it could not do the command; null otherwise.
-    error: string | null
-  }
-}
-```
+**ownCredentials**  
+Of `credentials`, those the agent was given a token of its own for, read in place of the shared one.  
+Type: Array of strings. At most 16 items. Required: No.
 
-### #/components/schemas/SentCommand
+**secrets**  
+The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the agent's folder that only it can read, and the session's environment is set from that file, never from a command line.  
+Type: Object. Required: No.
 
-```typescript
-{
-  // discriminator: kind
-  command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
-  queuedAt: string //format: date-time
-  // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
-  delivery: enum[queued, written, withdrawn, done, rejected]
-  // When the host last reported it; null until then.
-  reportedAt: string | null //format: date-time
-  // The host's words when it could not do the command; null otherwise.
-  error: string | null
-}
-```
+**mcpServers**  
+The MCP servers the session may call, by service, as Claude Code's `mcpServers` takes them: each given service that serves one, its address and token written as `${URL_VAR}` and `${TOKEN_VAR}`, which the session's own environment fills, so the command holds no token. The host passes them to Claude Code with `--mcp-config`.  
+Type: Object. Required: No.
 
-### #/components/schemas/HostPush
+## MessageCommand
 
-```typescript
-// To viewers, on every heartbeat.
-{
-  type: enum[host]
-  host: {
-    id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-    heartbeatAt: string //format: date-time
-    // The agent-host build of its last heartbeat.
-    version: string | null
-    // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
-    status: enum[connected, disconnected, lost]
-    labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-    // How many sessions the host will run at once; null if it has never said.
-    capacity: integer | null //minimum: 0 //maximum: 256
-    // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
-    available: integer | null //minimum: 0 //maximum: 256
-  }
-}
-```
+Deliver `text` at the session's next turn.
 
-### #/components/schemas/Host
+### Contents
 
-```typescript
-{
-  id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  heartbeatAt: string //format: date-time
-  // The agent-host build of its last heartbeat.
-  version: string | null
-  // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
-  status: enum[connected, disconnected, lost]
-  labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-  // How many sessions the host will run at once; null if it has never said.
-  capacity: integer | null //minimum: 0 //maximum: 256
-  // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
-  available: integer | null //minimum: 0 //maximum: 256
-}
-```
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
 
-### #/components/schemas/UsagePush
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
-// To viewers, when a report brings a newer reading of the account's usage.
-{
-  type: enum[usage]
-  // How much of the Claude account's 5-hour and weekly allowance is used, as last reported.
-  usage: {
-    // The newest of the windows' `readAt`; null when nothing has been reported.
-    readAt: string | null //format: date-time
-    // The 5-hour window's newest reading; null when none has been reported.
-    fiveHour: object | null
-    sevenDay: #/components/schemas/UsageWindow & 
-  }
-}
-```
+**kind**  
+Type: String. Valid values: `message`. Required: Yes.
 
-### #/components/schemas/Usage
+**text**  
+Type: String. Length: 1 to 16384. Required: Yes.
 
-```typescript
-// How much of the Claude account's 5-hour and weekly allowance is used, as last reported.
-{
-  // The newest of the windows' `readAt`; null when nothing has been reported.
-  readAt: string | null //format: date-time
-  // The 5-hour window's newest reading; null when none has been reported.
-  fiveHour: object | null
-  sevenDay: #/components/schemas/UsageWindow & 
-}
-```
+## InterruptCommand
 
-### #/components/schemas/UsageWindow
+### Contents
 
-```typescript
-// The 5-hour window's newest reading; null when none has been reported.
-object | null
-```
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
 
-### #/components/schemas/SocketError
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
-// To the socket whose message could not be handled, saying why.
-{
-  type: enum[error]
-  error: string
-}
-```
+**kind**  
+Type: String. Valid values: `interrupt`. Required: Yes.
 
-### #/components/schemas/Skill
+**text**  
+Sent to the agent once the current turn has stopped.  
+Type: String. Length: 1 to 16384. Required: No.
 
-```typescript
-{
-  // Whose skills these are: `agent-service`.
-  key: string
-  // The deployed tree's commit count, 0 when deployed from outside git.
-  version: integer
-  // The deployed commit, ending `-dirty` when deployed with uncommitted changes.
-  commit: string
-  files: {
-    // Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`.
-    path: string
-    content: string
-    executable: boolean
-  }[]
-}
-```
+## StopCommand
 
-### #/components/schemas/Error
+End the session; the agent becomes idle.
 
-```typescript
-{
-  error: string
-}
-```
+### Contents
 
-### #/components/schemas/HeartbeatResponse
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
 
-```typescript
-{
-  // Seconds until the host should send its next heartbeat.
-  heartbeatInterval: integer //exclusiveMinimum: 0
-  // Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as `Authorization: Bearer`. Commands and reports go by the socket alone, so on a server with none (null) no command reaches the host.
-  socketUrl: string | null
-}
-```
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-### #/components/schemas/Heartbeat
+**kind**  
+Type: String. Valid values: `stop`. Required: Yes.
 
-```typescript
-{
-  // The agent-host build that sent the heartbeat.
-  version: string //maxLength: 64
-  labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  // How many sessions the host will run at once. Absent, capacity is unknown.
-  capacity?: integer //minimum: 0 //maximum: 256
-}
-```
+## RetireCommand
 
-### #/components/schemas/HostList
+Stop any session and take the agent off the host. Its home folder is kept.
 
-```typescript
-{
-  hosts: {
-    id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-    heartbeatAt: string //format: date-time
-    // The agent-host build of its last heartbeat.
-    version: string | null
-    // Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.
-    status: enum[connected, disconnected, lost]
-    labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-    // How many sessions the host will run at once; null if it has never said.
-    capacity: integer | null //minimum: 0 //maximum: 256
-    // How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.
-    available: integer | null //minimum: 0 //maximum: 256
-  }[]
-}
-```
+### Contents
 
-### #/components/schemas/RoleList
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
 
-```typescript
-{
-  roles: {
-    // A role's name, such as `reviewer`: what kind of agent it makes.
-    name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-    documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-    // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-    credentials: array | null //maxItems: 16
-    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-    whenDone: enum[keep, stop, retire]
-    // A short tag shown beside the agent's name, so sessions can be told apart.
-    label: string //minLength: 1 //maxLength: 40
-    // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-    description: string | null //minLength: 1 //maxLength: 16384
-    // Of two requests waiting to start, the higher starts first.
-    priority: integer //minimum: 0 //maximum: 1000
-    // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-    brief: string | null //minLength: 1 //maxLength: 16384
-    // When it was last written; null for a role as the stage was seeded with it.
-    updatedAt: string | null //format: date-time
-  }[]
-}
-```
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-### #/components/schemas/Role
+**kind**  
+Type: String. Valid values: `retire`. Required: Yes.
 
-```typescript
-{
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-  credentials: array | null //maxItems: 16
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label: string //minLength: 1 //maxLength: 40
-  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-  description: string | null //minLength: 1 //maxLength: 16384
-  // Of two requests waiting to start, the higher starts first.
-  priority: integer //minimum: 0 //maximum: 1000
-  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-  brief: string | null //minLength: 1 //maxLength: 16384
-  // When it was last written; null for a role as the stage was seeded with it.
-  updatedAt: string | null //format: date-time
-}
-```
+## AgentPush
 
-### #/components/schemas/NewRole
+To viewers, whenever an agent changes.
 
-```typescript
-{
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // Absent, null: the stage's defaults.
-  credentials?: array | null //maxItems: 16
-  // Absent, `keep`.
-  whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label: string //minLength: 1 //maxLength: 40
-  // Absent, null.
-  description?: string | null //minLength: 1 //maxLength: 16384
-  // Absent, 0.
-  priority?: integer //minimum: 0 //maximum: 1000
-  // Absent, null.
-  brief?: string | null //minLength: 1 //maxLength: 16384
-}
-```
+### Contents
 
-### #/components/schemas/RoleChange
+**type**  
+Type: String. Valid values: `agent`. Required: Yes.
 
-```typescript
-{
-  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-  // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
-  credentials?: array | null //maxItems: 16
-  // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-  whenDone?: enum[keep, stop, retire]
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label?: string //minLength: 1 //maxLength: 40
-  // What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.
-  description?: string | null //minLength: 1 //maxLength: 16384
-  // Of two requests waiting to start, the higher starts first.
-  priority?: integer //minimum: 0 //maximum: 1000
-  // The first message of an agent made from it with no `brief` of its own; null when the caller must give one.
-  brief?: string | null //minLength: 1 //maxLength: 16384
-}
-```
+**agent**  
+Type: [Agent](#agent) object. Required: Yes.
 
-### #/components/schemas/AgentRequest
+## Agent
 
-```typescript
-{
-  // Assigned by the service; also the id of the agent it starts.
-  id: string //format: uuid
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // The first message; null to start on the role's own.
-  brief: string | null
-  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-  item: string | null //minLength: 1 //maxLength: 64
-  // What it is for when that is no work item; null for none.
-  subject: string | null
-  // In place of the role's label; null for the role's.
-  label: string | null
-  labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-  // In place of the role's, by name; null for the role's. Never a token.
-  credentials: array | null
-  // The `claimed-by` header it was made with, unverified; null for none.
-  requester: string | null
-  // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
-  state: enum[waiting, started, withdrawn]
-  // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
-  why: string | null
-  // Its role's, now.
-  priority: integer //minimum: 0 //maximum: 1000
-  // Where it stands among those waiting, 1 starting next; null once it is not waiting.
-  position: integer | null //minimum: 1
-  createdAt: string //format: date-time
-  startedAt: string | null //format: date-time
-  // The agent it started; null until it has.
-  agentId: string | null //format: uuid
-  withdrawnAt: string | null //format: date-time
-}
-```
+### Contents
 
-### #/components/schemas/NewAgentRequest
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
 
-```typescript
-{
-  // A role's name, such as `reviewer`: what kind of agent it makes.
-  role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // The first message. Absent, the role's own; a role without one needs it.
-  brief?: string //minLength: 1 //maxLength: 16384
-  // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-  item?: string //minLength: 1 //maxLength: 64
-  // What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.
-  subject?: string //minLength: 1 //maxLength: 200
-  // Absent, the role's.
-  label?: string //minLength: 1 //maxLength: 40
-  labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
-{
-     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
-     token: string //minLength: 1 //maxLength: 4096
-   })[] //maxItems: 16
-  // A name with a token of the caller's, given this agent in place of the name's shared secret.
-  tokens: {
-    name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
-    token: string //minLength: 1 //maxLength: 4096
-  }[] //minItems: 1 //maxItems: 16
-}
-```
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
-### #/components/schemas/AgentRequestList
+**title**  
+What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.  
+Type: String. Nullable: Yes. Required: Yes.
 
-```typescript
-{
-  requests: {
-    // Assigned by the service; also the id of the agent it starts.
-    id: string //format: uuid
-    // A role's name, such as `reviewer`: what kind of agent it makes.
-    role: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-    // The first message; null to start on the role's own.
-    brief: string | null
-    // A work-tracker item's id: the epic, story or task the agent was started on. Never changes.
-    item: string | null //minLength: 1 //maxLength: 64
-    // What it is for when that is no work item; null for none.
-    subject: string | null
-    // In place of the role's label; null for the role's.
-    label: string | null
-    labels: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$
-    // In place of the role's, by name; null for the role's. Never a token.
-    credentials: array | null
-    // The `claimed-by` header it was made with, unverified; null for none.
-    requester: string | null
-    // `waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.
-    state: enum[waiting, started, withdrawn]
-    // While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.
-    why: string | null
-    // Its role's, now.
-    priority: integer //minimum: 0 //maximum: 1000
-    // Where it stands among those waiting, 1 starting next; null once it is not waiting.
-    position: integer | null //minimum: 1
-    createdAt: string //format: date-time
-    startedAt: string | null //format: date-time
-    // The agent it started; null until it has.
-    agentId: string | null //format: uuid
-    withdrawnAt: string | null //format: date-time
-  }[]
-}
-```
+**label**  
+A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none.  
+Type: String. Nullable: Yes. Required: Yes.
 
-### #/components/schemas/NewAgent
+**item**  
+The work item it was started on, as given when it was made; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes. Required: Yes.
 
-```typescript
-{
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // The role it is made from (`listRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.
-  role?: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  // Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`.
-  hostId?: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-  labels?: string[] //pattern: ^[a-z0-9][a-z0-9:._-]{0,63}$ //maxItems: 64
-  // The first session's first message. Absent, the role's, if it has one; otherwise no session starts.
-  brief?: string //minLength: 1 //maxLength: 16384
-  // Absent, the role's, or without one none.
-  label?: string //minLength: 1 //maxLength: 40
-  // The work item it is started on, kept for its life so `listAgents` with `item` finds it. Absent, none.
-  item?: string //minLength: 1 //maxLength: 64
-  // Absent, the role's, or without one `keep`.
-  whenDone?: enum[keep, stop, retire]
-  credentials?: Partial(string) & Partial(   // A name with a token of the caller's, given this agent in place of the name's shared secret.
-{
-     name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
-     token: string //minLength: 1 //maxLength: 4096
-   })[] //maxItems: 16
-  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
-}
-```
+**role**  
+The role it was made from, as given when it was made; null for one made without.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes. Required: Yes.
 
-### #/components/schemas/AgentList
+**tokens**  
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.  
+Type: [Tokens](#tokens) object. Required: Yes.
 
-```typescript
-{
-  agents: {
-    // Assigned by the service when the agent is created.
-    id: string //format: uuid
-    // Unique among agents not retired. Names its home folder and tmux session on its host.
-    name: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-    // What the agent named itself for its work, with `setAgentTitle`, or the person with `renameAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.
-    title: string | null
-    // A short tag given when it was made or with `renameAgent`, shown beside its name. Null for none.
-    label: string | null
-    // The work item it was started on, as given when it was made; null for none.
-    item: string | null //minLength: 1 //maxLength: 64
-    // The role it was made from, as given when it was made; null for one made without.
-    role: string | null //pattern: ^[a-z][a-z0-9-]{0,39}$
-    // Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
-    tokens: {
-      // Input tokens not read from or written to the prompt cache.
-      inputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Output tokens.
-      outputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Input tokens written to the prompt cache.
-      cacheCreationInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-      // Input tokens read from the prompt cache.
-      cacheReadInputTokens: integer //minimum: 0 //maximum: 9007199254740991
-    }
-    // The `claimed-by` header of the `createAgent` call that made it, unverified. Null when it had none.
-    createdBy: string | null
-    // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
-    whenDone: enum[keep, stop, retire]
-    documents: string[]
-    // The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.
-    credentials: array | null
-    hostId: string //pattern: ^[A-Za-z0-9._-]{1,64}$
-    // `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.
-    state: enum[idle, working, waiting, interrupted, retired]
-    // The live session, or null for none.
-    session: object | null
-    createdAt: string //format: date-time
-    // When its host last reported a change to it; null until its host first reports it.
-    reportedAt: string | null //format: date-time
-    // What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `setAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `setAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.
-    status: enum[working, idle, waiting, review, done, ] | null
-    // One line it, or approval-service, last said with `setAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.
-    summary: string | null
-    // A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.
-    headline: string | null
-    // When `summary` was said; null when there is none.
-    saidAt: string | null //format: date-time
-    // What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.
-    activity: object | null
-    // Background tasks and subagents its live session has open, as its host last reported; 0 without one.
-    tasks: integer //minimum: 0
-    // Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.
-    told: boolean | null
-    // Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.
-    hostStatus: enum[connected, disconnected, lost]
-  }[]
-}
-```
+**createdBy**  
+The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none.  
+Type: String. Nullable: Yes. Required: Yes.
 
-### #/components/schemas/Accepted
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: Yes.
 
-```typescript
-{
-  // Follow it in `listAgentCommands`. Null when nothing was sent to the host.
-  commandId: string | null
-}
-```
+**documents**  
+The honed skills each session is given after `workplace/global`, by name.  
+Type: Array of strings. Required: Yes.
 
-### #/components/schemas/Message
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+Type: Array of strings. Nullable: Yes. Required: Yes.
 
-```typescript
-{
-  // Required unless `interrupt` is true.
-  text?: string //minLength: 1 //maxLength: 16384
-  // `true` stops the current turn before `text` is sent.
-  interrupt?: boolean
-}
-```
+**hostId**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: Yes.
 
-### #/components/schemas/Stop
+**state**  
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `retired`. Required: Yes.
 
-```typescript
-{
-  // `true` ends it on record without waiting for the host, even one still connected.
-  force?: boolean
-}
-```
+**session**  
+The live session, or null for none.  
+Type: Object. Nullable: Yes. Required: Yes.
 
-### #/components/schemas/AgentRename
+**createdAt**  
+Type: String. Required: Yes.
 
-```typescript
-{
-  // Unique among agents not retired. Names its home folder and tmux session on its host.
-  name?: string //pattern: ^[a-z0-9][a-z0-9-]{0,39}$
-  // What the agent is there to do, in a few words.
-  title?: string | null //minLength: 1 //maxLength: 40
-  // A short tag shown beside the agent's name, so sessions can be told apart.
-  label?: string | null //minLength: 1 //maxLength: 40
-}
-```
+**reportedAt**  
+When its host last reported a change to it; null until its host first reports it.  
+Type: String. Nullable: Yes. Required: Yes.
 
-### #/components/schemas/AgentStatus
+**status**  
+What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.  
+Type: String. Valid values: `working` | `idle` | `waiting` | `review` | `done` | `null`. Nullable: Yes. Required: Yes.
 
-```typescript
-{
-  status: enum[working, waiting, review, done]
-  // One line: what it is doing, while `waiting` what it needs from the person, in `review` what it submitted, or when `done` the result.
-  summary: string //minLength: 1 //maxLength: 280
-  // The summary in a few words a person can scan in a list, e.g. "Needs merge OK". Omitted, it is null.
-  headline?: string //minLength: 1 //maxLength: 29
-}
-```
+**summary**  
+One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.  
+Type: String. Nullable: Yes. Required: Yes.
 
-### #/components/schemas/AgentTitle
+**headline**  
+A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.  
+Type: String. Nullable: Yes. Required: Yes.
 
-```typescript
-{
-  // What the agent is there to do, in a few words.
-  title: string //minLength: 1 //maxLength: 40
-}
-```
+**saidAt**  
+When `summary` was said; null when there is none.  
+Type: String. Nullable: Yes. Required: Yes.
 
-### #/components/schemas/Transcript
+**activity**  
+What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.  
+Type: Object. Nullable: Yes. Required: Yes.
 
-```typescript
-{
-  lines: {
-    // Line number per agent, from 0, continuing across its sessions.
-    seq: integer //minimum: 0
-    at: string //format: date-time
-    // Assigned by the service when it queues the session's `start`.
-    sessionId: string //format: uuid
-    // `instruction`: a message sent to the agent.
-    from: enum[agent, tool, instruction]
-    // Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.
-    text: string
-    // On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.
-    commandId?: string //minLength: 1 //maxLength: 128
-  }[]
-  // Pass as `after` to read what follows. Unchanged when nothing does yet.
-  next: string //minLength: 1 //maxLength: 512
-}
-```
+**tasks**  
+Background tasks and subagents its live session has open, as its host last reported; 0 without one.  
+Type: Integer. Range: 0 to any. Required: Yes.
 
-### #/components/schemas/Cursor
+**told**  
+Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
+Type: Boolean. Nullable: Yes. Required: Yes.
 
-```typescript
-// Pass as `after` to read what follows. Unchanged when nothing does yet.
-string //minLength: 1 //maxLength: 512
-```
+**hostStatus**  
+Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`. Required: Yes.
 
-### #/components/schemas/SessionList
+## Tokens
 
-```typescript
-{
-  sessions: {
-    // Assigned by the service when it queues the session's `start`.
-    id: string //format: uuid
-    // Assigned by the service when the agent is created.
-    agentId: string //format: uuid
-    // When its `start` was queued.
-    startedAt: string //format: date-time
-    endedAt: string | null //format: date-time
-    // `stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.
-    ended: enum[stopped, interrupted, ] | null
-    // The `workplace/global` it started with, from honed; null when it was given none.
-    context: object | null
-    documents: {
-      key: string
-      version: integer
-    }[]
-    skills: {
-      key: string
-      version: integer
-      commit: string
-    }[]
-    // Why it was given no context, or why a document it was made with, or a service's skill, was left out.
-    contextNote: string | null
-  }[]
-}
-```
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.
 
-### #/components/schemas/Session
+### Contents
 
-```typescript
-{
-  // Assigned by the service when it queues the session's `start`.
-  id: string //format: uuid
-  // Assigned by the service when the agent is created.
-  agentId: string //format: uuid
-  // When its `start` was queued.
-  startedAt: string //format: date-time
-  endedAt: string | null //format: date-time
-  // `stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.
-  ended: enum[stopped, interrupted, ] | null
-  // The `workplace/global` it started with, from honed; null when it was given none.
-  context: object | null
-  documents: {
-    key: string
-    version: integer
-  }[]
-  skills: {
-    key: string
-    version: integer
-    commit: string
-  }[]
-  // Why it was given no context, or why a document it was made with, or a service's skill, was left out.
-  contextNote: string | null
-}
-```
+**inputTokens**  
+Input tokens not read from or written to the prompt cache.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-### #/components/schemas/SessionContext
+**outputTokens**  
+Output tokens.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-```typescript
-{
-  // Written as a start's `context` is; null when there is none to give.
-  context: object | null
-  documents: {
-    key: string
-    version: integer
-    files: {
-      path: string
-      content: string
-      executable: boolean
-    }[]
-  }[]
-}
-```
+**cacheCreationInputTokens**  
+Input tokens written to the prompt cache.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-### #/components/schemas/AgentCommands
+**cacheReadInputTokens**  
+Input tokens read from the prompt cache.  
+Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 
-```typescript
-{
-  commands: {
-    // discriminator: kind
-    command: #/components/schemas/CreateCommand | #/components/schemas/StartCommand | #/components/schemas/MessageCommand | #/components/schemas/InterruptCommand | #/components/schemas/StopCommand | #/components/schemas/RetireCommand
-    queuedAt: string //format: date-time
-    // `queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.
-    delivery: enum[queued, written, withdrawn, done, rejected]
-    // When the host last reported it; null until then.
-    reportedAt: string | null //format: date-time
-    // The host's words when it could not do the command; null otherwise.
-    error: string | null
-  }[]
-}
-```
+## LinesPush
 
-### #/components/schemas/SocketTicket
+To viewers, as lines arrive.
 
-```typescript
-{
-  ticket: string
-  socketUrl: string
-  expiresAt: string //format: date-time
-}
-```
+### Contents
+
+**type**  
+Type: String. Valid values: `lines`. Required: Yes.
+
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+**lines**  
+Type: Array of [TranscriptLine](#transcriptline) objects. Required: Yes.
+
+## TranscriptLine
+
+### Contents
+
+**seq**  
+Line number per agent, from 0, continuing across its sessions.  
+Type: Integer. Range: 0 to any. Required: Yes.
+
+**at**  
+Type: String. Required: Yes.
+
+**sessionId**  
+Assigned by the service when it queues the session's `start`.  
+Type: String. Required: Yes.
+
+**from**  
+`instruction`: a message sent to the agent.  
+Type: String. Valid values: `agent` | `tool` | `instruction`. Required: Yes.
+
+**text**  
+Whole up to 65536 characters. A text cut short, by its host to fit a socket message or here, ends `… [cut: N of M characters]`: N kept of the M there were.  
+Type: String. Required: Yes.
+
+**commandId**  
+On an `instruction` line that is a command's text as the session took it (a `message`, a `start`'s first message, an `interrupt`'s text): that command's id. Absent on any other line.  
+Type: String. Length: 1 to 128. Required: No.
+
+## SentPush
+
+To viewers, when a command carrying `text` (a `message`, a `start` or an `interrupt`) is queued, and each time its `delivery` changes, but for a time-based `withdrawn`, which a read of `ListCommands` says.
+
+### Contents
+
+**type**  
+Type: String. Valid values: `sent`. Required: Yes.
+
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+**sent**  
+Type: [SentCommand](#sentcommand) object. Required: Yes.
+
+## SentCommand
+
+### Contents
+
+**command**  
+Type: [Command](#command) object. Required: Yes.
+
+**queuedAt**  
+Type: String. Required: Yes.
+
+**delivery**  
+`queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.  
+Type: String. Valid values: `queued` | `written` | `withdrawn` | `done` | `rejected`. Required: Yes.
+
+**reportedAt**  
+When the host last reported it; null until then.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**error**  
+The host's words when it could not do the command; null otherwise.  
+Type: String. Nullable: Yes. Required: Yes.
+
+## HostPush
+
+To viewers, on every heartbeat.
+
+### Contents
+
+**type**  
+Type: String. Valid values: `host`. Required: Yes.
+
+**host**  
+Type: [Host](#host) object. Required: Yes.
+
+## Host
+
+### Contents
+
+**id**  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: Yes.
+
+**heartbeatAt**  
+Type: String. Required: Yes.
+
+**version**  
+The agent-host build of its last heartbeat.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**status**  
+Computed from `heartbeatAt` when the response was made, never stored. `connected`: silent at most 60 seconds. `disconnected`: at most 300. `lost`: longer.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`. Required: Yes.
+
+**labels**  
+As the host last declared them.  
+Type: Array of strings. Required: Yes.
+
+**capacity**  
+How many sessions the host will run at once; null if it has never said.  
+Type: Integer. Range: 0 to 256. Nullable: Yes. Required: Yes.
+
+**available**  
+How many more sessions it will take now: `capacity` minus its agents with a live session. Null when `capacity` is.  
+Type: Integer. Range: 0 to 256. Nullable: Yes. Required: Yes.
+
+## UsagePush
+
+To viewers, when a report brings a newer reading of the account's usage.
+
+### Contents
+
+**type**  
+Type: String. Valid values: `usage`. Required: Yes.
+
+**usage**  
+How much of the Claude account's 5-hour and weekly allowance is used, as last reported.  
+Type: [Usage](#usage) object. Required: Yes.
+
+## Usage
+
+How much of the Claude account's 5-hour and weekly allowance is used, as last reported.
+
+### Contents
+
+**readAt**  
+The newest of the windows' `readAt`; null when nothing has been reported.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**fiveHour**  
+The 5-hour window's newest reading; null when none has been reported.  
+Type: [UsageWindow](#usagewindow) object. Required: Yes.
+
+**sevenDay**  
+Type: Any value. Required: Yes.
+
+## UsageWindow
+
+The 5-hour window's newest reading; null when none has been reported.
+
+### Contents
+
+**utilization**  
+How much of the window's allowance is used, 0 to 1 (1 is all of it).  
+Type: Number. Range: 0 to any. Required: Yes.
+
+**resetsAt**  
+When the window starts again from 0. Once past, the reading no longer holds.  
+Type: String. Required: Yes.
+
+**readAt**  
+When this reading was taken: how stale it is.  
+Type: String. Required: Yes.
+
+**hostId**  
+The host that reported it.  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: Yes.
+
+## SocketError
+
+To the socket whose message could not be handled, saying why.
+
+### Contents
+
+**type**  
+Type: String. Valid values: `error`. Required: Yes.
+
+**error**  
+Type: String. Required: Yes.
+
+## Skill
+
+### Contents
+
+**key**  
+Whose skills these are: `agent-service`.  
+Type: String. Required: Yes.
+
+**version**  
+The deployed tree's commit count, 0 when deployed from outside git.  
+Type: Integer. Required: Yes.
+
+**commit**  
+The deployed commit, ending `-dirty` when deployed with uncommitted changes.  
+Type: String. Required: Yes.
+
+**files**  
+Type: Array of Object. Required: Yes.
+
+## Error
+
+### Contents
+
+**error**  
+Type: String. Required: Yes.
+
+## Heartbeat
+
+### Contents
+
+**version**  
+The agent-host build that sent the heartbeat.  
+Type: String. Length: 0 to 64. Required: Yes.
+
+**labels**  
+What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host).  
+Type: Array of strings. At most 64 items. Required: No.
+
+**capacity**  
+How many sessions the host will run at once. Absent, capacity is unknown.  
+Type: Integer. Range: 0 to 256. Required: No.
+
+## HostList
+
+### Contents
+
+**hosts**  
+Type: Array of [Host](#host) objects. Required: Yes.
+
+## RoleList
+
+### Contents
+
+**roles**  
+Type: Array of [Role](#role) objects. Required: Yes.
+
+## Role
+
+### Contents
+
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
+
+**documents**  
+The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
+Type: Array of strings. At most 8 items. Required: Yes.
+
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+Type: Array of strings. At most 16 items. Nullable: Yes. Required: Yes.
+
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: Yes.
+
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40. Required: Yes.
+
+**description**  
+What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: Yes.
+
+**priority**  
+Of two requests waiting to start, the higher starts first.  
+Type: Integer. Range: 0 to 1000. Required: Yes.
+
+**brief**  
+The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: Yes.
+
+**updatedAt**  
+When it was last written; null for a role as the stage was seeded with it.  
+Type: String. Nullable: Yes. Required: Yes.
+
+## NewRole
+
+### Contents
+
+**name**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
+
+**documents**  
+Absent, only `workplace/global`.  
+Type: Array of strings. At most 8 items. Required: No.
+
+**credentials**  
+Absent, null: the stage's defaults.  
+Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
+
+**whenDone**  
+Absent, `keep`.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
+
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40. Required: Yes.
+
+**description**  
+Absent, null.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
+
+**priority**  
+Absent, 0.  
+Type: Integer. Range: 0 to 1000. Required: No.
+
+**brief**  
+Absent, null.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
+
+## RoleChange
+
+### Contents
+
+**documents**  
+The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
+Type: Array of strings. At most 8 items. Required: No.
+
+**credentials**  
+The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
+
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
+
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40. Required: No.
+
+**description**  
+What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
+
+**priority**  
+Of two requests waiting to start, the higher starts first.  
+Type: Integer. Range: 0 to 1000. Required: No.
+
+**brief**  
+The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
+Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
+
+## AgentRequest
+
+### Contents
+
+**id**  
+Assigned by the service; also the id of the agent it starts.  
+Type: String. Required: Yes.
+
+**role**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
+
+**brief**  
+The first message; null to start on the role's own.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**item**  
+A work-tracker item's id: the epic, story or task the agent was started on. Never changes.  
+Type: String. Length: 1 to 64. Nullable: Yes. Required: Yes.
+
+**subject**  
+What it is for when that is no work item; null for none.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**label**  
+In place of the role's label; null for the role's.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**labels**  
+What the host it is placed on must all carry.  
+Type: Array of strings. Required: Yes.
+
+**credentials**  
+In place of the role's, by name; null for the role's. Never a token.  
+Type: Array of strings. Nullable: Yes. Required: Yes.
+
+**requester**  
+The `claimed-by` header it was made with, unverified; null for none.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**state**  
+`waiting` to be admitted; `started`, its agent made and its session queued; `withdrawn`, never to start.  
+Type: String. Valid values: `waiting` | `started` | `withdrawn`. Required: Yes.
+
+**why**  
+While `waiting`, why it has not started, as admission last found; null before it has looked, and once it is not waiting.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**priority**  
+Its role's, now.  
+Type: Integer. Range: 0 to 1000. Required: Yes.
+
+**position**  
+Where it stands among those waiting, 1 starting next; null once it is not waiting.  
+Type: Integer. Range: 1 to any. Nullable: Yes. Required: Yes.
+
+**createdAt**  
+Type: String. Required: Yes.
+
+**startedAt**  
+Type: String. Nullable: Yes. Required: Yes.
+
+**agentId**  
+The agent it started; null until it has.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**withdrawnAt**  
+Type: String. Nullable: Yes. Required: Yes.
+
+## NewAgentRequest
+
+### Contents
+
+**role**  
+A role's name, such as `reviewer`: what kind of agent it makes.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
+
+**brief**  
+The first message. Absent, the role's own; a role without one needs it.  
+Type: String. Length: 1 to 16384. Required: No.
+
+**item**  
+A work-tracker item's id: the epic, story or task the agent was started on. Never changes.  
+Type: String. Length: 1 to 64. Required: No.
+
+**subject**  
+What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.  
+Type: String. Length: 1 to 200. Required: No.
+
+**label**  
+Absent, the role's.  
+Type: String. Length: 1 to 40. Required: No.
+
+**labels**  
+What the host it is placed on must all carry. Absent, none.  
+Type: Array of strings. At most 64 items. Required: No.
+
+**credentials**  
+In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn.  
+Type: Array of strings. At most 16 items. Required: No.
+
+**tokens**  
+Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for.  
+Type: Array of Object. At most 16 items. Required: No.
+
+## AgentRequestList
+
+### Contents
+
+**requests**  
+Type: Array of [AgentRequest](#agentrequest) objects. Required: Yes.
+
+## NewAgent
+
+### Contents
+
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
+
+**role**  
+The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: No.
+
+**hostId**  
+Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`.  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: No.
+
+**labels**  
+Without `hostId`, what the host it is placed on must all carry.  
+Type: Array of strings. At most 64 items. Required: No.
+
+**brief**  
+The first session's first message. Absent, the role's, if it has one; otherwise no session starts.  
+Type: String. Length: 1 to 16384. Required: No.
+
+**label**  
+Absent, the role's, or without one none.  
+Type: String. Length: 1 to 40. Required: No.
+
+**item**  
+The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none.  
+Type: String. Length: 1 to 64. Required: No.
+
+**whenDone**  
+Absent, the role's, or without one `keep`.  
+Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
+
+**credentials**  
+The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired.  
+Type: Array of strings. At most 16 items. Required: No.
+
+**documents**  
+Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`.  
+Type: Array of strings. At most 8 items. Required: No.
+
+## AgentList
+
+### Contents
+
+**agents**  
+Type: Array of [Agent](#agent) objects. Required: Yes.
+
+## Accepted
+
+### Contents
+
+**commandId**  
+Follow it in `ListCommands`. Null when nothing was sent to the host.  
+Type: String. Nullable: Yes. Required: Yes.
+
+## Message
+
+### Contents
+
+**text**  
+Required unless `interrupt` is true.  
+Type: String. Length: 1 to 16384. Required: No.
+
+**interrupt**  
+`true` stops the current turn before `text` is sent.  
+Type: Boolean. Required: No.
+
+## Stop
+
+### Contents
+
+**force**  
+`true` ends it on record without waiting for the host, even one still connected.  
+Type: Boolean. Required: No.
+
+## AgentRename
+
+### Contents
+
+**name**  
+Unique among agents not retired. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: No.
+
+**title**  
+What the agent is there to do, in a few words.  
+Type: String. Length: 1 to 40. Nullable: Yes. Required: No.
+
+**label**  
+A short tag shown beside the agent's name, so sessions can be told apart.  
+Type: String. Length: 1 to 40. Nullable: Yes. Required: No.
+
+## AgentStatus
+
+### Contents
+
+**status**  
+Type: String. Valid values: `working` | `waiting` | `review` | `done`. Required: Yes.
+
+**summary**  
+One line: what it is doing, while `waiting` what it needs from the person, in `review` what it submitted, or when `done` the result.  
+Type: String. Length: 1 to 280. Required: Yes.
+
+**headline**  
+The summary in a few words a person can scan in a list, e.g. "Needs merge OK". Omitted, it is null.  
+Type: String. Length: 1 to 29. Required: No.
+
+## AgentTitle
+
+### Contents
+
+**title**  
+What the agent is there to do, in a few words.  
+Type: String. Length: 1 to 40. Required: Yes.
+
+## Transcript
+
+### Contents
+
+**lines**  
+Type: Array of [TranscriptLine](#transcriptline) objects. Required: Yes.
+
+**next**  
+Pass as `after` to read what follows. Unchanged when nothing does yet.  
+Type: [Cursor](#cursor) object. Length: 1 to 512. Required: Yes.
+
+## Cursor
+
+Pass as `after` to read what follows. Unchanged when nothing does yet.
+
+### Contents
+
+## SessionList
+
+### Contents
+
+**sessions**  
+Type: Array of [Session](#session) objects. Required: Yes.
+
+## Session
+
+### Contents
+
+**id**  
+Assigned by the service when it queues the session's `start`.  
+Type: String. Required: Yes.
+
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+**startedAt**  
+When its `start` was queued.  
+Type: String. Required: Yes.
+
+**endedAt**  
+Type: String. Nullable: Yes. Required: Yes.
+
+**ended**  
+`stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.  
+Type: String. Valid values: `stopped` | `interrupted` | `null`. Nullable: Yes. Required: Yes.
+
+**context**  
+The `workplace/global` it started with, from honed; null when it was given none.  
+Type: Object. Nullable: Yes. Required: Yes.
+
+**documents**  
+The documents it started with beside `context`, in order.  
+Type: Array of Object. Required: Yes.
+
+**skills**  
+The clients it started with, each read from its service's `GET /skill` for this stage and written over `context`'s files at the same paths.  
+Type: Array of Object. Required: Yes.
+
+**contextNote**  
+Why it was given no context, or why a document it was made with, or a service's skill, was left out.  
+Type: String. Nullable: Yes. Required: Yes.
+
+## SessionContext
+
+### Contents
+
+**context**  
+Written as a start's `context` is; null when there is none to give.  
+Type: Object. Nullable: Yes. Required: Yes.
+
+**documents**  
+Written after it, as a start's `documents` are.  
+Type: Array of Object. Required: Yes.
+
+## AgentCommands
+
+### Contents
+
+**commands**  
+Type: Array of [SentCommand](#sentcommand) objects. Required: Yes.
+
+## SocketTicket
+
+### Contents
+
+**ticket**  
+Type: String. Required: Yes.
+
+**socketUrl**  
+Type: String. Required: Yes.
+
+**expiresAt**  
+Type: String. Required: Yes.
+

@@ -22,7 +22,9 @@ OS picks. `integration.spec.ts` hits a running instance and skips without
 ## Changing the API
 
 Edit `src/schema.ts`; it validates every request and generates the document.
-`npm run spec` writes `openapi.json` and `docs/` from it, the pre-commit hook
+Name an operation as AWS does (a verb, then what it acts on, in PascalCase);
+`src/mcp.ts` makes each a snake_case tool. `npm run spec` writes
+`openapi.json`, `mcp.json` and `docs/` from them, the pre-commit hook
 runs it, and `schema.spec.ts` fails if they drift. A host reports on its
 socket alone (`SocketReport`); the heartbeat carries no report and returns no
 commands. The host and the service deploy together: there is no versioning

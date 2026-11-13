@@ -88,7 +88,7 @@ describe("the line between hosts and clients", async () => {
   });
 
   it("gives a host one operation", () => {
-    expect(audience(AUDIENCES.host).map((op) => op.operationId)).toEqual(["heartbeat", "getSessionContext"]);
+    expect(audience(AUDIENCES.host).map((op) => op.operationId)).toEqual(["SendHeartbeat", "GetSessionContext"]);
   });
 
   it("lets a client read without changing anything, and act without reporting state", () => {
@@ -104,9 +104,15 @@ describe("the reference", async () => {
   const ops = await operations();
   const all = await schemas();
 
+  it("names every operation as AWS names theirs: a verb, then what it acts on, in PascalCase", () => {
+    const verbs = ["Get", "List", "Create", "Update", "Delete", "Put", "Send", "Stop", "Resume", "Retire", "Withdraw"];
+    const named = new RegExp(`^(${verbs.join("|")})(?:[A-Z][a-z]+)+$`);
+    expect(ops.map((op) => op.operationId).filter((id) => !named.test(id))).toEqual([]);
+  });
+
   it("names every read with get or list", () => {
     const reads = ops.filter((op) => op.tags.includes(AUDIENCES.reading));
-    expect(reads.filter((op) => !/^(get|list)[A-Z]/.test(op.operationId))).toEqual([]);
+    expect(reads.filter((op) => !/^(Get|List)[A-Z]/.test(op.operationId))).toEqual([]);
   });
 
   it("calls the health route a health check", () => {
@@ -125,8 +131,8 @@ describe("the reference", async () => {
   it("answers a single read with the resource itself", () => {
     const body = (id: string, status = "200") =>
       JSON.stringify(ops.find((op) => op.operationId === id)!.responses[status]!.content!["application/json"].schema);
-    expect(body("getAgent")).toBe(JSON.stringify({ $ref: "#/components/schemas/Agent" }));
-    expect(body("createAgent", "201")).toBe(JSON.stringify({ $ref: "#/components/schemas/Agent" }));
+    expect(body("GetAgent")).toBe(JSON.stringify({ $ref: "#/components/schemas/Agent" }));
+    expect(body("CreateAgent", "201")).toBe(JSON.stringify({ $ref: "#/components/schemas/Agent" }));
   });
 
   it("describes the socket's messages, both ways", () => {
@@ -174,8 +180,21 @@ describe("the shapes", async () => {
   it("read what only grows from a cursor, never a page number", async () => {
     const ops = await operations();
     expect(ops.filter((op) => op.parameters?.some((p) => /^(page|offset|skip)$/.test(p.name)))).toEqual([]);
-    const op = ops.find((o) => o.operationId === "listTranscript")!;
+    const op = ops.find((o) => o.operationId === "ListTranscriptLines")!;
     expect(op.parameters?.map((p) => p.name)).toContain("after");
     expect(all.Transcript!.required).toContain("next");
+  });
+});
+
+describe("the routes", () => {
+  it("are the contract's, every one, and the contract has no route the API does not serve", async () => {
+    const { AgentServiceApi, fixedToken, OPEN_PATHS } = await import("./api.ts");
+    const { Store } = await import("./store.ts");
+    const api = new AgentServiceApi(Store.open(":memory:"), fixedToken("t"));
+    const served = api.hono.routes
+      .filter((r) => r.method !== "ALL" && !OPEN_PATHS.includes(r.path) && r.path !== "/mcp")
+      .map((r) => `${r.method} ${r.path.replace(/:(\w+)/g, "{$1}")}`);
+    const contract = (await operations()).filter((op) => !OPEN_PATHS.includes(op.path)).map((op) => `${op.method.toUpperCase()} ${op.path}`);
+    expect([...new Set(served)].sort()).toEqual(contract.sort());
   });
 });

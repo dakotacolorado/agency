@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NO_TOKEN, SPEC_PATH, AgentServiceApi } from "./api.ts";
+import { renderApiReference, type Document } from "./api-doc.ts";
+import { mcpDocument, renderMcp, renderMcpHtml } from "./mcp-doc.ts";
 import { REFERENCE_PATH, renderReference } from "./skill.ts";
 import { Store } from "./store.ts";
 
@@ -30,14 +32,17 @@ export async function generatedFiles(): Promise<Record<string, string>> {
   try {
     writeFileSync(join(dir, "openapi.json"), spec);
     const bin = (name: string) => repoFile(`node_modules/.bin/${name}`);
-    execFileSync(bin("openapi-to-md"), ["openapi.json", "API.md"], { cwd: dir, stdio: "pipe" });
     execFileSync(bin("redocly"), ["build-docs", "openapi.json", "-o", "index.html"], {
       cwd: dir,
       stdio: "pipe",
     });
+    const mcp = await mcpDocument();
     return {
       "openapi.json": spec,
-      "docs/API.md": readFileSync(join(dir, "API.md"), "utf8"),
+      "docs/API.md": renderApiReference(doc as Document),
+      "mcp.json": `${JSON.stringify(mcp, null, 2)}\n`,
+      "docs/MCP.md": renderMcp(mcp),
+      "docs/mcp.html": renderMcpHtml(mcp),
       "docs/index.html": readFileSync(join(dir, "index.html"), "utf8"),
       [REFERENCE_PATH]: renderReference(doc as Parameters<typeof renderReference>[0]),
     };

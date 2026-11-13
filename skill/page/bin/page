@@ -5,7 +5,7 @@
 #   page waiting 'Which schema should the status field use?' 'Asks: status schema'
 #   page review 'PR #41 is submitted to approval-service; ticket in review' 'In review: PR #41'
 #
-# STATUS is one setAgentStatus takes (reference/api.md); the service refuses any other.
+# STATUS is one PutAgentStatus takes (reference/api.md); the service refuses any other.
 #
 # Prints the agent as agent-service now has it. Exits 1 on an HTTP error.
 #

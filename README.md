@@ -7,8 +7,16 @@ hosts and the page. A **session** is one run of an agent; one that dies leaves
 its agent `interrupted`, and it can be resumed.
 
 One Node 24 process serves it over HTTP, with its data in one SQLite file.
-The contract is [`openapi.json`](./openapi.json), rendered in
-[`docs/API.md`](./docs/API.md). Generate a client rather than writing types:
+The contract is [`openapi.json`](./openapi.json), its operations named as
+AWS names theirs (`ListAgents`, `CreateRequest`, `PutAgentStatus`), rendered in
+[`docs/API.md`](./docs/API.md) in the layout of an AWS API reference and served
+at `/docs/api`. An MCP server at `/mcp` (streamable HTTP, stateless, under the
+same token) mirrors every operation an agent or person uses as a snake_case
+tool (`list_agents`, `create_request`, `put_agent_status`), each one API request
+made with the caller's token; its contract is [`mcp.json`](./mcp.json),
+rendered in [`docs/MCP.md`](./docs/MCP.md) and served at `/docs/mcp`. `npm run
+spec` writes them all, and a test fails if one drifts or a route and the
+contract disagree. Generate a client rather than writing types:
 `npx openapi-typescript openapi.json -o agents.d.ts`.
 
 ## Running it
@@ -140,19 +148,19 @@ An agent is made, by a person or a program, with what its job needs:
   (`agent-service`, and each the services file names; without any, all of
   them). Only names are kept. The queued `start` holds the addresses; each
   token is read from the service's environment as the `start` is pushed to its host's
-  socket, as `secrets`, so no token is stored, listed by `listAgentCommands`
+  socket, as `secrets`, so no token is stored, listed by `ListCommands`
   or replayed stale, and a rotated secret reaches the next start. The host
   writes them to a file in the agent's folder only it can read, and the
   session's environment is set from that file. A caller may give a name its
   own token (`{name, token}`), in place of the shared one for this agent
   alone: it is kept in a table of its own, never read back, and deleted when
-  the agent is retired. A request for an agent in a role (`createRequest`)
+  the agent is retired. A request for an agent in a role (`CreateRequest`)
   may give such tokens as `tokens` instead, keeping its role's services: each
   must be for one of them.
 - **label**, **whenDone**, and **createdBy**, the `claimed-by` header it was
-  made with, by which `listAgents` filters.
+  made with, by which `ListAgents` filters.
 - **item**: the work-tracker item it was started on, kept for its life.
-  `listAgents?item=<id>` lists every agent started on it, retired ones
+  `ListAgents?item=<id>` lists every agent started on it, retired ones
   included, so what they used is still there once they have gone.
 - **role**: what kind of agent it is (`GET /roles`). A role names the
   documents, credentials, `whenDone`, label, brief and priority of the agents
@@ -164,7 +172,7 @@ An agent is made, by a person or a program, with what its job needs:
   `src/roles.ts`, as their callers made them before; a role written with
   `POST /roles` or `PATCH /roles/<name>` is kept in the table and
   replaces its seed. Writing one takes the admin token (`ADMIN_TOKEN`), a
-  person's, which does all the stage's token does too. The agent keeps its role's name, and `listAgents?role=`
+  person's, which does all the stage's token does too. The agent keeps its role's name, and `ListAgents?role=`
   filters by it.
 
 ## Instructions, from honed
@@ -186,7 +194,7 @@ or `subject`, and no host or name. The request is `waiting` until it is
 admitted: both usage windows under 90% from a reading under 15 minutes old, or
 one whose window has since reset, and a connected host carrying its `labels`
 with a free slot. Of those waiting, the highest role `priority` starts first,
-then the oldest. Admitted, it is made as `createAgent` with its role would
+then the oldest. Admitted, it is made as `CreateAgent` with its role would
 make it, its id the request's and its name `<role>-<first 8 of its id>`, on
 the host with the most room, and the request is `started` with its
 `agentId`. A request is claimed (on its `rev`) before its agent is made, so

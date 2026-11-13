@@ -15,7 +15,7 @@ export const SKILL_DIR = fileURLToPath(new URL("../skill", import.meta.url));
 /** Repo-relative, as `generatedFiles` keys it. */
 export const REFERENCE_PATH = "skill/page/reference/api.md";
 /** What `page` and `title` call; the rest of the API is for people and programs. */
-export const REFERENCE_OPERATIONS = ["getAgent", "setAgentStatus", "setAgentTitle"];
+export const REFERENCE_OPERATIONS = ["GetAgent", "PutAgentStatus", "PutAgentTitle"];
 
 export interface SkillFile {
   path: string;

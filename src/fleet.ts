@@ -348,7 +348,7 @@ export class Fleet {
 
 const NEVER_TAKEN = "Its session ended before it took the message.";
 
-/** A command as it is served, on `listAgentCommands` and to viewers. */
+/** A command as it is served, on `ListCommands` and to viewers. */
 export const sentView = (sent: Sent, now: Date) => ({
   command: sent.command,
   queuedAt: sent.queuedAt,
