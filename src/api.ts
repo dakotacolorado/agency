@@ -611,6 +611,8 @@ export class AgentServiceApi {
 
     // Hono throws HTTPException for a malformed body before any handler runs;
     // collapsing this to 500 would report a bad request as our failure.
+    app.notFound((c) => c.json(failure(404, `No operation is at ${c.req.method} ${c.req.path}.`), 404));
+
     app.onError((err, c) => {
       if (err instanceof HTTPException) {
         const status = (err.status in ERROR_CODES ? err.status : 400) as ErrorStatus;
