@@ -92,8 +92,6 @@ const all = <T>(rows: Row[], column = "record"): T[] => rows.map((row) => JSON.p
  * transaction, so none interleaves with another; the methods stay async, as
  * the code above them awaits between a read and the write made from it, and a
  * guarded write refuses one whose agent changed meanwhile.
- *
- * Sockets do not outlive the process, so connections are emptied on open.
  */
 export class Store {
   readonly db: DatabaseSync;
@@ -102,7 +100,6 @@ export class Store {
     this.db = db;
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     db.exec(SCHEMA);
-    db.exec("DELETE FROM connections");
   }
 
   /** The database at `path`, made if absent; `:memory:` for one that lasts as long as the process. */
@@ -232,6 +229,11 @@ export class Store {
       this.db.prepare("SELECT line FROM transcript WHERE agent_id = ? AND seq > ? ORDER BY seq LIMIT ?").all(agentId, afterSeq, limit),
       "line",
     );
+  }
+
+  /** Every socket on record, for the process that serves to call as it starts: no socket outlives the one that held it. */
+  forgetConnections(): void {
+    this.db.exec("DELETE FROM connections");
   }
 
   async putConnection(connection: Connection): Promise<void> {
