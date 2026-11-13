@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { NO_TOKEN, SPEC_PATH, AgentServiceApi } from "./api.ts";
+import { NO_TOKEN, SPEC_PATH, AgencyApi } from "./api.ts";
 import { renderApiReference, type Document } from "./api-doc.ts";
 import { mcpDocument, renderMcp, renderMcpHtml } from "./mcp-doc.ts";
 import { REFERENCE_PATH, renderReference } from "./skill.ts";
@@ -17,7 +17,7 @@ export const repoFile = (path: string) => fileURLToPath(new URL(`../${path}`, im
 
 /** Fetched through the app, so the file cannot differ from what is served. */
 export async function openApiDocument(): Promise<unknown> {
-  const api = new AgentServiceApi(Store.open(":memory:"), NO_TOKEN);
+  const api = new AgencyApi(Store.open(":memory:"), NO_TOKEN);
   return (await api.fetch(new Request(`http://local${SPEC_PATH}`))).json();
 }
 
@@ -28,7 +28,7 @@ export async function openApiDocument(): Promise<unknown> {
 export async function generatedFiles(): Promise<Record<string, string>> {
   const doc = await openApiDocument();
   const spec = `${JSON.stringify(doc, null, 2)}\n`;
-  const dir = mkdtempSync(join(tmpdir(), "agent-service-spec-"));
+  const dir = mkdtempSync(join(tmpdir(), "agency-spec-"));
   try {
     writeFileSync(join(dir, "openapi.json"), spec);
     const bin = (name: string) => repoFile(`node_modules/.bin/${name}`);

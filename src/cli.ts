@@ -1,31 +1,36 @@
 #!/usr/bin/env node
 import { serve } from "@hono/node-server";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import type { Server } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { banner, SUMMARY, TAGLINE, WORDMARK } from "./banner.ts";
 import { PACKAGE_VERSION } from "./build.ts";
+import { SELF } from "./credentials.ts";
 import { start, type Running } from "./server.ts";
 import { readServices, type Services } from "./services.ts";
 import { Store } from "./store.ts";
 
-const USAGE = `agent-service v${PACKAGE_VERSION}: agents, their sessions and the hosts they run on, over HTTP, on SQLite.
+const USAGE = `${WORDMARK}
+
+agency v${PACKAGE_VERSION}: ${TAGLINE}
+${SUMMARY}
 
 Usage:
-  agent-service [serve] [options]   run the server
-  agent-service backup <file>       copy the database, consistent while the server runs, to <file>
+  agency [serve] [options]   run the server
+  agency backup <file>       copy the database, consistent while the server runs, to <file>
 
 Options:
-  --host <addr>       address to listen on (default 127.0.0.1, or AGENT_SERVICE_HOST)
-  --port <n>          port (default 4600, or AGENT_SERVICE_PORT)
-  --db <path>         the SQLite file (default ~/.local/share/agent-service/agent-service.db, or AGENT_SERVICE_DB)
+  --host <addr>       address to listen on (default 127.0.0.1, or AGENCY_HOST)
+  --port <n>          port (default 4600, or AGENCY_PORT)
+  --db <path>         the SQLite file (default ~/.local/share/agency/agency.db, or AGENCY_DB)
   --public-url <url>  this service's address as agents and hosts reach it, such as its Tailscale
-                      HTTPS one (or AGENT_SERVICE_URL); without it, the address each request came to
+                      HTTPS one (or AGENCY_URL); without it, the address each request came to
   --pick-up <role>    for each ready, unassigned task of the waypoint the services name, ask for an
-                      agent in <role> and assign the task to it (or AGENT_SERVICE_PICK_UP); without it,
+                      agent in <role> and assign the task to it (or AGENCY_PICK_UP); without it,
                       no task is taken
-  --services <file>   the other services a session may be given, as JSON (or AGENT_SERVICE_SERVICES):
+  --services <file>   the other services a session may be given, as JSON (or AGENCY_SERVICES):
                       {"<name>": {"url", "urlVar", "tokenVar", "tokenEnv"}}, each token read from
                       this process's variable tokenEnv
   -h, --help          this
@@ -34,6 +39,8 @@ Environment:
   AUTH_TOKEN      the bearer token every caller and host presents
 
 Without AUTH_TOKEN, every call but /health and /openapi.json answers 503.
+agency was called agent-service: each AGENT_SERVICE_<NAME> is still read when AGENCY_<NAME> is not set,
+and without --db or AGENCY_DB an existing ~/.local/share/agent-service/agent-service.db is used.
 `;
 
 const { values, positionals } = parseArgs({
@@ -50,7 +57,7 @@ const { values, positionals } = parseArgs({
 });
 
 const fail = (message: string): never => {
-  process.stderr.write(`agent-service: ${message}\n`);
+  process.stderr.write(`agency: ${message}\n`);
   process.exit(1);
 };
 
@@ -60,7 +67,15 @@ if (values.help) {
 }
 
 const env = process.env;
-const db = values.db ?? env.AGENT_SERVICE_DB ?? join(homedir(), ".local", "share", "agent-service", "agent-service.db");
+/** AGENCY_<name>, or AGENT_SERVICE_<name>, its name before agency was renamed. */
+const setting = (name: string): string | undefined => env[`AGENCY_${name}`] ?? env[`AGENT_SERVICE_${name}`];
+/** The default file, unless only the one agent-service kept is there. */
+const defaultDb = (): string => {
+  const share = join(homedir(), ".local", "share");
+  const now = join(share, "agency", "agency.db"), before = join(share, "agent-service", "agent-service.db");
+  return !existsSync(now) && existsSync(before) ? before : now;
+};
+const db = values.db ?? setting("DB") ?? defaultDb();
 const path = db === ":memory:" ? db : resolve(db);
 if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
 const [command = "serve", file] = positionals;
@@ -80,11 +95,11 @@ if (command === "backup") {
 
 if (command !== "serve") fail(`unknown command "${command}"\n\n${USAGE}`);
 
-const host = values.host ?? env.AGENT_SERVICE_HOST ?? "127.0.0.1";
-const port = Number(values.port ?? env.AGENT_SERVICE_PORT ?? 4600);
-if (!Number.isInteger(port) || port < 0 || port > 65535) fail(`--port must be a port number, not ${values.port ?? env.AGENT_SERVICE_PORT}`);
+const host = values.host ?? setting("HOST") ?? "127.0.0.1";
+const port = Number(values.port ?? setting("PORT") ?? 4600);
+if (!Number.isInteger(port) || port < 0 || port > 65535) fail(`--port must be a port number, not ${values.port ?? setting("PORT")}`);
 
-const servicesFile = values.services ?? env.AGENT_SERVICE_SERVICES;
+const servicesFile = values.services ?? setting("SERVICES");
 let services: Services = {};
 if (servicesFile) {
   try {
@@ -94,8 +109,8 @@ if (servicesFile) {
   }
 }
 
-const publicUrl = values["public-url"] ?? env.AGENT_SERVICE_URL ?? null;
-const pickUp = values["pick-up"] ?? (env.AGENT_SERVICE_PICK_UP || null);
+const publicUrl = values["public-url"] ?? setting("URL") ?? null;
+const pickUp = values["pick-up"] ?? (setting("PICK_UP") || null);
 const starting = (): Running => {
   try {
     return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, pickUp });
@@ -105,13 +120,11 @@ const starting = (): Running => {
 };
 const running = starting();
 const server = serve({ fetch: running.api.fetch, hostname: host, port }, (info) => {
-  const missing = [!env.AUTH_TOKEN && "AUTH_TOKEN"].filter(Boolean);
+  const missing = env.AUTH_TOKEN ? [] : ["AUTH_TOKEN"];
+  const local = `http://${host.includes(":") ? `[${host}]` : host}:${info.port}`;
+  const color = Boolean(process.stdout.isTTY) && !env.NO_COLOR;
   process.stdout.write(
-    `agent-service v${PACKAGE_VERSION} on http://${host.includes(":") ? `[${host}]` : host}:${info.port}, data in ${path}` +
-      `, services: ${Object.keys(services).join(", ") || "none"}` +
-      (pickUp ? `, picking up waypoint's ready tasks as ${pickUp}` : "") +
-      (missing.length ? ` (${missing.join(" and ")} not set)` : "") +
-      "\n",
+    banner({ version: PACKAGE_VERSION, url: local, publicUrl: (publicUrl ?? local).replace(/\/$/, ""), db: path, services: [SELF, ...Object.keys(services)], pickUp, missing, color }),
   );
 });
 

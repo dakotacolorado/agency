@@ -28,7 +28,8 @@ import { hash, same, ticket } from "./secret.ts";
 import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView } from "./fleet.ts";
 import { NO_SOCKET, Push, type Poster } from "./push.ts";
 import { NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
-import { Credentials, selfCredential, type Credential } from "./credentials.ts";
+import { MARK_ICON, TAGLINE } from "./banner.ts";
+import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { ownSkill, type Skill } from "./skill.ts";
 import { readFileSync } from "node:fs";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -42,12 +43,12 @@ export const SPEC_PATH = "/openapi.json";
 export const API_VERSION = "2026-11-12";
 
 /** The API's overview, at the top of its reference. Markdown. */
-export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
+export const OVERVIEW = `agency: ${TAGLINE} People, their Claude Code and agents themselves use this API to start agents on your computers, talk to them and follow what they do. It runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role \`priority\` first, then the oldest.
 - **Talk to it** with \`SendMessage\`, which starts a session carrying on its conversation when none is live; \`DeleteAgent\` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
 - **Follow it**: its \`status\` is \`working\`, \`idle\`, \`waiting\` (on the person), \`review\` or \`done\`, which it says of itself with \`PutAgentStatus\`; \`ListTranscriptLines\` reads what it said, after a cursor.
-- **Hosts** run agent-host, which keeps a WebSocket open at \`/socket\`: heartbeats and reports go up it, commands come down it (\`SocketInbound\`, \`SocketOutbound\`). You don't call it. A page watches live with a ticket from \`CreateSocketTicket\`.
+- **Hosts** run agency-host, which keeps a WebSocket open at \`/socket\`: heartbeats and reports go up it, commands come down it (\`SocketInbound\`, \`SocketOutbound\`). You don't call it. A page watches live with a ticket from \`CreateSocketTicket\`.
 
 **Auth:** \`Authorization: Bearer <token>\` with the stage's token, on everything but \`GetHealth\`, the page and the docs.
 
@@ -59,7 +60,7 @@ export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts
 export const failure = (status: ErrorStatus, message: string) => ({ code: ERROR_CODES[status], message });
 
 /** What answers without a token: whether it is up, what it serves, and the page, which asks for one itself. */
-export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp", "/", "/ui/app.js", "/ui/style.css"];
+export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp", "/", "/ui/app.js", "/ui/style.css", "/ui/mark.svg"];
 
 export interface TokenSource {
   value(): Promise<string | null>;
@@ -91,7 +92,7 @@ export interface ApiOptions {
   credentials?: Record<string, Credential>;
 }
 
-export class AgentServiceApi {
+export class AgencyApi {
   readonly hono: OpenAPIHono;
 
   private readonly store: Store;
@@ -121,7 +122,7 @@ export class AgentServiceApi {
       store,
       new Push(store, options.poster ?? NO_SOCKET),
       this.now,
-      new Credentials(options.credentials ?? { "agent-service": selfCredential(token) }),
+      new Credentials(options.credentials ?? { [SELF]: selfCredential(token) }),
     );
     this.hono = new OpenAPIHono({
       defaultHook: (result, c) =>
@@ -171,6 +172,7 @@ export class AgentServiceApi {
     this.hono.get("/", serve(once(() => file("ui/index.html")), "text/html"));
     this.hono.get("/ui/app.js", serve(once(() => file("ui/app.js")), "text/javascript"));
     this.hono.get("/ui/style.css", serve(once(() => file("ui/style.css")), "text/css"));
+    this.hono.get("/ui/mark.svg", (c) => c.body(MARK_ICON, 200, { "content-type": "image/svg+xml; charset=utf-8" }));
     this.hono.get("/docs/api", serve(once(() => file("docs/index.html")), "text/html"));
     this.hono.get("/mcp.json", serve(once(() => file("mcp.json")), "application/json"));
     // The docs' example address is a local one; served, they give this deployment's own.
@@ -735,7 +737,7 @@ export class AgentServiceApi {
     registry.register("SocketOutbound", routes.SocketOutboundSchema);
     this.hono.doc31(SPEC_PATH, {
       openapi: "3.1.0",
-      info: { version: API_VERSION, title: "agent-service", description: OVERVIEW },
+      info: { version: API_VERSION, title: "agency", description: OVERVIEW },
       tags: [
         { name: routes.TAGS.agents, description: "Make agents, talk to them, and follow what they do." },
         { name: routes.TAGS.requests, description: "Ask for an agent in a role, started when usage and a host allow." },

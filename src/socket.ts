@@ -1,7 +1,7 @@
 import type { TokenSource } from "./api.ts";
 import { withdrawn } from "./domain.ts";
 import { hash, same } from "./secret.ts";
-import { Credentials, selfCredential, type Credential } from "./credentials.ts";
+import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { Fleet } from "./fleet.ts";
 import { Push, type Poster } from "./push.ts";
 import { SocketInboundSchema, type Heartbeat, type SocketInbound } from "./schema.ts";
@@ -44,7 +44,7 @@ export class SocketHandler {
     token: TokenSource,
     poster: Poster,
     now: () => Date = () => new Date(),
-    credentials: Record<string, Credential> = { "agent-service": selfCredential(token) },
+    credentials: Record<string, Credential> = { [SELF]: selfCredential(token) },
     onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void> = async () => {},
   ) {
     this.onHeartbeat = onHeartbeat;

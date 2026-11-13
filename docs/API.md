@@ -1,13 +1,13 @@
-# agent-service API reference
+# agency API reference
 
 API version 2026-11-12
 
-Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
+agency: Agents at your command, across all your computers. People, their Claude Code and agents themselves use this API to start agents on your computers, talk to them and follow what they do. It runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.
 - **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
-- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.
+- **Hosts** run agency-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.
 
 **Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.
 
@@ -159,7 +159,7 @@ Absent, the role's, or without one `keep`.
 Type: String. Valid values: `keep` | `stop` | `delete`. Required: No.
 
 **credentials**  
-The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
+The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
 Type: Array of strings. At most 16 items. Required: No.
 
 **skills**  
@@ -2753,7 +2753,7 @@ Which message this is.
 Type: String. Valid values: `heartbeat`. Required: Yes.
 
 **version**  
-The agent-host build that sent the heartbeat.  
+The agency-host build that sent the heartbeat.  
 Type: String. Length: 0 to 64. Required: Yes.
 
 **labels**  
@@ -2777,7 +2777,7 @@ When its last heartbeat came.
 Type: String. Required: Yes.
 
 **version**  
-The agent-host build of its last heartbeat.  
+The agency-host build of its last heartbeat.  
 Type: String. Nullable: Yes. Required: Yes.
 
 **status**  
@@ -2958,7 +2958,7 @@ Absent, the role's, or without one `keep`.
 Type: String. Valid values: `keep` | `stop` | `delete`. Required: No.
 
 **credentials**  
-The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
+The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
 Type: Array of strings. At most 16 items. Required: No.
 
 **skills**  
@@ -3224,7 +3224,7 @@ The session's first message, when it has one.
 Type: String. Length: 1 to 16384. Required: No.
 
 **context**  
-agent-service's own clients, `page` and `title`, as files to write into the agent's Claude Code folder before it starts, under `skills/`, replacing the last start's.  
+agency's own clients, `page` and `title`, as files to write into the agent's Claude Code folder before it starts, under `skills/`, replacing the last start's.  
 Type: Object. Required: No.
 
 **documents**  

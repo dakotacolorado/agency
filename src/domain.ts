@@ -299,7 +299,7 @@ export interface Session {
   ended: SessionEnding | null;
   /** The honed skills it was given, by name and version. */
   skills: { name: string; version: number }[];
-  /** The build of agent-service whose `page` and `title` it was given; null for none. */
+  /** The build of agency whose `page` and `title` it was given; null for none. */
   clients: { version: number; commit: string } | null;
   /** Why a skill was left out, or given from honed's last good copy. */
   contextNote: string | null;

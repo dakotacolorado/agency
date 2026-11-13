@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { buildOf } from "./build.ts";
 
 /** This service's skills, `page` and `title`, served as one. */
-export const SKILL_KEY = "agent-service";
+export const SKILL_KEY = "agency";
 
 /**
  * The clients an agent calls this service with, as written into its

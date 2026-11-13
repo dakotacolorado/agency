@@ -9,7 +9,7 @@ export const PICK_UP_SECONDS = 30;
 export const PER_TICK = 5;
 
 /** Who asks for each agent, as its request and its waypoint task record it. */
-export const PICKER = "agent-service";
+export const PICKER = "agency";
 
 export interface Waypoint {
   url: string;

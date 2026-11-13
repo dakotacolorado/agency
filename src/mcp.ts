@@ -2,8 +2,9 @@ import { getOpenApiMetadata } from "@asteasolutions/zod-to-openapi";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "@hono/zod-openapi";
 import * as routes from "./schema.ts";
+import { TAGLINE } from "./banner.ts";
 
-export const INSTRUCTIONS = `agent-service runs agents: lasting Claude Code agents, each living on one host and run in sessions.
+export const INSTRUCTIONS = `agency: ${TAGLINE} It runs lasting Claude Code agents, each living on one host and run in sessions.
 
 - An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.
 - A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).
@@ -87,7 +88,7 @@ export function requestOf(route: Route, input: Record<string, unknown>): { metho
  * would be; an API error is the tool's error, in the API's words.
  */
 export function mcpServer(version: string, call: Call, claimedBy?: string): McpServer {
-  const server = new McpServer({ name: "agent-service", version }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "agency", version }, { instructions: INSTRUCTIONS });
   for (const route of OPERATIONS) {
     if (NOT_TOOLS.includes(route.operationId)) continue;
     const method = route.method.toLowerCase();

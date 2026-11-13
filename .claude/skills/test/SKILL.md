@@ -1,9 +1,9 @@
 ---
 name: test
-description: How to run agent-service's checks. Use before submitting a change to agent-service, and when reviewing one.
+description: How to run agency's checks. Use before submitting a change to agency, and when reviewing one.
 ---
 
-# Testing agent-service
+# Testing agency
 
 ## The checks
 
@@ -13,18 +13,18 @@ and the session's `*_URL`/`*_TOKEN` pairs unset so nothing reaches a deployed
 service:
 
 ```sh
-env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN npm ci
-env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN npm run typecheck
-env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN npm test
-env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN npm run build
+env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN -u AGENCY_URL -u AGENCY_TOKEN npm ci
+env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN -u AGENCY_URL -u AGENCY_TOKEN npm run typecheck
+env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN -u AGENCY_URL -u AGENCY_TOKEN npm test
+env -u DS_URL -u DS_TOKEN -u WT_URL -u WT_TOKEN -u WS_URL -u WS_TOKEN -u AS_URL -u AS_TOKEN -u JS_URL -u JS_TOKEN -u AG_URL -u AG_TOKEN -u AGENCY_URL -u AGENCY_TOKEN npm run build
 ```
 
 Run each on its own and read its exit status (`echo $?`). Never pipe one into
 `tail` or `head`: the pipe reports their status, so a failure reads as a pass.
 
 `npm test` needs no network and no service. It skips `src/integration.spec.ts`
-(6 tests), which needs a running instance: point `INTEGRATION_AG_URL` and
-`INTEGRATION_AG_TOKEN` at one you started yourself (`npm run dev`, on a port no
+(6 tests), which needs a running instance: point `INTEGRATION_AGENCY_URL` and
+`INTEGRATION_AGENCY_TOKEN` at one you started yourself (`npm run dev`, on a port no
 one holds), never at prod, to run it.
 
 Installing points git at `.githooks/`, whose pre-commit runs `npm run spec`.

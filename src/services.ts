@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { fixedToken, type TokenSource } from "./api.ts";
-import { selfCredential, type Credential } from "./credentials.ts";
+import { SELF, selfCredential, type Credential } from "./credentials.ts";
 
 const ServiceSchema = z.strictObject({
   url: z.url(),
@@ -24,7 +24,7 @@ export type Services = z.infer<typeof ServicesSchema>;
  * in the repo of the host it describes.
  */
 export function credentialsOf(services: Services, token: TokenSource, env: NodeJS.ProcessEnv = process.env): Record<string, Credential> {
-  const known: Record<string, Credential> = { "agent-service": selfCredential(token) };
+  const known: Record<string, Credential> = { [SELF]: selfCredential(token) };
   for (const [name, { url, urlVar, tokenVar, tokenEnv, mcp }] of Object.entries(services)) {
     known[name] = { url: url.replace(/\/$/, ""), urlVar, tokenVar, token: fixedToken(env[tokenEnv]), mcp: mcp ?? null };
   }

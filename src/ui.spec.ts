@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { AgentServiceApi } from "./api.ts";
+import { AgencyApi } from "./api.ts";
 import { FakeStore } from "./fake-store.ts";
+import { MARK_ICON, MARK_SVG, TAGLINE } from "./banner.ts";
 
-const TOKEN = "agent-service-secret";
+const TOKEN = "agency-secret";
 const file = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 describe("the page", () => {
-  const api = new AgentServiceApi(new FakeStore(), { value: async () => TOKEN });
+  const api = new AgencyApi(new FakeStore(), { value: async () => TOKEN });
 
   it.each([
     ["/", "ui/index.html", "text/html"],
@@ -20,6 +21,20 @@ describe("the page", () => {
     const body = await res.text();
     expect(body).toBe(file(source));
     expect(body).not.toContain(TOKEN);
+  });
+
+  it("serves banner.ts's mark as the favicon, without a token", async () => {
+    const res = await api.fetch(new Request("http://local/ui/mark.svg"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/svg+xml");
+    expect(await res.text()).toBe(MARK_ICON);
+    expect(file("ui/index.html")).toContain('<link rel="icon" type="image/svg+xml" href="./ui/mark.svg">');
+  });
+
+  it("heads the page with banner.ts's mark, name and tagline", () => {
+    expect(file("ui/index.html")).toContain(`<a class="brand" href="#/">${MARK_SVG}agency</a>`);
+    expect(file("ui/index.html")).toContain("<title>agency</title>");
+    expect(file("ui/app.js")).toContain(JSON.stringify(TAGLINE));
   });
 
   it("makes every element from text, so nothing an agent or its transcript says is run as HTML", () => {

@@ -200,9 +200,9 @@ describe("the shapes", async () => {
 
 describe("the routes", () => {
   it("are the contract's, every one, and the contract has no route the API does not serve", async () => {
-    const { AgentServiceApi, fixedToken, OPEN_PATHS } = await import("./api.ts");
+    const { AgencyApi, fixedToken, OPEN_PATHS } = await import("./api.ts");
     const { Store } = await import("./store.ts");
-    const api = new AgentServiceApi(Store.open(":memory:"), fixedToken("t"));
+    const api = new AgencyApi(Store.open(":memory:"), fixedToken("t"));
     const served = api.hono.routes
       .filter((r) => r.method !== "ALL" && !OPEN_PATHS.includes(r.path) && r.path !== "/mcp")
       .map((r) => `${r.method} ${r.path.replace(/:(\w+)/g, "{$1}")}`);

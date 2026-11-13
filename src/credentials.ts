@@ -10,6 +10,8 @@ export interface Credential {
   token: TokenSource;
   /** Where on its address it serves MCP; null or absent for none. */
   mcp?: string | null;
+  /** Older names of `urlVar` and `tokenVar`, set beside them so a session still reading those keeps working. */
+  legacyVars?: { urlVar: string; tokenVar: string };
 }
 
 /** One MCP server as Claude Code's `mcpServers` takes it. */
@@ -32,6 +34,11 @@ export class Credentials {
     this.#known = new Map(Object.entries(known));
   }
 
+  /** `name`'s credential, by its name or a former one (ALIASES). */
+  #get(name: string): Credential | undefined {
+    return this.#known.get(name) ?? (ALIASES[name] ? this.#known.get(ALIASES[name]) : undefined);
+  }
+
   get names(): string[] {
     return [...this.#known.keys()];
   }
@@ -43,7 +50,7 @@ export class Credentials {
 
   /** Why an agent may not be given `names`; null when it may. */
   refuse(names: string[]): string | null {
-    const unknown = names.filter((name) => !this.#known.has(name));
+    const unknown = names.filter((name) => !this.#get(name));
     if (!unknown.length) return null;
     const known = this.names;
     return `No credential is named ${unknown.join(", ")}; this stage has ${known.length ? known.join(", ") : "none"}.`;
@@ -53,8 +60,10 @@ export class Credentials {
   addresses(names: string[], self: string): Record<string, string> {
     return Object.fromEntries(
       names.flatMap((name) => {
-        const known = this.#known.get(name);
-        return known ? [[known.urlVar, known.url ?? self]] : [];
+        const known = this.#get(name);
+        if (!known) return [];
+        const url = known.url ?? self;
+        return [[known.urlVar, url], ...(known.legacyVars ? [[known.legacyVars.urlVar, url]] : [])];
       }),
     );
   }
@@ -66,7 +75,7 @@ export class Credentials {
   mcpServers(names: string[]): Record<string, McpServer> {
     return Object.fromEntries(
       names.flatMap((name) => {
-        const known = this.#known.get(name);
+        const known = this.#get(name);
         if (!known?.mcp) return [];
         const server: McpServer = { type: "http", url: `\${${known.urlVar}}${known.mcp}`, headers: { Authorization: `Bearer \${${known.tokenVar}}` } };
         return [[name, server]];
@@ -80,11 +89,12 @@ export class Credentials {
   async secrets(names: string[]): Promise<Record<string, string>> {
     const read = await Promise.all(
       names.map(async (name) => {
-        const known = this.#known.get(name);
+        const known = this.#get(name);
         if (!known) return [];
         try {
           const value = await known.token.value();
-          return value ? [[known.tokenVar, value] as const] : [];
+          if (!value) return [];
+          return [[known.tokenVar, value] as const, ...(known.legacyVars ? [[known.legacyVars.tokenVar, value] as const] : [])];
         } catch (err) {
           console.error(`Could not read the ${name} credential:`, (err as Error).name);
           return [];
@@ -102,5 +112,21 @@ export class Credentials {
   }
 }
 
-/** This service, which every stage has: the address a request came to, and the stage's token. */
-export const selfCredential = (token: TokenSource): Credential => ({ url: null, urlVar: "AG_URL", tokenVar: "AG_TOKEN", token });
+/** This service's name among the credentials a session is given. */
+export const SELF = "agency";
+
+/** Former names of credentials, still accepted: agency was called agent-service. */
+export const ALIASES: Readonly<Record<string, string>> = { "agent-service": SELF };
+
+/**
+ * This service, which every stage has: the address a request came to, and the
+ * stage's token, as AGENCY_URL and AGENCY_TOKEN, and as AG_URL and AG_TOKEN,
+ * their names before agency was renamed, for sessions that still read those.
+ */
+export const selfCredential = (token: TokenSource): Credential => ({
+  url: null,
+  urlVar: "AGENCY_URL",
+  tokenVar: "AGENCY_TOKEN",
+  token,
+  legacyVars: { urlVar: "AG_URL", tokenVar: "AG_TOKEN" },
+});

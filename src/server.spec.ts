@@ -96,7 +96,7 @@ describe("a session started by the served process", () => {
         ],
       },
     ]);
-    expect(begin.context?.key).toBe("agent-service");
+    expect(begin.context?.key).toBe("agency");
     expect(begin.context?.files.map((f) => f.path)).toEqual(expect.arrayContaining(["skills/page/SKILL.md", "skills/page/bin/page", "skills/title/bin/title"]));
     expect(JSON.stringify(begin)).not.toContain("workplace/global");
     expect(begin.env).toMatchObject({ HONED_URL: stubUrl, WAYPOINT_URL: `${stubUrl}/waypoint`, AG_URL: "http://local" });

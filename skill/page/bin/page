@@ -7,25 +7,30 @@
 #
 # STATUS is one PutAgentStatus takes (reference/api.md); the service refuses any other.
 #
-# Prints the agent as agent-service now has it. Exits 1 on an HTTP error.
+# Prints the agent as agency now has it. Exits 1 on an HTTP error.
 #
 # The address and token come from the session's environment, which every
 # session is started with; the token is never printed. The agent is the one
 # whose folder holds CLAUDE_CONFIG_DIR (<agents>/<name>/home/.claude), by the
 # id in its agent.json.
 #
-# Env: AG_URL and AG_TOKEN (set for the session); AG_AGENT_ID overrides the agent.
+# Env: AGENCY_URL and AGENCY_TOKEN (set for the session); AGENCY_AGENT_ID overrides
+# the agent. AG_URL, AG_TOKEN and AG_AGENT_ID, their names before agency was
+# renamed from agent-service, are read when those are not set.
 set -eu
 
 usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -eq 2 ] || [ $# -eq 3 ] || usage
 status=$1 summary=$2 headline=${3-}
 
-url=${AG_URL:?"page: AG_URL is not set: this session was started without agent-service's address"}
-token=${AG_TOKEN:?"page: AG_TOKEN is not set: this session was started without agent-service's token"}
+url=${AGENCY_URL:-${AG_URL:-}}
+token=${AGENCY_TOKEN:-${AG_TOKEN:-}}
+[ -n "$url" ] || { echo "page: AGENCY_URL is not set: this session was started without agency's address" >&2; exit 1; }
+[ -n "$token" ] || { echo "page: AGENCY_TOKEN is not set: this session was started without agency's token" >&2; exit 1; }
 
-if [ -n "${AG_AGENT_ID-}" ]; then
-  id=$AG_AGENT_ID
+agent=${AGENCY_AGENT_ID:-${AG_AGENT_ID:-}}
+if [ -n "$agent" ]; then
+  id=$agent
 else
   config=${CLAUDE_CONFIG_DIR:?"page: CLAUDE_CONFIG_DIR is not set, so which agent this is is unknown"}
   file=$(dirname "$(dirname "$config")")/agent.json

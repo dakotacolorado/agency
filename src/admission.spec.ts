@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AgentServiceApi, type TokenSource } from "./api.ts";
+import { AgencyApi, type TokenSource } from "./api.ts";
 import { FRESH_FOR_MS, inStartOrder, usageRefusal, type AgentRequest } from "./admission.ts";
 import type { Credential } from "./credentials.ts";
 import { FakeStore } from "./fake-store.ts";
@@ -9,7 +9,7 @@ const TOKEN = { value: async () => "secret" } satisfies TokenSource;
 const NOW = new Date("2026-11-07T12:00:00.000Z");
 
 let store: FakeStore;
-let api: AgentServiceApi;
+let api: AgencyApi;
 let now: Date;
 
 const known = (name: string, url: string | null, prefix: string): Credential => ({
@@ -22,14 +22,14 @@ const known = (name: string, url: string | null, prefix: string): Credential => 
 beforeEach(() => {
   store = new FakeStore();
   now = NOW;
-  api = new AgentServiceApi(store, TOKEN, {
+  api = new AgencyApi(store, TOKEN, {
     now: () => now,
     roles: testRoles(),
     context: { forSession: async () => ({ skills: [], note: null }), refuse: async () => null },
     credentials: {
       "document-service": known("document-service", "https://ds", "DS"),
       "work-tracker": known("work-tracker", "https://wt", "WT"),
-      "agent-service": known("agent-service", null, "AG"),
+      agency: known("agency", null, "AG"),
       "approval-service": known("approval-service", "https://as", "AS"),
     },
   });

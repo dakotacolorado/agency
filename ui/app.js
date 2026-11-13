@@ -1,8 +1,12 @@
-// agent-service's page: agents, an agent's transcript, a form to make one, requests, hosts, roles and usage, over the API.
+// agency's page: agents, an agent's transcript, a form to make one, requests, hosts, roles and usage, over the API.
 // Every element is made with `h`, which sets text, never HTML, so nothing an agent or its transcript says is run.
 
-const TOKEN_KEY = "agent-service.token";
-const CLAIMED_BY = "agent-service page";
+const TOKEN_KEY = "agency.token";
+/** Where the token was kept before agency was renamed from agent-service: moved over once, so no one signs in again. */
+const OLD_TOKEN_KEY = "agent-service.token";
+if (!localStorage.getItem(TOKEN_KEY) && localStorage.getItem(OLD_TOKEN_KEY)) localStorage.setItem(TOKEN_KEY, localStorage.getItem(OLD_TOKEN_KEY));
+localStorage.removeItem(OLD_TOKEN_KEY);
+const CLAIMED_BY = "agency page";
 /** How often an agent's page asks for more of its transcript, and lists for changes. */
 const FOLLOW_MS = 2000;
 const REFRESH_MS = 5000;
@@ -45,7 +49,7 @@ async function request(method, path, { body, headers = {} } = {}) {
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     route();
-    throw new ApiError(401, { message: "That is not this agent-service's token." });
+    throw new ApiError(401, { message: "That is not this agency's token." });
   }
   return res;
 }
@@ -137,7 +141,8 @@ function signIn() {
     h(
       "div",
       { class: "signin" },
-      h("h1", {}, "agent-service"),
+      h("h1", {}, "agency"),
+      h("p", { class: "tagline" }, "Agents at your command, across all your computers."),
       h("p", { class: "muted" }, "Agents, their sessions, the requests that start them and the hosts they run on. The API is at ", h("code", {}, `${location.origin}/agents`), ", the MCP server at ", h("code", {}, `${location.origin}/mcp`), "."),
       form,
     ),

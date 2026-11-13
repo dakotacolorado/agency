@@ -1,4 +1,4 @@
-import { AgentServiceApi, fixedToken } from "./api.ts";
+import { AgencyApi, fixedToken } from "./api.ts";
 import { INSTRUCTIONS, LOCAL_URL } from "./mcp.ts";
 import { Store } from "./store.ts";
 
@@ -24,7 +24,7 @@ export interface McpTool {
 
 /** The MCP server's tools, listed through the app as a client would, so the file cannot differ from what is served. */
 export async function mcpDocument(): Promise<{ instructions: string; tools: McpTool[] }> {
-  const api = new AgentServiceApi(Store.open(":memory:"), fixedToken("spec"));
+  const api = new AgencyApi(Store.open(":memory:"), fixedToken("spec"));
   const res = await api.fetch(
     new Request("http://local/mcp", {
       method: "POST",
@@ -59,9 +59,11 @@ function table(schema: JsonSchema, prefix = ""): string[] {
 /** `docs/MCP.md`: the server's instructions, then each tool and its input. */
 export function renderMcp(doc: { instructions: string; tools: McpTool[] }): string {
   const lines = [
-    "# agent-service's MCP server",
+    "# agency's MCP server",
     "",
     "<!-- Generated from src/mcp.ts by `npm run spec`; do not edit. -->",
+    "",
+    "agency runs your agents across your computers. Its MCP server is how an agent, or your own Claude Code, starts agents, talks to them and follows what they do, each tool one call of agency's API.",
     "",
     "Streamable HTTP at `/mcp`, stateless, answering JSON. Every request takes the bearer token, as the API does,",
     "and may send `claimed-by`: each tool is one API operation made with them, so it is refused, recorded and",
@@ -69,7 +71,7 @@ export function renderMcp(doc: { instructions: string; tools: McpTool[] }): stri
     "Each tool is its operation's `operationId` in snake_case, its input the operation's parameters and body.",
     "",
     "```json",
-    JSON.stringify({ mcpServers: { "agent-service": { type: "http", url: `${LOCAL_URL}/mcp`, headers: { Authorization: "Bearer <AUTH_TOKEN>" } } } }, null, 2),
+    JSON.stringify({ mcpServers: { agency: { type: "http", url: `${LOCAL_URL}/mcp`, headers: { Authorization: "Bearer <AUTH_TOKEN>" } } } }, null, 2),
     "```",
     "",
     "## Instructions",
@@ -121,9 +123,9 @@ export function renderMcpHtml(doc: { instructions: string; tools: McpTool[] }): 
     })
     .join("\n");
   const index = doc.tools.map((tool) => `<li><a href="#${esc(tool.name)}"><code>${esc(tool.name)}</code></a> ${esc(tool.title ?? "")}</li>`).join("");
-  const config = esc(JSON.stringify({ mcpServers: { "agent-service": { type: "http", url: `${LOCAL_URL}/mcp`, headers: { Authorization: "Bearer <AUTH_TOKEN>" } } } }, null, 2));
+  const config = esc(JSON.stringify({ mcpServers: { agency: { type: "http", url: `${LOCAL_URL}/mcp`, headers: { Authorization: "Bearer <AUTH_TOKEN>" } } } }, null, 2));
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>agent-service MCP server</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>agency MCP server</title>
 <!-- Generated from src/mcp.ts by \`npm run spec\`; do not edit. -->
 <style>
 body{font:14px/1.5 system-ui,sans-serif;max-width:960px;margin:0 auto;padding:24px;color:#1d1d1b}
@@ -131,7 +133,8 @@ code,pre{font-family:ui-monospace,monospace;font-size:13px}pre,blockquote{backgr
 blockquote{white-space:pre-wrap;margin:0}table{border-collapse:collapse;width:100%;margin:8px 0 20px}td,th{border:1px solid #e3e2dc;padding:4px 8px;text-align:left;vertical-align:top}
 .ro{font-size:11px;border:1px solid #1e7a3a;color:#1e7a3a;border-radius:4px;padding:0 6px;font-weight:normal}section{border-top:1px solid #e3e2dc;padding-top:6px}
 </style></head><body>
-<h1>agent-service's MCP server</h1>
+<h1>agency's MCP server</h1>
+<p>agency runs your agents across your computers. Its MCP server is how an agent, or your own Claude Code, starts agents, talks to them and follows what they do, each tool one call of agency's API.</p>
 <p>Streamable HTTP at <code>/mcp</code>, stateless, answering JSON. Every request takes the bearer token, as the API does, and may send <code>claimed-by</code>: each tool is one API operation made with them, so it is refused, recorded and answered as that request would be. A refusal comes back as the tool's error, with the API's status and words. The contract is <a href="../mcp.json"><code>mcp.json</code></a>; the API's is <a href="./api">here</a>.</p>
 <pre>${config}</pre>
 <h2>Instructions</h2><p>What the server tells an agent when it connects:</p><blockquote>${esc(doc.instructions)}</blockquote>

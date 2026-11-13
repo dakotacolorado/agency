@@ -1,17 +1,17 @@
 {
-  "name": "agent-service",
-  "version": "0.1.0",
+  "name": "@dakotajp/agency",
+  "version": "0.2.0",
   "private": true,
-  "description": "Agents, their sessions, the requests that start them and the hosts they run on, over HTTP, on SQLite.",
+  "description": "Agents at your command, across all your computers: agents, their sessions, the requests that start them and the hosts they run on.",
   "type": "module",
   "bin": {
-    "agent-service": "dist/cli.js"
+    "agency": "dist/cli.js"
   },
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node src/cli.ts --db .agent-service-dev.db",
+    "dev": "node src/cli.ts --db .agency-dev.db",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && node src/build.ts dist/build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

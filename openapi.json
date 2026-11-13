@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "version": "2026-11-12",
-    "title": "agent-service",
-    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
+    "title": "agency",
+    "description": "agency: Agents at your command, across all your computers. People, their Claude Code and agents themselves use this API to start agents on your computers, talk to them and follow what they do. It runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agency-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
   },
   "tags": [
     {
@@ -380,7 +380,7 @@
           "version": {
             "type": "string",
             "maxLength": 64,
-            "description": "The agent-host build that sent the heartbeat."
+            "description": "The agency-host build that sent the heartbeat."
           },
           "labels": {
             "type": "array",
@@ -633,7 +633,7 @@
               "version",
               "files"
             ],
-            "description": "agent-service's own clients, `page` and `title`, as files to write into the agent's Claude Code folder before it starts, under `skills/`, replacing the last start's."
+            "description": "agency's own clients, `page` and `title`, as files to write into the agent's Claude Code folder before it starts, under `skills/`, replacing the last start's."
           },
           "documents": {
             "type": "array",
@@ -693,7 +693,7 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "agent-service"
+              "agency"
             ],
             "description": "The services the session is given, by name, as kept on record. Their tokens are in `secrets`."
           },
@@ -1400,7 +1400,7 @@
               "string",
               "null"
             ],
-            "description": "The agent-host build of its last heartbeat."
+            "description": "The agency-host build of its last heartbeat."
           },
           "status": {
             "type": "string",
@@ -1647,7 +1647,7 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "agent-service"
+              "agency"
             ],
             "description": "The services each session is given, by name; null for every one the stage has."
           },
@@ -1891,7 +1891,7 @@
             "minLength": 1,
             "maxLength": 200,
             "description": "What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.",
-            "example": "dakotacolorado/agent-service#41"
+            "example": "dakotacolorado/agency#41"
           },
           "label": {
             "type": "string",
@@ -1919,7 +1919,7 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "agent-service"
+              "agency"
             ],
             "description": "In place of the role's, as `CreateAgent` takes them."
           }
@@ -2013,9 +2013,9 @@
             "maxItems": 16,
             "example": [
               "work-tracker",
-              "agent-service"
+              "agency"
             ],
-            "description": "The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start."
+            "description": "The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start."
           },
           "skills": {
             "type": "array",

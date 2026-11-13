@@ -47,7 +47,7 @@ let file: string;
 let store: Store;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "agent-service-store-"));
+  dir = mkdtempSync(join(tmpdir(), "agency-store-"));
   file = join(dir, "db.sqlite");
   store = Store.open(file);
 });

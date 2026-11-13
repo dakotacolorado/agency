@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 function temp() {
-  const dir = mkdtempSync(join(tmpdir(), "agent-service-cli-"));
+  const dir = mkdtempSync(join(tmpdir(), "agency-cli-"));
   dirs.push(dir);
   return dir;
 }
@@ -43,7 +43,7 @@ const stopped = (child: ChildProcess) => new Promise((done) => (child.once("exit
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json" });
 
-/** Registers host `laptop` as agent-host would: its first report, then a heartbeat, up its socket. */
+/** Registers host `laptop` as agency-host would: its first report, then a heartbeat, up its socket. */
 async function hostBeat(url: string, token: string) {
   const ws = new WebSocket(`${url.replace("http", "ws")}/socket?hostId=laptop`, { headers: { authorization: `Bearer ${token}` } });
   await new Promise((open, fail) => (ws.once("open", open), ws.once("error", fail)));
@@ -57,7 +57,7 @@ async function hostBeat(url: string, token: string) {
   ws.close();
 }
 
-describe("agent-service serve", () => {
+describe("agency serve", () => {
   it("serves the API on the database it is given, with the token in its environment", async () => {
     const dir = temp();
     const { url } = await serve(join(dir, "db", "as.db"), { AUTH_TOKEN: "a" });
@@ -94,10 +94,10 @@ describe("agent-service serve", () => {
     const file = join(dir, "services.json");
     writeFileSync(file, JSON.stringify({ waypoint: { url: "https://waypoint.example/", urlVar: "WAYPOINT_URL", tokenVar: "WAYPOINT_TOKEN", tokenEnv: "WP_SECRET" } }));
     const { url, out } = await serve(join(dir, "as.db"), { AUTH_TOKEN: "a", WP_SECRET: "w" }, ["--services", file]);
-    expect(out()).toContain("services: waypoint");
+    expect(out()).toContain("sessions may be given: agency, waypoint");
     await hostBeat(url, "a");
     const refused = await fetch(`${url}/agents`, { method: "POST", headers: auth("a"), body: JSON.stringify({ name: "x-1", hostId: "laptop", credentials: ["nothing"] }) });
-    expect(await refused.text()).toContain("this stage has agent-service, waypoint.");
+    expect(await refused.text()).toContain("this stage has agency, waypoint.");
   });
 
   it("refuses a services file that is not one, saying why", () => {
@@ -110,17 +110,17 @@ describe("agent-service serve", () => {
   });
 });
 
-describe("agent-service serve on a port already taken", () => {
+describe("agency serve on a port already taken", () => {
   it("says so and exits 1", async () => {
     const { url } = await serve(join(temp(), "a.db"), {});
     const port = new URL(url).port;
     const done = spawnSync(process.execPath, [CLI, "--port", port, "--db", join(temp(), "b.db")], { env: clean(), encoding: "utf8", timeout: 10_000 });
     expect(done.status).toBe(1);
-    expect(done.stderr).toContain(`agent-service: cannot serve on 127.0.0.1:${port}`);
+    expect(done.stderr).toContain(`agency: cannot serve on 127.0.0.1:${port}`);
   });
 });
 
-describe("agent-service backup", () => {
+describe("agency backup", () => {
   it("copies the database to the file it names", async () => {
     const dir = temp();
     const store = Store.open(join(dir, "as.db"));

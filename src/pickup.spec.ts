@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AgentServiceApi, fixedToken } from "./api.ts";
+import { AgencyApi, fixedToken } from "./api.ts";
 import { FakeStore } from "./fake-store.ts";
 import { PER_TICK, Pickup, PICKER, type Self } from "./pickup.ts";
 import { start } from "./server.ts";
@@ -18,7 +18,7 @@ interface Task {
 }
 
 let store: FakeStore;
-let api: AgentServiceApi;
+let api: AgencyApi;
 let tasks: Task[];
 let up: boolean;
 let refusePatch: boolean;
@@ -73,7 +73,7 @@ const pickup = () => new Pickup({ url: "https://wp", token: { value: async () =>
 
 beforeEach(() => {
   store = new FakeStore();
-  api = new AgentServiceApi(store, fixedToken(TOKEN), { roles: testRoles() });
+  api = new AgencyApi(store, fixedToken(TOKEN), { roles: testRoles() });
   tasks = [];
   up = true;
   refusePatch = false;
@@ -93,7 +93,7 @@ describe("picking up waypoint's ready tasks", () => {
       expect(request).toMatchObject({ role: "implementer", requester: PICKER, subject: `waypoint ${held.shortId}`, label: `task: ${held.title}`, state: "waiting" });
       expect(request.brief).toContain(`waypoint task ${held.shortId}`);
     }
-    expect(seen[0]).toBe("GET /tasks?ready=true&assignee=none&maxResults=20 Bearer wp-token agent-service");
+    expect(seen[0]).toBe("GET /tasks?ready=true&assignee=none&maxResults=20 Bearer wp-token agency");
   });
 
   it("never takes a task with an assignee, or one not ready, and two looks never take one task twice", async () => {

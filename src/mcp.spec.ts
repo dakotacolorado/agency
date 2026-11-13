@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AgentServiceApi, fixedToken } from "./api.ts";
+import { AgencyApi, fixedToken } from "./api.ts";
 import { FakeStore } from "./fake-store.ts";
 import { inputOf, NOT_TOOLS, OPERATIONS, toolName } from "./mcp.ts";
 
 const TOKEN = "t";
 let store: FakeStore;
-let api: AgentServiceApi;
+let api: AgencyApi;
 
 beforeEach(() => {
   store = new FakeStore();
-  api = new AgentServiceApi(store, fixedToken(TOKEN));
+  api = new AgencyApi(store, fixedToken(TOKEN));
 });
 
 /** One JSON-RPC request to `/mcp`, as a streamable-HTTP client sends it. */

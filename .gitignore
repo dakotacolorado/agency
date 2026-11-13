@@ -19,4 +19,5 @@ TRAIN.md
 .fix-log.txt
 .integrator-prompt.md
 .integrator-log.txt
+.agency-dev.db*
 .agent-service-dev.db*
