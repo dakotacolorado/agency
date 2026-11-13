@@ -186,6 +186,19 @@ does not answer, a start is given the last good copy and its session's
 `contextNote` says so; a skill honed says it no longer has is left out. The
 session records the version of each in `context` and `documents`.
 
+## Picking up waypoint's tasks
+
+waypoint has no queue, so agent-service finds work itself when started with
+`--pick-up <role>` (or `AGENT_SERVICE_PICK_UP`, which a host sets in
+`~/.config/agent-service/env`): every 30 seconds it reads the services'
+`waypoint` for `ListTasks?ready=true&assignee=none`, oldest first, and for each,
+at most 5 a look, asks for an agent in that role (`CreateRequest`, its `item`
+the task's id) and sets the task's `assignee` to the agent's name. A task
+already asked for is never asked for again; one whose assignee cannot be set is
+let go and its request withdrawn; with waypoint down, nothing is taken and the
+next look tries again. Admission still decides when each agent starts. Without
+the option, no task is taken.
+
 ## Admission
 
 A caller that does not need its agent now asks for one: `POST
