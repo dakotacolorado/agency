@@ -18,9 +18,8 @@ export PATH
 dns=$(tailscale status --self --json | "$node" -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).Self.DNSName.replace(/\.$/,"")))')
 url=https://$dns:$https_port
 
-# The host's other services, as each is served on it.
+# The host's honed, as it is served on it.
 honed_url=https://$dns:8443
-waypoint_url=https://$dns:8444
 
 # A value from the service's env file, which only this host has.
 token() { sed -n "s/^$1=//p" "$conf/env"; }
