@@ -17,7 +17,7 @@ brief='This is a check of the agent service, not real work. Reply with one line:
 body=$("$node" -e 'console.log(JSON.stringify({name:`check-${Date.now().toString(36)}`,hostId:process.argv[1],role:"planner",brief:process.argv[2],whenDone:"keep"}))' "$host_id" "$brief")
 id=$(call POST /agents "$body" | field v.id)
 echo "check: agent $id on $host_id at $url"
-call GET "/agents/$id/sessions" | field 'v.sessions.map(s=>`check: started with ${s.skills.map(k=>`${k.name} v${k.version}`).join(", ")||"no skills"}, clients ${s.clients?s.clients.commit.slice(0,7):"none"}; note: ${s.contextNote??"none"}`).join("\n")'
+call GET "/agents/$id" | field '`check: started with ${(v.session?.skills??[]).map(k=>`${k.name} v${k.version}`).join(", ")||"no skills"}; note: ${v.session?.contextNote??"none"}`'
 i=0 state=working
 while [ $i -lt 60 ] && [ "$state" = working ]; do
   sleep 5
