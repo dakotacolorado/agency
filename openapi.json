@@ -1,29 +1,42 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "version": "0.1.0",
+    "version": "2026-11-12",
     "title": "agent-service",
-    "description": "The API for agents: lasting agents, each living on one host, run in sessions. Hosts send a heartbeat every 30 seconds, which keeps them `connected` and says what they offer. Clients read state and issue commands. Every operation but `GetHealth` needs the stage's bearer token.\n\nCommands and reports go by WebSocket at `socketUrl` alone: a host connects with `?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with `?ticket=<one-time ticket>` from `CreateSocketTicket`. What goes up is a `SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's sockets get each `command` as it is queued, and a host's socket, once open, every command still pending for it; every viewer gets each `agent` as it changes, `lines` as they arrive and the `host` on each heartbeat. A command stays queued until a report names it, so a dropped socket loses nothing: it is replayed on the next.\n\nNo body carries the server's time: a response's `Date` header is when it was made, and so when a host's `status` was computed."
+    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at `socketUrl`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, or the admin token, which also writes roles, on everything but `GetHealth` and the docs.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
   },
   "tags": [
     {
-      "name": "hosts",
-      "description": "Called by hosts: stay connected, say what they offer."
+      "name": "Agents",
+      "description": "Make agents, talk to them, and follow what they do."
     },
     {
-      "name": "clients, reading",
-      "description": "Called by clients to read state."
+      "name": "Requests",
+      "description": "Ask for an agent in a role, started when usage and a host allow."
     },
     {
-      "name": "clients, acting",
-      "description": "Called by clients to create agents and send them commands."
+      "name": "Roles",
+      "description": "What each kind of agent starts with."
     },
     {
-      "name": "agents, of themselves",
-      "description": "Called by an agent, from its session, to say what it is doing."
+      "name": "Hosts",
+      "description": "See the hosts agents run on."
     },
     {
-      "name": "meta"
+      "name": "Usage",
+      "description": "The Claude account's allowance used."
+    },
+    {
+      "name": "Pages",
+      "description": "What a page needs to watch agents live."
+    },
+    {
+      "name": "Host protocol",
+      "description": "Called by agent-host on each host, not by you."
+    },
+    {
+      "name": "Platform",
+      "description": "Health, and the clients agents are given."
     }
   ],
   "components": {
@@ -58,7 +71,8 @@
             "type": "string",
             "enum": [
               "report"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "agents": {
             "type": "array",
@@ -197,7 +211,8 @@
           "at": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it was said."
           },
           "from": {
             "type": "string",
@@ -234,7 +249,8 @@
           "commandId": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 128
+            "maxLength": 128,
+            "description": "The command reported on, by its `id`."
           },
           "ok": {
             "type": "boolean",
@@ -362,7 +378,8 @@
             "type": "string",
             "enum": [
               "ping"
-            ]
+            ],
+            "description": "Which message this is."
           }
         },
         "required": [
@@ -414,7 +431,8 @@
             "type": "string",
             "enum": [
               "command"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "command": {
             "$ref": "#/components/schemas/Command"
@@ -478,7 +496,8 @@
             "type": "string",
             "enum": [
               "create"
-            ]
+            ],
+            "description": "Which command this is."
           },
           "name": {
             "type": "string",
@@ -514,7 +533,8 @@
             "type": "string",
             "enum": [
               "start"
-            ]
+            ],
+            "description": "Which command this is."
           },
           "sessionId": {
             "type": "string",
@@ -714,12 +734,14 @@
             "type": "string",
             "enum": [
               "message"
-            ]
+            ],
+            "description": "Which command this is."
           },
           "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 16384
+            "maxLength": 16384,
+            "description": "Delivered to the agent at its session's next turn."
           }
         },
         "required": [
@@ -749,7 +771,8 @@
             "type": "string",
             "enum": [
               "interrupt"
-            ]
+            ],
+            "description": "Which command this is."
           },
           "text": {
             "type": "string",
@@ -783,7 +806,8 @@
             "type": "string",
             "enum": [
               "stop"
-            ]
+            ],
+            "description": "Which command this is."
           }
         },
         "required": [
@@ -812,7 +836,8 @@
             "type": "string",
             "enum": [
               "retire"
-            ]
+            ],
+            "description": "Which command this is."
           }
         },
         "required": [
@@ -829,7 +854,8 @@
             "type": "string",
             "enum": [
               "agent"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "agent": {
             "$ref": "#/components/schemas/Agent"
@@ -928,7 +954,8 @@
           "hostId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9._-]{1,64}$",
-            "example": "dakotas-macbook"
+            "example": "dakotas-macbook",
+            "description": "The host it lives on."
           },
           "state": {
             "type": "string",
@@ -968,7 +995,8 @@
           "createdAt": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it was made."
           },
           "reportedAt": {
             "type": [
@@ -1131,7 +1159,8 @@
             "type": "string",
             "enum": [
               "lines"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "agentId": {
             "type": "string",
@@ -1143,7 +1172,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TranscriptLine"
-            }
+            },
+            "description": "New lines, oldest first."
           }
         },
         "required": [
@@ -1164,7 +1194,8 @@
           "at": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it was said."
           },
           "sessionId": {
             "type": "string",
@@ -1207,7 +1238,8 @@
             "type": "string",
             "enum": [
               "sent"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "agentId": {
             "type": "string",
@@ -1235,7 +1267,8 @@
           "queuedAt": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it was queued for its host."
           },
           "delivery": {
             "type": "string",
@@ -1280,7 +1313,8 @@
             "type": "string",
             "enum": [
               "host"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "host": {
             "$ref": "#/components/schemas/Host"
@@ -1298,12 +1332,14 @@
           "id": {
             "type": "string",
             "pattern": "^[A-Za-z0-9._-]{1,64}$",
-            "example": "dakotas-macbook"
+            "example": "dakotas-macbook",
+            "description": "As the host names itself."
           },
           "heartbeatAt": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When its last heartbeat came."
           },
           "version": {
             "type": [
@@ -1366,7 +1402,8 @@
             "type": "string",
             "enum": [
               "usage"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "usage": {
             "$ref": "#/components/schemas/Usage"
@@ -1457,10 +1494,12 @@
             "type": "string",
             "enum": [
               "error"
-            ]
+            ],
+            "description": "Which message this is."
           },
           "error": {
-            "type": "string"
+            "type": "string",
+            "description": "Why the message up was refused."
           }
         },
         "required": [
@@ -1494,18 +1533,22 @@
                   "description": "Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`."
                 },
                 "content": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "The file's text."
                 },
                 "executable": {
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "Whether it is written executable."
                 }
               },
               "required": [
                 "path",
                 "content",
                 "executable"
-              ]
-            }
+              ],
+              "description": "A file of a skill."
+            },
+            "description": "Every file, as each session is given them."
           }
         },
         "required": [
@@ -1518,13 +1561,29 @@
       "Error": {
         "type": "object",
         "properties": {
-          "error": {
-            "type": "string"
+          "code": {
+            "type": "string",
+            "enum": [
+              "ValidationException",
+              "UnauthorizedException",
+              "AccessDeniedException",
+              "ResourceNotFoundException",
+              "ConflictException",
+              "InternalServerException",
+              "ServiceUnavailableException"
+            ],
+            "description": "Exception name."
+          },
+          "message": {
+            "type": "string",
+            "description": "What went wrong."
           }
         },
         "required": [
-          "error"
-        ]
+          "code",
+          "message"
+        ],
+        "description": "Every error's body."
       },
       "HeartbeatResponse": {
         "type": "object",
@@ -1593,7 +1652,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Host"
-            }
+            },
+            "description": "The hosts."
           }
         },
         "required": [
@@ -1607,7 +1667,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Role"
-            }
+            },
+            "description": "Every role, highest `priority` first."
           }
         },
         "required": [
@@ -1972,7 +2033,8 @@
           "createdAt": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it was asked for."
           },
           "startedAt": {
             "type": [
@@ -1980,7 +2042,8 @@
               "null"
             ],
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When its agent was made; null until then."
           },
           "agentId": {
             "type": [
@@ -1997,7 +2060,8 @@
               "null"
             ],
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it was withdrawn; null unless it was."
           }
         },
         "required": [
@@ -2145,7 +2209,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AgentRequest"
-            }
+            },
+            "description": "The requests: the waiting in start order, then the rest newest first."
           }
         },
         "required": [
@@ -2275,7 +2340,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Agent"
-            }
+            },
+            "description": "The agents, oldest first."
           }
         },
         "required": [
@@ -2363,7 +2429,8 @@
               "waiting",
               "review",
               "done"
-            ]
+            ],
+            "description": "`working` or `waiting` (on the person) while its session is live; `review` once its change is submitted, `done` once it has finished."
           },
           "summary": {
             "type": "string",
@@ -2407,7 +2474,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TranscriptLine"
-            }
+            },
+            "description": "The lines after `after`, oldest first."
           },
           "next": {
             "$ref": "#/components/schemas/Cursor"
@@ -2432,7 +2500,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Session"
-            }
+            },
+            "description": "Its sessions, oldest first."
           }
         },
         "required": [
@@ -2466,7 +2535,8 @@
               "null"
             ],
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it ended; null while it is live."
           },
           "ended": {
             "type": [
@@ -2661,7 +2731,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SentCommand"
-            }
+            },
+            "description": "Its commands, oldest first."
           }
         },
         "required": [
@@ -2672,15 +2743,18 @@
         "type": "object",
         "properties": {
           "ticket": {
-            "type": "string"
+            "type": "string",
+            "description": "Pass as `?ticket=` on the socket; good once."
           },
           "socketUrl": {
-            "type": "string"
+            "type": "string",
+            "description": "The socket's address."
           },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
-            "example": "2026-10-27T12:00:00.000Z"
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it is no longer good."
           }
         },
         "required": [
@@ -2697,9 +2771,10 @@
       "get": {
         "operationId": "GetHealth",
         "tags": [
-          "meta"
+          "Platform"
         ],
-        "summary": "Health check",
+        "summary": "Get health",
+        "description": "Whether it is up, and the version and commit it runs.",
         "responses": {
           "200": {
             "description": "Service is up.",
@@ -2738,7 +2813,7 @@
     "/skill": {
       "get": {
         "operationId": "GetSkill",
-        "summary": "Read the clients agents call this deployment with",
+        "summary": "Get the agents' clients",
         "description": "The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over `workplace/global`'s files at the same paths, so an agent calls the API that is deployed.",
         "security": [
           {
@@ -2746,7 +2821,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Platform"
         ],
         "responses": {
           "200": {
@@ -2760,7 +2835,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2770,7 +2845,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2785,7 +2860,7 @@
     "/hosts/{id}/heartbeat": {
       "post": {
         "operationId": "SendHeartbeat",
-        "summary": "Keep the host connected, and say what it offers",
+        "summary": "Send a heartbeat",
         "description": "Liveness and what the host offers, nothing more: commands come down the host's socket at `socketUrl`, and reports go up it. The host chooses its id; the first heartbeat from an id registers it. Only a heartbeat keeps a host `connected`.",
         "security": [
           {
@@ -2793,7 +2868,7 @@
           }
         ],
         "tags": [
-          "hosts"
+          "Host protocol"
         ],
         "parameters": [
           {
@@ -2829,7 +2904,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2839,7 +2914,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2849,7 +2924,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2872,7 +2947,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Hosts"
         ],
         "parameters": [
           {
@@ -2900,7 +2975,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2910,7 +2985,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2920,7 +2995,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2935,7 +3010,7 @@
     "/hosts/{id}": {
       "delete": {
         "operationId": "DeleteHost",
-        "summary": "Deregister a host",
+        "summary": "Delete a host",
         "description": "Deletes the host's record, which is how a host leaves `ListHosts`. Its agents, their transcripts and the commands sent to them stay on record, and its agents read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.",
         "security": [
           {
@@ -2943,7 +3018,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Hosts"
         ],
         "parameters": [
           {
@@ -2962,7 +3037,7 @@
             "description": "Deregistered."
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2972,7 +3047,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2982,7 +3057,7 @@
             }
           },
           "404": {
-            "description": "No host has this id.",
+            "description": "ResourceNotFoundException: No host has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2992,7 +3067,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3015,7 +3090,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Roles"
         ],
         "responses": {
           "200": {
@@ -3029,7 +3104,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3039,7 +3114,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3049,7 +3124,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3070,7 +3145,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Roles"
         ],
         "requestBody": {
           "description": "The role.",
@@ -3094,7 +3169,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
+            "description": "ValidationException: The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3104,7 +3179,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3114,7 +3189,7 @@
             }
           },
           "403": {
-            "description": "Writing a role takes the stage's admin token.",
+            "description": "AccessDeniedException: Writing a role takes the stage's admin token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3124,7 +3199,7 @@
             }
           },
           "409": {
-            "description": "A role has this name already.",
+            "description": "ConflictException: A role has this name already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3134,7 +3209,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3149,14 +3224,15 @@
     "/roles/{name}": {
       "get": {
         "operationId": "GetRole",
-        "summary": "Get one role",
+        "summary": "Get a role",
+        "description": "Get one role.",
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "tags": [
-          "clients, reading"
+          "Roles"
         ],
         "parameters": [
           {
@@ -3184,7 +3260,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3194,7 +3270,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3204,7 +3280,7 @@
             }
           },
           "404": {
-            "description": "No role has this name.",
+            "description": "ResourceNotFoundException: No role has this name.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3214,7 +3290,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3227,7 +3303,7 @@
       },
       "patch": {
         "operationId": "UpdateRole",
-        "summary": "Change a role",
+        "summary": "Update a role",
         "description": "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.",
         "security": [
           {
@@ -3235,7 +3311,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Roles"
         ],
         "parameters": [
           {
@@ -3273,7 +3349,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
+            "description": "ValidationException: The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3283,7 +3359,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3293,7 +3369,7 @@
             }
           },
           "403": {
-            "description": "Writing a role takes the stage's admin token.",
+            "description": "AccessDeniedException: Writing a role takes the stage's admin token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3303,7 +3379,7 @@
             }
           },
           "404": {
-            "description": "No role has this name.",
+            "description": "ResourceNotFoundException: No role has this name.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3313,7 +3389,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3328,7 +3404,7 @@
     "/requests": {
       "post": {
         "operationId": "CreateRequest",
-        "summary": "Ask for an agent in a role, to start when usage and a host allow",
+        "summary": "Create a request",
         "description": "Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name.",
         "security": [
           {
@@ -3336,7 +3412,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Requests"
         ],
         "parameters": [
           {
@@ -3374,7 +3450,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.",
+            "description": "ValidationException: The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3384,7 +3460,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3394,7 +3470,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured, or a token of its own could not be kept.",
+            "description": "ServiceUnavailableException: No API token is configured, or a token of its own could not be kept.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3407,7 +3483,7 @@
       },
       "get": {
         "operationId": "ListRequests",
-        "summary": "List requests for agents",
+        "summary": "List requests",
         "description": "Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading.",
         "security": [
           {
@@ -3415,7 +3491,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Requests"
         ],
         "parameters": [
           {
@@ -3470,7 +3546,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3480,7 +3556,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3490,7 +3566,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3505,14 +3581,15 @@
     "/requests/{id}": {
       "get": {
         "operationId": "GetRequest",
-        "summary": "Get one request for an agent",
+        "summary": "Get a request",
+        "description": "Get one request for an agent.",
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "tags": [
-          "clients, reading"
+          "Requests"
         ],
         "parameters": [
           {
@@ -3539,7 +3616,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3549,7 +3626,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3559,7 +3636,7 @@
             }
           },
           "404": {
-            "description": "No request has this id.",
+            "description": "ResourceNotFoundException: No request has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3569,7 +3646,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3582,14 +3659,15 @@
       },
       "delete": {
         "operationId": "WithdrawRequest",
-        "summary": "Withdraw a waiting request, so it never starts",
+        "summary": "Withdraw a request",
+        "description": "Withdraw a waiting request, so it never starts.",
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "tags": [
-          "clients, acting"
+          "Requests"
         ],
         "parameters": [
           {
@@ -3616,7 +3694,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3626,7 +3704,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3636,7 +3714,7 @@
             }
           },
           "404": {
-            "description": "No request has this id.",
+            "description": "ResourceNotFoundException: No request has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3646,7 +3724,7 @@
             }
           },
           "409": {
-            "description": "It has started, or was withdrawn already.",
+            "description": "ConflictException: It has started, or was withdrawn already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3656,7 +3734,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3671,7 +3749,7 @@
     "/agents": {
       "post": {
         "operationId": "CreateAgent",
-        "summary": "Create an agent on a host",
+        "summary": "Create an agent",
         "description": "Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.",
         "security": [
           {
@@ -3679,7 +3757,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Agents"
         ],
         "parameters": [
           {
@@ -3717,7 +3795,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.",
+            "description": "ValidationException: The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3727,7 +3805,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3737,7 +3815,7 @@
             }
           },
           "404": {
-            "description": "No host has the id `hostId`.",
+            "description": "ResourceNotFoundException: No host has the id `hostId`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3747,7 +3825,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.",
+            "description": "ConflictException: Nothing was queued: an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3757,7 +3835,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured, or no `hostId` was given and no connected host fits and has room.",
+            "description": "ServiceUnavailableException: No API token is configured, or no `hostId` was given and no connected host fits and has room.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3778,7 +3856,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Agents"
         ],
         "parameters": [
           {
@@ -3843,7 +3921,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3853,7 +3931,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3863,7 +3941,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3878,14 +3956,15 @@
     "/agents/{id}": {
       "get": {
         "operationId": "GetAgent",
-        "summary": "Get one agent",
+        "summary": "Get an agent",
+        "description": "Get one agent.",
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "tags": [
-          "clients, reading"
+          "Agents"
         ],
         "parameters": [
           {
@@ -3913,7 +3992,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3923,7 +4002,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3933,7 +4012,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3943,7 +4022,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3956,7 +4035,7 @@
       },
       "patch": {
         "operationId": "UpdateAgent",
-        "summary": "Rename an agent, or change or clear its title or label",
+        "summary": "Update an agent",
         "description": "A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the agent's, or with null clears it, whether or not the agent gave it. `label` likewise.",
         "security": [
           {
@@ -3964,7 +4043,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4002,7 +4081,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4012,7 +4091,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4022,7 +4101,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4032,7 +4111,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the agent is retired, or an agent not retired already has `name`.",
+            "description": "ConflictException: Nothing was queued: the agent is retired, or an agent not retired already has `name`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4042,7 +4121,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4063,7 +4142,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4091,7 +4170,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4101,7 +4180,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4111,7 +4190,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4121,7 +4200,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the agent is retired already.",
+            "description": "ConflictException: Nothing was queued: the agent is retired already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4131,7 +4210,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4146,7 +4225,7 @@
     "/agents/{id}/messages": {
       "post": {
         "operationId": "SendMessage",
-        "summary": "Send an agent a message, or interrupt it",
+        "summary": "Send a message",
         "description": "To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.",
         "security": [
           {
@@ -4154,7 +4233,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4193,7 +4272,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4203,7 +4282,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4213,7 +4292,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4223,7 +4302,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.",
+            "description": "ConflictException: Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4233,7 +4312,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4248,7 +4327,7 @@
     "/agents/{id}/stop": {
       "post": {
         "operationId": "StopAgent",
-        "summary": "Stop an agent's session, or force it idle",
+        "summary": "Stop an agent",
         "description": "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.",
         "security": [
           {
@@ -4256,7 +4335,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4295,7 +4374,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4305,7 +4384,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4315,7 +4394,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4325,7 +4404,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the agent has no live session.",
+            "description": "ConflictException: Nothing was queued: the agent has no live session.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4335,7 +4414,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4350,7 +4429,7 @@
     "/agents/{id}/resume": {
       "post": {
         "operationId": "ResumeAgent",
-        "summary": "Start a session continuing the agent's last conversation",
+        "summary": "Resume an agent",
         "description": "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
         "security": [
           {
@@ -4358,7 +4437,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4386,7 +4465,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4396,7 +4475,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4406,7 +4485,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4416,7 +4495,7 @@
             }
           },
           "409": {
-            "description": "Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.",
+            "description": "ConflictException: Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4426,7 +4505,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4441,7 +4520,7 @@
     "/agents/{id}/status": {
       "put": {
         "operationId": "PutAgentStatus",
-        "summary": "Say whether the agent needs the person, is in review or done, and what on",
+        "summary": "Put an agent's status",
         "description": "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).",
         "security": [
           {
@@ -4449,7 +4528,7 @@
           }
         ],
         "tags": [
-          "agents, of themselves"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4487,7 +4566,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4497,7 +4576,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4507,7 +4586,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4517,7 +4596,7 @@
             }
           },
           "409": {
-            "description": "The agent is retired, or has no live session to be `working` or `waiting`.",
+            "description": "ConflictException: The agent is retired, or has no live session to be `working` or `waiting`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4527,7 +4606,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4542,7 +4621,7 @@
     "/agents/{id}/title": {
       "put": {
         "operationId": "PutAgentTitle",
-        "summary": "Name the agent for its work, once",
+        "summary": "Put an agent's title",
         "description": "Called by the agent itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `UpdateAgent`.",
         "security": [
           {
@@ -4550,7 +4629,7 @@
           }
         ],
         "tags": [
-          "agents, of themselves"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4588,7 +4667,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4598,7 +4677,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4608,7 +4687,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4618,7 +4697,7 @@
             }
           },
           "409": {
-            "description": "The agent is retired, or has a title already.",
+            "description": "ConflictException: The agent is retired, or has a title already.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4628,7 +4707,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4643,7 +4722,7 @@
     "/agents/{id}/transcript": {
       "get": {
         "operationId": "ListTranscriptLines",
-        "summary": "List an agent's transcript lines after a cursor, oldest first, across its sessions",
+        "summary": "List transcript lines",
         "description": "Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.",
         "security": [
           {
@@ -4651,7 +4730,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4706,7 +4785,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4716,7 +4795,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4726,7 +4805,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4736,7 +4815,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4751,14 +4830,15 @@
     "/agents/{id}/sessions": {
       "get": {
         "operationId": "ListSessions",
-        "summary": "List an agent's sessions, oldest first",
+        "summary": "List sessions",
+        "description": "List an agent's sessions, oldest first.",
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "tags": [
-          "clients, reading"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4786,7 +4866,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4796,7 +4876,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4806,7 +4886,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4816,7 +4896,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4831,7 +4911,7 @@
     "/agents/{id}/sessions/{sessionId}/context": {
       "get": {
         "operationId": "GetSessionContext",
-        "summary": "Read a live session's whole context, when its start was too large to carry it",
+        "summary": "Get a session's context",
         "description": "Read at the moment it is asked, as a start's is, and recorded on the session in place of what its start carried, so the session's `contextNote` says what it was given.",
         "security": [
           {
@@ -4839,7 +4919,7 @@
           }
         ],
         "tags": [
-          "hosts"
+          "Host protocol"
         ],
         "parameters": [
           {
@@ -4879,7 +4959,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4889,7 +4969,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4899,7 +4979,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4909,7 +4989,7 @@
             }
           },
           "409": {
-            "description": "The session is not the agent's live one.",
+            "description": "ConflictException: The session is not the agent's live one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4919,7 +4999,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4934,7 +5014,7 @@
     "/agents/{id}/commands": {
       "get": {
         "operationId": "ListCommands",
-        "summary": "List the commands sent to an agent, oldest first, with their delivery",
+        "summary": "List commands",
         "description": "Each is kept 7 days from when it was queued, then deleted.",
         "security": [
           {
@@ -4942,7 +5022,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Agents"
         ],
         "parameters": [
           {
@@ -4970,7 +5050,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4980,7 +5060,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4990,7 +5070,7 @@
             }
           },
           "404": {
-            "description": "No agent has this id.",
+            "description": "ResourceNotFoundException: No agent has this id.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5000,7 +5080,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5015,7 +5095,7 @@
     "/usage": {
       "get": {
         "operationId": "GetUsage",
-        "summary": "Read how much of the Claude account's 5-hour and weekly allowance is used",
+        "summary": "Get usage",
         "description": "The newest reading of each window any host has reported. A window whose `resetsAt` has passed has since started again from 0; the reading says only what was true at `readAt`. With nothing reported yet, every field is null.",
         "security": [
           {
@@ -5023,7 +5103,7 @@
           }
         ],
         "tags": [
-          "clients, reading"
+          "Usage"
         ],
         "responses": {
           "200": {
@@ -5037,7 +5117,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5047,7 +5127,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured.",
+            "description": "ServiceUnavailableException: No API token is configured.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5062,7 +5142,7 @@
     "/socket-tickets": {
       "post": {
         "operationId": "CreateSocketTicket",
-        "summary": "Trade the bearer token for a one-time socket ticket",
+        "summary": "Create a socket ticket",
         "description": "A browser cannot set a header on a WebSocket, and a long-lived token must never go in a URL, so a page opens `<socketUrl>?ticket=<ticket>` instead. Good once, for 60 seconds. The socket then receives `SocketOutbound` messages: `agent`, `lines` and `host`.",
         "security": [
           {
@@ -5070,7 +5150,7 @@
           }
         ],
         "tags": [
-          "clients, acting"
+          "Pages"
         ],
         "responses": {
           "201": {
@@ -5084,7 +5164,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation.",
+            "description": "ValidationException: The request failed validation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5094,7 +5174,7 @@
             }
           },
           "401": {
-            "description": "Missing or incorrect bearer token.",
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5104,7 +5184,7 @@
             }
           },
           "503": {
-            "description": "No API token is configured, or this server has no socket.",
+            "description": "ServiceUnavailableException: No API token is configured, or this server has no socket.",
             "content": {
               "application/json": {
                 "schema": {

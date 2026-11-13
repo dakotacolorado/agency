@@ -38,30 +38,30 @@ What the server tells an agent when it connects:
 
 | Tool | Does | Reads only |
 | --- | --- | --- |
-| [`create_agent`](#create_agent) | Create an agent on a host |  |
-| [`create_request`](#create_request) | Ask for an agent in a role, to start when usage and a host allow |  |
+| [`create_agent`](#create_agent) | Create an agent |  |
+| [`create_request`](#create_request) | Create a request |  |
 | [`create_role`](#create_role) | Create a role |  |
-| [`delete_host`](#delete_host) | Deregister a host |  |
-| [`get_agent`](#get_agent) | Get one agent | yes |
-| [`get_request`](#get_request) | Get one request for an agent | yes |
-| [`get_role`](#get_role) | Get one role | yes |
-| [`get_usage`](#get_usage) | Read how much of the Claude account's 5-hour and weekly allowance is used | yes |
+| [`delete_host`](#delete_host) | Delete a host |  |
+| [`get_agent`](#get_agent) | Get an agent | yes |
+| [`get_request`](#get_request) | Get a request | yes |
+| [`get_role`](#get_role) | Get a role | yes |
+| [`get_usage`](#get_usage) | Get usage | yes |
 | [`list_agents`](#list_agents) | List agents | yes |
-| [`list_commands`](#list_commands) | List the commands sent to an agent, oldest first, with their delivery | yes |
+| [`list_commands`](#list_commands) | List commands | yes |
 | [`list_hosts`](#list_hosts) | List hosts | yes |
-| [`list_requests`](#list_requests) | List requests for agents | yes |
+| [`list_requests`](#list_requests) | List requests | yes |
 | [`list_roles`](#list_roles) | List roles | yes |
-| [`list_sessions`](#list_sessions) | List an agent's sessions, oldest first | yes |
-| [`list_transcript_lines`](#list_transcript_lines) | List an agent's transcript lines after a cursor, oldest first, across its sessions | yes |
-| [`put_agent_status`](#put_agent_status) | Say whether the agent needs the person, is in review or done, and what on |  |
-| [`put_agent_title`](#put_agent_title) | Name the agent for its work, once |  |
-| [`resume_agent`](#resume_agent) | Start a session continuing the agent's last conversation |  |
+| [`list_sessions`](#list_sessions) | List sessions | yes |
+| [`list_transcript_lines`](#list_transcript_lines) | List transcript lines | yes |
+| [`put_agent_status`](#put_agent_status) | Put an agent's status |  |
+| [`put_agent_title`](#put_agent_title) | Put an agent's title |  |
+| [`resume_agent`](#resume_agent) | Resume an agent |  |
 | [`retire_agent`](#retire_agent) | Retire an agent |  |
-| [`send_message`](#send_message) | Send an agent a message, or interrupt it |  |
-| [`stop_agent`](#stop_agent) | Stop an agent's session, or force it idle |  |
-| [`update_agent`](#update_agent) | Rename an agent, or change or clear its title or label |  |
-| [`update_role`](#update_role) | Change a role |  |
-| [`withdraw_request`](#withdraw_request) | Withdraw a waiting request, so it never starts |  |
+| [`send_message`](#send_message) | Send a message |  |
+| [`stop_agent`](#stop_agent) | Stop an agent |  |
+| [`update_agent`](#update_agent) | Update an agent |  |
+| [`update_role`](#update_role) | Update a role |  |
+| [`withdraw_request`](#withdraw_request) | Withdraw a request |  |
 
 ### create_agent
 
@@ -216,7 +216,7 @@ Called by the agent itself, from its `page` skill, and by approval-service for t
 | Input | Type | Required | |
 | --- | --- | --- | --- |
 | `id` | string | yes | Assigned by the service when the agent is created. |
-| `status` | `working`, `waiting`, `review`, `done` | yes |  |
+| `status` | `working`, `waiting`, `review`, `done` | yes | `working` or `waiting` (on the person) while its session is live; `review` once its change is submitted, `done` once it has finished. |
 | `summary` | string | yes | One line: what it is doing, while `waiting` what it needs from the person, in `review` what it submitted, or when `done` the result. |
 | `headline` | string |  | The summary in a few words a person can scan in a list, e.g. "Needs merge OK". Omitted, it is null. |
 

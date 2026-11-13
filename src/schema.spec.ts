@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { AUDIENCES } from "./schema.ts";
+import { folded } from "./api-doc.ts";
+import { ERROR_CODES, TAGS } from "./schema.ts";
 import { generatedFiles, openApiDocument, repoFile } from "./spec.ts";
 
 interface JsonSchema {
@@ -72,31 +73,53 @@ async function schemas(): Promise<Record<string, JsonSchema>> {
     .components.schemas;
 }
 
-describe("the line between hosts and clients", async () => {
-  const fleet = (await operations()).filter((op) => !["/health"].includes(op.path));
-  const audience = (tag: string) => fleet.filter((op) => op.tags.includes(tag));
+describe("the line between hosts and everyone else", async () => {
+  const all = await operations();
+  const tagged = (tag: string) => all.filter((op) => op.tags.includes(tag));
 
-  it("keeps every route under /, which the UI's CDN forwards", async () => {
-    const paths = (await operations()).map((op) => op.path);
-    expect(paths.filter((p) => p !== "/health" && !p.startsWith("/"))).toEqual([]);
+  it("puts every operation in exactly one of the groups the reference sets out", () => {
+    const groups = Object.values(TAGS) as string[];
+    expect(all.filter((op) => op.tags.length !== 1 || !groups.includes(op.tags[0]!)).map((op) => op.operationId)).toEqual([]);
   });
 
-  it("puts every fleet operation under exactly one audience", () => {
-    const audiences = Object.values(AUDIENCES) as string[];
-    const misfiled = fleet.filter((op) => op.tags.filter((t) => audiences.includes(t)).length !== 1);
-    expect(misfiled.map((op) => op.operationId)).toEqual([]);
+  it("gives hosts their own two calls, apart from everyone else's", () => {
+    expect(tagged(TAGS.hostProtocol).map((op) => op.operationId)).toEqual(["SendHeartbeat", "GetSessionContext"]);
   });
 
-  it("gives a host one operation", () => {
-    expect(audience(AUDIENCES.host).map((op) => op.operationId)).toEqual(["SendHeartbeat", "GetSessionContext"]);
-  });
-
-  it("lets a client read without changing anything, and act without reporting state", () => {
-    expect(audience(AUDIENCES.reading).every((op) => op.method === "get" && !op.requestBody)).toBe(true);
-    expect(audience(AUDIENCES.acting).every((op) => op.method !== "get")).toBe(true);
+  it("reads without changing anything, and takes no host's report from anyone but a host", () => {
+    expect(all.filter((op) => /^(Get|List)/.test(op.operationId) && (op.method !== "get" || op.requestBody)).map((op) => op.operationId)).toEqual([]);
     const hostState = /#\/components\/schemas\/(Heartbeat|AgentReport|LineReport)"/;
-    const clients = [...audience(AUDIENCES.reading), ...audience(AUDIENCES.acting)];
-    expect(clients.filter((op) => hostState.test(JSON.stringify(op.requestBody ?? {})))).toEqual([]);
+    const others = all.filter((op) => !op.tags.includes(TAGS.hostProtocol));
+    expect(others.filter((op) => hostState.test(JSON.stringify(op.requestBody ?? {}))).map((op) => op.operationId)).toEqual([]);
+  });
+});
+
+describe("the contract, as AWS writes theirs", async () => {
+  const all = await operations();
+
+  it("summarises every operation in a few words, starting with its verb", () => {
+    for (const op of all) {
+      expect(op.summary!.split(" ")[0], op.operationId).toBe(op.operationId.match(/^[A-Z][a-z]+/)![0]);
+      expect(op.summary!.split(" ").length, op.operationId).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it("documents every field of every data type", async () => {
+    const { components } = folded((await openApiDocument()) as never) as { components: { schemas: Record<string, { properties?: Record<string, { description?: string; $ref?: string }> }> } };
+    const undocumented = Object.entries(components.schemas).flatMap(([name, schema]) =>
+      Object.entries(schema.properties ?? {})
+        .filter(([, field]) => !field.description && !field.$ref)
+        .map(([field]) => `${name}.${field}`),
+    );
+    expect(undocumented).toEqual([]);
+  });
+
+  it("names each error answer for its exception, as `<code>: <cause>`", () => {
+    for (const op of all) {
+      for (const [status, { description }] of Object.entries(op.responses as Record<string, { description: string }>)) {
+        if (!status.startsWith("2")) expect(`${op.operationId} ${status} ${description}`).toMatch(new RegExp(`^${op.operationId} ${status} ${ERROR_CODES[Number(status) as keyof typeof ERROR_CODES]}: .`));
+      }
+    }
   });
 });
 
@@ -110,14 +133,7 @@ describe("the reference", async () => {
     expect(ops.map((op) => op.operationId).filter((id) => !named.test(id))).toEqual([]);
   });
 
-  it("names every read with get or list", () => {
-    const reads = ops.filter((op) => op.tags.includes(AUDIENCES.reading));
-    expect(reads.filter((op) => !/^(Get|List)[A-Z]/.test(op.operationId))).toEqual([]);
-  });
 
-  it("calls the health route a health check", () => {
-    expect(ops.find((op) => op.path === "/health")?.summary).toBe("Health check");
-  });
 
   it("deprecates nothing", () => {
     expect(ops.filter((op) => op.deprecated).map((op) => op.operationId)).toEqual([]);

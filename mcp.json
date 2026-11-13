@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "create_agent",
-      "title": "Create an agent on a host",
+      "title": "Create an agent",
       "description": "Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -118,7 +118,7 @@
     },
     {
       "name": "create_request",
-      "title": "Ask for an agent in a role, to start when usage and a host allow",
+      "title": "Create a request",
       "description": "Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -336,7 +336,7 @@
     },
     {
       "name": "delete_host",
-      "title": "Deregister a host",
+      "title": "Delete a host",
       "description": "Deletes the host's record, which is how a host leaves `ListHosts`. Its agents, their transcripts and the commands sent to them stay on record, and its agents read as on a `lost` host. The next heartbeat from this id registers it again, and its socket is sent whatever is still queued for it.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -361,7 +361,7 @@
     },
     {
       "name": "get_agent",
-      "title": "Get one agent",
+      "title": "Get an agent",
       "description": "Get one agent.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -388,7 +388,7 @@
     },
     {
       "name": "get_request",
-      "title": "Get one request for an agent",
+      "title": "Get a request",
       "description": "Get one request for an agent.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -415,7 +415,7 @@
     },
     {
       "name": "get_role",
-      "title": "Get one role",
+      "title": "Get a role",
       "description": "Get one role.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -441,7 +441,7 @@
     },
     {
       "name": "get_usage",
-      "title": "Read how much of the Claude account's 5-hour and weekly allowance is used",
+      "title": "Get usage",
       "description": "The newest reading of each window any host has reported. A window whose `resetsAt` has passed has since started again from 0; the reading says only what was true at `readAt`. With nothing reported yet, every field is null.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -500,7 +500,7 @@
     },
     {
       "name": "list_commands",
-      "title": "List the commands sent to an agent, oldest first, with their delivery",
+      "title": "List commands",
       "description": "Each is kept 7 days from when it was queued, then deleted.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -550,7 +550,7 @@
     },
     {
       "name": "list_requests",
-      "title": "List requests for agents",
+      "title": "List requests",
       "description": "Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -605,7 +605,7 @@
     },
     {
       "name": "list_sessions",
-      "title": "List an agent's sessions, oldest first",
+      "title": "List sessions",
       "description": "List an agent's sessions, oldest first.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -632,7 +632,7 @@
     },
     {
       "name": "list_transcript_lines",
-      "title": "List an agent's transcript lines after a cursor, oldest first, across its sessions",
+      "title": "List transcript lines",
       "description": "Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -671,7 +671,7 @@
     },
     {
       "name": "put_agent_status",
-      "title": "Say whether the agent needs the person, is in review or done, and what on",
+      "title": "Put an agent's status",
       "description": "Called by the agent itself, from its `page` skill, and by approval-service for the agent whose change it took or shipped. `waiting` says the agent needs the person; it stands until the person messages it. `working` only says what it is doing: whether it reads `working` or `idle` is its host's turns. `review` says its change is submitted to approval-service and `done` that it finished, or its change shipped; each needs no live session. Not sent to its host. Once the agent is in `review` or `done` and no turn or background task of its runs, `whenDone` is carried out: `stop` stops its session, and `retire` retires it once `done` (in `review` it is stopped, never retired, so a send-back reaches it).",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -690,7 +690,8 @@
               "waiting",
               "review",
               "done"
-            ]
+            ],
+            "description": "`working` or `waiting` (on the person) while its session is live; `review` once its change is submitted, `done` once it has finished."
           },
           "summary": {
             "type": "string",
@@ -721,7 +722,7 @@
     },
     {
       "name": "put_agent_title",
-      "title": "Name the agent for its work, once",
+      "title": "Put an agent's title",
       "description": "Called by the agent itself, early in its first session, once it knows what it is there to do. Set once: after that only the person changes it, with `UpdateAgent`.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -755,7 +756,7 @@
     },
     {
       "name": "resume_agent",
-      "title": "Start a session continuing the agent's last conversation",
+      "title": "Resume an agent",
       "description": "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -809,7 +810,7 @@
     },
     {
       "name": "send_message",
-      "title": "Send an agent a message, or interrupt it",
+      "title": "Send a message",
       "description": "To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -846,7 +847,7 @@
     },
     {
       "name": "stop_agent",
-      "title": "Stop an agent's session, or force it idle",
+      "title": "Stop an agent",
       "description": "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -877,7 +878,7 @@
     },
     {
       "name": "update_agent",
-      "title": "Rename an agent, or change or clear its title or label",
+      "title": "Update an agent",
       "description": "A new `name` is taken and the old one freed at once. Only the record changes: its host keeps the folder and session it made under the name it was created with. `title` replaces the agent's, or with null clears it, whether or not the agent gave it. `label` likewise.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -935,7 +936,7 @@
     },
     {
       "name": "update_role",
-      "title": "Change a role",
+      "title": "Update a role",
       "description": "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1034,7 +1035,7 @@
     },
     {
       "name": "withdraw_request",
-      "title": "Withdraw a waiting request, so it never starts",
+      "title": "Withdraw a request",
       "description": "Withdraw a waiting request, so it never starts.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",

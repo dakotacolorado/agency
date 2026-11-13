@@ -148,7 +148,7 @@ describe("auth", () => {
     const unconfigured = new AgentServiceApi(store, { value: async () => null });
     const res = await unconfigured.fetch(new Request("http://local/hosts"));
     expect(res.status).toBe(503);
-    expect(await res.json()).toEqual({ error: "API token is not configured." });
+    expect(await res.json()).toMatchObject({ message: "API token is not configured." });
   });
 
   it("refuses a heartbeat with the wrong token", async () => {
@@ -194,7 +194,7 @@ describe("heartbeat", () => {
     const [home] = queued();
     const res = await heartbeat("laptop", { commandResults: ack([home!]) });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toMatch(/commandResults/);
+    expect(((await res.json()) as { message: string }).message).toMatch(/commandResults/);
     expect(queued()).toHaveLength(2);
   });
 
@@ -324,7 +324,7 @@ describe("creating an agent", () => {
     const first = await create();
     const res = await call("POST", "/agents", { name: "frontend-1", hostId: "laptop" });
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "An agent not retired is already named frontend-1." });
+    expect(await res.json()).toMatchObject({ message: "An agent not retired is already named frontend-1." });
     expect((await call("DELETE", `/agents/${first.id}`)).status).toBe(202);
     await create();
   });
@@ -339,13 +339,13 @@ describe("creating an agent", () => {
     await create({ name: "a", brief: "Go." });
     const full = await call("POST", "/agents", { name: "b", hostId: "laptop", brief: "Go." });
     expect(full.status).toBe(409);
-    expect(await full.json()).toEqual({ error: "laptop is running all 1 sessions it will." });
+    expect(await full.json()).toMatchObject({ message: "laptop is running all 1 sessions it will." });
     await create({ name: "c" });
 
     later(LOST_AFTER + 1);
     const lost = await call("POST", "/agents", { name: "d", hostId: "laptop" });
     expect(lost.status).toBe(409);
-    expect((await lost.json()).error).toMatch(/^laptop has not sent a heartbeat since/);
+    expect((await lost.json()).message).toMatch(/^laptop has not sent a heartbeat since/);
   });
 
   it("refuses a brief longer than a message may be, rather than cutting it", async () => {
@@ -881,7 +881,7 @@ describe("messaging an agent", () => {
   it("refuses an interrupt with nothing to interrupt, a misspelt flag, and no text at all", async () => {
     const res = await message({ interrupt: true });
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "frontend-1 is idle, with no session to interrupt." });
+    expect(await res.json()).toMatchObject({ message: "frontend-1 is idle, with no session to interrupt." });
     expect((await message({ text: "x", interupt: true })).status).toBe(400);
     expect((await message({})).status).toBe(400);
   });
@@ -893,7 +893,7 @@ describe("messaging an agent", () => {
     later(LOST_AFTER + 1);
     expect((await message({ text: "Go." })).status).toBe(409);
     await call("DELETE", `/agents/${id}`);
-    expect(await (await message({ text: "Go." })).json()).toEqual({ error: "frontend-1 is retired." });
+    expect(await (await message({ text: "Go." })).json()).toMatchObject({ message: "frontend-1 is retired." });
   });
 
   it("withdraws a message its lost host never took, but keeps offering a create", async () => {
@@ -937,7 +937,7 @@ describe("stopping an agent", () => {
     await call("POST", `/agents/${id}/stop`, { force: true });
     const res = await call("POST", `/agents/${id}/stop`, {});
     expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "frontend-1 is idle, with no session to stop." });
+    expect(await res.json()).toMatchObject({ message: "frontend-1 is idle, with no session to stop." });
   });
 
   it("ends the session on record when the host is lost, with no force asked, and withdraws what is queued", async () => {
@@ -990,7 +990,7 @@ describe("resuming an agent", () => {
     expect(queued().find((c) => c.id === commandId)).not.toHaveProperty("text");
     const again = await call("POST", `/agents/${id}/resume`);
     expect(again.status).toBe(409);
-    expect(await again.json()).toEqual({ error: "frontend-1 is working, in a live session already." });
+    expect(await again.json()).toMatchObject({ message: "frontend-1 is working, in a live session already." });
   });
 });
 
@@ -1021,7 +1021,7 @@ describe("renaming an agent", () => {
     await create({ name: "agent-2" });
     const taken = await call("PATCH", `/agents/${one.id}`, { name: "agent-2" });
     expect(taken.status).toBe(409);
-    expect((await taken.json()).error).toBe("An agent not retired is already named agent-2.");
+    expect((await taken.json()).message).toBe("An agent not retired is already named agent-2.");
     expect(await agent(one.id)).toMatchObject({ name: "agent-1" });
     await call("DELETE", `/agents/${one.id}`);
     expect((await call("PATCH", `/agents/${one.id}`, { name: "agent-9" })).status).toBe(409);
@@ -1110,7 +1110,7 @@ describe("an agent's title", () => {
     expect(await res.json()).toMatchObject({ name: "agent-3", title: "Short status headline" });
     const again = await name("Something else");
     expect(again.status).toBe(409);
-    expect((await again.json()).error).toBe('agent-3 is titled "Short status headline" already; only the person changes it.');
+    expect((await again.json()).message).toBe('agent-3 is titled "Short status headline" already; only the person changes it.');
     expect((await agent(id)).title).toBe("Short status headline");
   });
 
@@ -1475,7 +1475,7 @@ describe("a session's context", () => {
       attached = { context: null, documents: [], skills: [], note: "global v5 is 2000000 bytes, over the 1048576 a start can carry", cut: true };
       const res = await call("POST", `/agents/${id}/messages`, { text: "Hello." });
       expect(res.status).toBe(409);
-      expect((await res.json()).error).toMatch(/^Its context cannot be given whole, so no session was started: global v5 is 2000000 bytes/);
+      expect((await res.json()).message).toMatch(/^Its context cannot be given whole, so no session was started: global v5 is 2000000 bytes/);
       expect((await read(`/agents/${id}`)).session).toBeNull();
     });
   });
@@ -1483,7 +1483,7 @@ describe("a session's context", () => {
   it("refuses a skill its source does not know, in its words, and workplace/global or one twice", async () => {
     const res = await call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", documents: ["approval", "nope"] });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe("document-service answered 404 for nope: no document nope");
+    expect((await res.json()).message).toBe("document-service answered 404 for nope: no document nope");
     const named = (documents: string[]) => call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", documents });
     expect((await named(["workplace/global"])).status).toBe(400);
     expect((await named(["approval", "approval"])).status).toBe(400);
@@ -1564,7 +1564,7 @@ describe("an agent's credentials", () => {
   it("refuses a name the stage has not, saying which it has", async () => {
     const res = await call("POST", "/agents", { name: "x-1", hostId: "laptop", credentials: ["work-tracker", "github"] });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe(
+    expect((await res.json()).message).toBe(
       "No credential is named github; this stage has document-service, work-tracker, agent-service.",
     );
     expect((await call("POST", "/agents", { name: "x-1", hostId: "laptop", credentials: ["work-tracker", "work-tracker"] })).status).toBe(400);
@@ -1617,10 +1617,10 @@ describe("an agent made without naming a host", () => {
     await create({ name: "agent-1", brief: "Go." });
     const full = await make({});
     expect(full.status).toBe(503);
-    expect((await full.json()).error).toBe("No connected host has room for an agent; nothing was made.");
+    expect((await full.json()).message).toBe("No connected host has room for an agent; nothing was made.");
     const unlabelled = await make({ labels: ["gpu"] });
     expect(unlabelled.status).toBe(503);
-    expect((await unlabelled.json()).error).toBe("No connected host, carrying gpu, has room for an agent; nothing was made.");
+    expect((await unlabelled.json()).message).toBe("No connected host, carrying gpu, has room for an agent; nothing was made.");
     expect((await read("/agents")).agents.map((w: { name: string }) => w.name)).toEqual(["agent-1"]);
   });
 
@@ -1732,7 +1732,7 @@ describe("a credential of an agent's own", () => {
     api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: known() });
     const unkept = await make([{ name: "document-service", token: "x" }]);
     expect(unkept.status).toBe(503);
-    expect((await unkept.json()).error).toMatch(/keeps no credential of an agent's own/);
+    expect((await unkept.json()).message).toMatch(/keeps no credential of an agent's own/);
     expect((await read("/agents")).agents).toEqual([]);
   });
 });
@@ -1842,7 +1842,7 @@ describe("roles", () => {
   it("refuses a role the stage does not have", async () => {
     const res = await call("POST", "/agents", { name: "x-1", hostId: "laptop", role: "nobody", brief: "Go." });
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("no role named nobody");
+    expect((await res.json()).message).toContain("no role named nobody");
   });
 
   it("records an agent's role, and lists agents by it", async () => {

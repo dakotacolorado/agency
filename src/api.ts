@@ -22,6 +22,7 @@ import {
   type Agent,
 } from "./domain.ts";
 import * as routes from "./schema.ts";
+import { ERROR_CODES, type ErrorStatus } from "./schema.ts";
 import type { Command, Heartbeat, HeartbeatResponse, RequestView } from "./schema.ts";
 import { NameTaken, Stale, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
@@ -40,6 +41,23 @@ import { rolesOf, type Role } from "./roles.ts";
 import { inStartOrder, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
 
 export const SPEC_PATH = "/openapi.json";
+
+export const API_VERSION = "2026-11-12";
+
+/** The API's overview, at the top of its reference. Markdown. */
+export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
+
+- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role \`priority\` first, then the oldest.
+- **Talk to it** with \`SendMessage\`, which starts a session when none is live; \`StopAgent\`, \`ResumeAgent\` and \`RetireAgent\` end, carry on and end it for good.
+- **Follow it**: its \`status\` is \`working\`, \`idle\`, \`waiting\` (on the person), \`review\` or \`done\`, which it says of itself with \`PutAgentStatus\`; \`ListTranscriptLines\` reads what it said, after a cursor.
+- **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at \`socketUrl\`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from \`CreateSocketTicket\`.
+
+**Auth:** \`Authorization: Bearer <token>\` with the stage's token, or the admin token, which also writes roles, on everything but \`GetHealth\` and the docs.
+
+**Errors:** \`{code, message}\`, where \`code\` is an AWS-style exception name such as \`ValidationException\` or \`ResourceNotFoundException\`.`;
+
+/** An error's body: its status's exception name, and what went wrong. */
+export const failure = (status: ErrorStatus, message: string) => ({ code: ERROR_CODES[status], message });
 
 /** What answers without a token: whether it is up, and what it serves. */
 export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp"];
@@ -114,7 +132,7 @@ export class AgentServiceApi {
     );
     this.hono = new OpenAPIHono({
       defaultHook: (result, c) =>
-        result.success ? undefined : c.json({ error: issues(result.error) }, 400),
+        result.success ? undefined : c.json(failure(400, issues(result.error)), 400),
     });
     this.auth();
     this.routes();
@@ -186,10 +204,10 @@ export class AgentServiceApi {
     this.hono.use("/*", async (c, next) => {
       if (OPEN_PATHS.includes(c.req.path)) return next();
       const token = await this.token.value();
-      if (!token) return c.json({ error: "API token is not configured." }, 503);
+      if (!token) return c.json(failure(503, "API token is not configured."), 503);
       const given = c.req.header("authorization") ?? "";
       if (!same(given, `Bearer ${token}`) && !(await this.isAdmin(given))) {
-        return c.json({ error: "Unauthorized." }, 401);
+        return c.json(failure(401, "Unauthorized."), 401);
       }
       await next();
     });
@@ -239,7 +257,7 @@ export class AgentServiceApi {
 
     app.openapi(routes.deleteHostRoute, async (c) => {
       const { id } = c.req.valid("param");
-      if (!(await this.store.getHost(id))) return c.json({ error: "No host has this id." }, 404);
+      if (!(await this.store.getHost(id))) return c.json(failure(404, "No host has this id."), 404);
       await this.store.deleteHost(id);
       return c.body(null, 204);
     });
@@ -248,16 +266,16 @@ export class AgentServiceApi {
 
     app.openapi(routes.getRoleRoute, async (c) => {
       const role = await this.role(c.req.valid("param").name);
-      if (!role) return c.json({ error: "No role has this name." }, 404);
+      if (!role) return c.json(failure(404, "No role has this name."), 404);
       return c.json(role, 200);
     });
 
     app.openapi(routes.createRoleRoute, async (c) => {
       if (!(await this.isAdmin(c.req.header("authorization") ?? ""))) {
-        return c.json({ error: "Writing a role takes the stage's admin token." }, 403);
+        return c.json(failure(403, "Writing a role takes the stage's admin token."), 403);
       }
       const body = c.req.valid("json");
-      if (await this.role(body.name)) return c.json({ error: `A role named ${body.name} exists already.` }, 409);
+      if (await this.role(body.name)) return c.json(failure(409, `A role named ${body.name} exists already.`), 409);
       const role: Role = {
         name: body.name,
         documents: body.documents ?? [],
@@ -270,21 +288,21 @@ export class AgentServiceApi {
         updatedAt: this.now().toISOString(),
       };
       const unfit = await this.unfit(role);
-      if (unfit) return c.json({ error: unfit }, 400);
+      if (unfit) return c.json(failure(400, unfit), 400);
       await this.store.putRole(role);
       return c.json(role, 201);
     });
 
     app.openapi(routes.updateRoleRoute, async (c) => {
       if (!(await this.isAdmin(c.req.header("authorization") ?? ""))) {
-        return c.json({ error: "Writing a role takes the stage's admin token." }, 403);
+        return c.json(failure(403, "Writing a role takes the stage's admin token."), 403);
       }
       const held = await this.role(c.req.valid("param").name);
-      if (!held) return c.json({ error: "No role has this name." }, 404);
+      if (!held) return c.json(failure(404, "No role has this name."), 404);
       const changes = Object.fromEntries(Object.entries(c.req.valid("json")).filter(([, value]) => value !== undefined));
       const role: Role = { ...held, ...changes, updatedAt: this.now().toISOString() };
       const unfit = await this.unfit(role);
-      if (unfit) return c.json({ error: unfit }, 400);
+      if (unfit) return c.json(failure(400, unfit), 400);
       await this.store.putRole(role);
       return c.json(role, 200);
     });
@@ -292,26 +310,26 @@ export class AgentServiceApi {
     app.openapi(routes.createRequestRoute, async (c) => {
       const asked = c.req.valid("json");
       const role = await this.role(asked.role);
-      if (!role) return c.json({ error: `This stage has no role named ${asked.role}.` }, 400);
+      if (!role) return c.json(failure(400, `This stage has no role named ${asked.role}.`), 400);
       if (asked.brief === undefined && role.brief === null) {
-        return c.json({ error: `The ${role.name} role has no brief of its own, so a request for one needs \`brief\`.` }, 400);
+        return c.json(failure(400, `The ${role.name} role has no brief of its own, so a request for one needs \`brief\`.`), 400);
       }
       const credentials = asked.credentials?.map((each) => (typeof each === "string" ? each : each.name)) ?? null;
       const unknown = credentials && this.fleet.credentials.refuse(credentials);
-      if (unknown) return c.json({ error: unknown }, 400);
+      if (unknown) return c.json(failure(400, unknown), 400);
       const given = credentials ?? role.credentials ?? this.fleet.credentials.defaults;
       const tokens = asked.tokens ?? [];
       const ungiven = tokens.filter((t) => !given.includes(t.name)).map((t) => t.name);
-      if (ungiven.length) return c.json({ error: `A token is only for a service the agent is given; ${ungiven.join(", ")} is not among ${given.join(", ") || "none"}.` }, 400);
+      if (ungiven.length) return c.json(failure(400, `A token is only for a service the agent is given; ${ungiven.join(", ")} is not among ${given.join(", ") || "none"}.`), 400);
       const own = [...(asked.credentials ?? []).flatMap((each) => (typeof each === "string" ? [] : [each])), ...tokens];
-      if (new Set(own.map((each) => each.name)).size !== own.length) return c.json({ error: "Give each service's token once, in `credentials` or `tokens`." }, 400);
+      if (new Set(own.map((each) => each.name)).size !== own.length) return c.json(failure(400, "Give each service's token once, in `credentials` or `tokens`."), 400);
       const id = randomUUID();
       try {
         for (const each of own) await this.fleet.credentials.own.put(id, each.name, each.token);
       } catch (err) {
         await this.fleet.credentials.own.remove(id, own.map((each) => each.name)).catch(() => {});
         console.error("Could not keep a request's own credential:", (err as Error).name);
-        return c.json({ error: `A credential of the agent's own could not be kept: ${(err as Error).message}` }, 503);
+        return c.json(failure(503, `A credential of the agent's own could not be kept: ${(err as Error).message}`), 503);
       }
       await this.store.putRequest({
         id,
@@ -348,7 +366,7 @@ export class AgentServiceApi {
 
     app.openapi(routes.getRequestRoute, async (c) => {
       const view = (await this.requestViews()).find((r) => r.id === c.req.valid("param").id);
-      if (!view) return c.json({ error: "No request has this id." }, 404);
+      if (!view) return c.json(failure(404, "No request has this id."), 404);
       return c.json(view, 200);
     });
 
@@ -356,8 +374,8 @@ export class AgentServiceApi {
       const { id } = c.req.valid("param");
       for (;;) {
         const request = await this.store.getRequest(id);
-        if (!request) return c.json({ error: "No request has this id." }, 404);
-        if (request.state !== "waiting") return c.json({ error: `This request is ${request.state} already.` }, 409);
+        if (!request) return c.json(failure(404, "No request has this id."), 404);
+        if (request.state !== "waiting") return c.json(failure(409, `This request is ${request.state} already.`), 409);
         try {
           await this.store.putRequest({ ...request, state: "withdrawn", why: null, withdrawnAt: this.now().toISOString() });
         } catch (err) {
@@ -375,9 +393,9 @@ export class AgentServiceApi {
     app.openapi(routes.createAgentRoute, async (c) => {
       const asked = c.req.valid("json");
       const role = asked.role === undefined ? null : await this.role(asked.role);
-      if (asked.role !== undefined && !role) return c.json({ error: `This stage has no role named ${asked.role}.` }, 400);
+      if (asked.role !== undefined && !role) return c.json(failure(400, `This stage has no role named ${asked.role}.`), 400);
       const made = await this.make(this.origin(c), { ...asked, role, createdBy: c.req.valid("header")["claimed-by"] ?? null });
-      if ("refused" in made) return c.json({ error: made.refused }, made.status);
+      if ("refused" in made) return c.json(failure(made.status, made.refused), made.status);
       return c.json(agentView(made.agent, made.host, this.now()), 201);
     });
 
@@ -400,17 +418,17 @@ export class AgentServiceApi {
 
     app.openapi(routes.getAgentRoute, async (c) => {
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
       return c.json(agentView(agent, await this.store.getHost(agent.hostId), this.now()), 200);
     });
 
     app.openapi(routes.messageAgentRoute, async (c) => afresh(async () => {
       const { text, interrupt } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
-      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
       const ready = await this.reachable(agent);
-      if (typeof ready === "string") return c.json({ error: ready }, 409);
+      if (typeof ready === "string") return c.json(failure(409, ready), 409);
       const now = this.now();
       if (agent.session) {
         const id = randomUUID();
@@ -425,7 +443,7 @@ export class AgentServiceApi {
         return c.json({ commandId: id }, 202);
       }
       if (text === undefined) {
-        return c.json({ error: `${agent.name} is ${agent.state}, with no session to interrupt.` }, 409);
+        return c.json(failure(409, `${agent.name} is ${agent.state}, with no session to interrupt.`), 409);
       }
       return this.start(c, agent, ready, text);
     }));
@@ -433,9 +451,9 @@ export class AgentServiceApi {
     app.openapi(routes.stopAgentRoute, async (c) => afresh(async () => {
       const force = c.req.valid("json")?.force === true;
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
       if (!agent.session) {
-        return c.json({ error: `${agent.name} is ${agent.state}, with no session to stop.` }, 409);
+        return c.json(failure(409, `${agent.name} is ${agent.state}, with no session to stop.`), 409);
       }
       const now = this.now();
       // A lost or deregistered host cannot be told, so its session is ended on record, as `force` does.
@@ -450,21 +468,21 @@ export class AgentServiceApi {
 
     app.openapi(routes.resumeAgentRoute, async (c) => afresh(async () => {
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
-      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
       if (agent.session) {
-        return c.json({ error: `${agent.name} is ${agent.state}, in a live session already.` }, 409);
+        return c.json(failure(409, `${agent.name} is ${agent.state}, in a live session already.`), 409);
       }
       const ready = await this.reachable(agent);
-      if (typeof ready === "string") return c.json({ error: ready }, 409);
+      if (typeof ready === "string") return c.json(failure(409, ready), 409);
       return this.start(c, agent, ready);
     }));
 
     app.openapi(routes.renameAgentRoute, async (c) => afresh(async () => {
       const { name, title, label } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
-      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
       const view = async (w: Agent) => agentView(w, await this.store.getHost(w.hostId), this.now());
       const renamed = {
         ...agent,
@@ -483,15 +501,15 @@ export class AgentServiceApi {
         });
       } catch (err) {
         if (!(err instanceof NameTaken)) throw err;
-        return c.json({ error: `An agent not retired is already named ${name}.` }, 409);
+        return c.json(failure(409, `An agent not retired is already named ${name}.`), 409);
       }
       return c.json(await view(renamed), 200);
     }));
 
     app.openapi(routes.retireAgentRoute, async (c) => afresh(async () => {
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
-      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired already.` }, 409);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired already.`), 409);
       return c.json({ commandId: await this.retire(agent) }, 202);
     }));
 
@@ -500,10 +518,10 @@ export class AgentServiceApi {
     app.openapi(routes.setAgentStatusRoute, async (c) => afresh(async () => {
       const { status, summary, headline } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
-      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
       if (!agent.session && !keepsPastSession(status)) {
-        return c.json({ error: `${agent.name} is ${agent.state}, with no live session to be ${status}.` }, 409);
+        return c.json(failure(409, `${agent.name} is ${agent.state}, with no live session to be ${status}.`), 409);
       }
       const said: Agent = { ...agent, status, summary, headline: headline ?? null, saidAt: this.now().toISOString() };
       // Mid-turn, what its maker asked be done waits for the turn and its background tasks to end; see `Fleet.report`.
@@ -520,10 +538,10 @@ export class AgentServiceApi {
     app.openapi(routes.setAgentTitleRoute, async (c) => afresh(async () => {
       const { title } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
-      if (agent.state === "retired") return c.json({ error: `${agent.name} is retired.` }, 409);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "retired") return c.json(failure(409, `${agent.name} is retired.`), 409);
       if (agent.title) {
-        return c.json({ error: `${agent.name} is titled "${agent.title}" already; only the person changes it.` }, 409);
+        return c.json(failure(409, `${agent.name} is titled "${agent.title}" already; only the person changes it.`), 409);
       }
       const titled: Agent = { ...agent, title };
       await this.fleet.apply({ agents: [titled], guarded: true });
@@ -535,25 +553,25 @@ export class AgentServiceApi {
       const { after, limit } = c.req.valid("query");
       const afterSeq = after === undefined ? -1 : seqAfter(after);
       if (afterSeq === undefined) {
-        return c.json({ error: "after: not a cursor this route issued." }, 400);
+        return c.json(failure(400, "after: not a cursor this route issued."), 400);
       }
-      if (!(await this.store.getAgent(id))) return c.json({ error: "No agent has this id." }, 404);
+      if (!(await this.store.getAgent(id))) return c.json(failure(404, "No agent has this id."), 404);
       const lines = await this.store.readLines(id, afterSeq, limit ?? 500);
       return c.json({ lines, next: cursorAfter(lines.at(-1)?.seq ?? afterSeq) }, 200);
     });
 
     app.openapi(routes.listSessionsRoute, async (c) => {
       const { id } = c.req.valid("param");
-      if (!(await this.store.getAgent(id))) return c.json({ error: "No agent has this id." }, 404);
+      if (!(await this.store.getAgent(id))) return c.json(failure(404, "No agent has this id."), 404);
       return c.json({ sessions: await this.store.sessionsOf(id) }, 200);
     });
 
     app.openapi(routes.getSessionContextRoute, async (c) => {
       const { id, sessionId } = c.req.valid("param");
       const agent = await this.store.getAgent(id);
-      if (!agent) return c.json({ error: "No agent has this id." }, 404);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
       const session = agent.session?.id === sessionId && (await this.store.sessionsOf(id)).find((s) => s.id === sessionId);
-      if (!session) return c.json({ error: "This session is not the agent's live one." }, 409);
+      if (!session) return c.json(failure(409, "This session is not the agent's live one."), 409);
       const read = await this.attach(this.origin(c), agent, FETCH_LIMIT);
       await this.fleet.apply({
         sessions: [{
@@ -569,7 +587,7 @@ export class AgentServiceApi {
 
     app.openapi(routes.listAgentCommandsRoute, async (c) => {
       const { id } = c.req.valid("param");
-      if (!(await this.store.getAgent(id))) return c.json({ error: "No agent has this id." }, 404);
+      if (!(await this.store.getAgent(id))) return c.json(failure(404, "No agent has this id."), 404);
       const now = this.now();
       const commands = (await this.store.sentTo(id))
         .filter((sent) => !expired(sent, now))
@@ -581,7 +599,7 @@ export class AgentServiceApi {
 
     app.openapi(routes.socketTicketRoute, async (c) => {
       const socketUrl = this.socketFor(c);
-      if (!socketUrl) return c.json({ error: "This server has no socket." }, 503);
+      if (!socketUrl) return c.json(failure(503, "This server has no socket."), 503);
       const issued = ticket();
       const expiresAt = new Date(this.now().getTime() + routes.TICKET_TTL * 1000).toISOString();
       await this.store.putTicket(hash(issued), expiresAt);
@@ -592,10 +610,11 @@ export class AgentServiceApi {
     // collapsing this to 500 would report a bad request as our failure.
     app.onError((err, c) => {
       if (err instanceof HTTPException) {
-        return c.json({ error: err.message || "Bad request." }, err.status);
+        const status = (err.status in ERROR_CODES ? err.status : 400) as ErrorStatus;
+        return c.json(failure(status, err.message || "Bad request."), status);
       }
       console.error("Unhandled error:", err);
-      return c.json({ error: "Internal error." }, 500);
+      return c.json(failure(500, "Internal error."), 500);
     });
   }
 
@@ -861,10 +880,10 @@ export class AgentServiceApi {
 
   private async start(c: Context, agent: Agent, host: Host, text?: string) {
     const full = await this.full(host);
-    if (full) return c.json({ error: full }, 409);
+    if (full) return c.json(failure(409, full), 409);
     const now = this.now();
     const started = await this.starting(this.origin(c), agent, now.toISOString(), text);
-    if ("refused" in started) return c.json({ error: started.refused }, 409);
+    if ("refused" in started) return c.json(failure(409, started.refused), 409);
     await this.fleet.apply({
       agents: [started.agent],
       sessions: [started.session],
@@ -899,31 +918,16 @@ export class AgentServiceApi {
     registry.register("SocketOutbound", routes.SocketOutboundSchema);
     this.hono.doc31(SPEC_PATH, {
       openapi: "3.1.0",
-      info: {
-        version: "0.1.0",
-        title: "agent-service",
-        description:
-          "The API for agents: lasting agents, each living on one host, run in sessions. Hosts " +
-          "send a heartbeat every 30 seconds, which keeps them `connected` and says what they " +
-          "offer. Clients read state and issue commands. Every operation but `GetHealth` needs the " +
-          "stage's bearer token.\n\n" +
-          "Commands and reports go by WebSocket at `socketUrl` alone: a host connects with " +
-          "`?hostId=<id>` and the stage's token as `Authorization: Bearer`, a page with " +
-          "`?ticket=<one-time ticket>` from `CreateSocketTicket`. What goes up is a " +
-          "`SocketInbound` (`report`, `ping`), and what comes down a `SocketOutbound`: a host's " +
-          "sockets get each `command` as it is queued, and a host's socket, once open, every " +
-          "command still pending for it; every viewer gets each `agent` as it changes, `lines` " +
-          "as they arrive and the `host` on each heartbeat. A command stays queued until a " +
-          "report names it, so a dropped socket loses nothing: it is replayed on the next.\n\n" +
-          "No body carries the server's time: a response's `Date` header is when it was made, " +
-          "and so when a host's `status` was computed.",
-      },
+      info: { version: API_VERSION, title: "agent-service", description: OVERVIEW },
       tags: [
-        { name: routes.AUDIENCES.host, description: "Called by hosts: stay connected, say what they offer." },
-        { name: routes.AUDIENCES.reading, description: "Called by clients to read state." },
-        { name: routes.AUDIENCES.acting, description: "Called by clients to create agents and send them commands." },
-        { name: routes.AUDIENCES.agent, description: "Called by an agent, from its session, to say what it is doing." },
-        { name: "meta" },
+        { name: routes.TAGS.agents, description: "Make agents, talk to them, and follow what they do." },
+        { name: routes.TAGS.requests, description: "Ask for an agent in a role, started when usage and a host allow." },
+        { name: routes.TAGS.roles, description: "What each kind of agent starts with." },
+        { name: routes.TAGS.hosts, description: "See the hosts agents run on." },
+        { name: routes.TAGS.usage, description: "The Claude account's allowance used." },
+        { name: routes.TAGS.pages, description: "What a page needs to watch agents live." },
+        { name: routes.TAGS.hostProtocol, description: "Called by agent-host on each host, not by you." },
+        { name: routes.TAGS.platform, description: "Health, and the clients agents are given." },
       ],
     });
   }

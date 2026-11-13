@@ -264,7 +264,7 @@ describe("a request for an agent", () => {
   it("refuses a token for a service the agent would not be given, or one given twice", async () => {
     const narrow = await call("POST", "/requests", { role: "reviewer", brief: "Go.", credentials: ["work-tracker"], tokens: [{ name: "approval-service", token: "own" }] });
     expect(narrow.status).toBe(400);
-    expect(((await narrow.json()) as { error: string }).error).toContain("approval-service is not among work-tracker");
+    expect(((await narrow.json()) as { message: string }).message).toContain("approval-service is not among work-tracker");
     const twice = await call("POST", "/requests", {
       role: "reviewer",
       brief: "Go.",
@@ -280,7 +280,7 @@ describe("a request for an agent", () => {
     expect((await call("POST", "/requests", { role: "reviewer", brief: "Go.", name: "me-1" })).status).toBe(400);
     const briefless = await call("POST", "/requests", { role: "reviewer" });
     expect(briefless.status).toBe(400);
-    expect(((await briefless.json()) as { error: string }).error).toContain("needs `brief`");
+    expect(((await briefless.json()) as { message: string }).message).toContain("needs `brief`");
     expect((await call("POST", "/requests", { role: "nobody", brief: "Go." })).status).toBe(400);
     expect((await call("POST", "/requests", { role: "reviewer", brief: "Go.", credentials: ["github"] })).status).toBe(400);
   });
