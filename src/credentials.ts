@@ -11,9 +11,6 @@ export interface Credential {
   token: TokenSource;
 }
 
-/** What an agent made without `credentials` is given, of those this stage has. */
-export const DEFAULT_CREDENTIALS = ["document-service", "work-tracker", "agent-service", "approval-service"];
-
 /**
  * The services an agent may be given, by name. An agent's record and its
  * queued `start` hold only names and addresses; each token is read when its
@@ -34,9 +31,9 @@ export class Credentials {
     return [...this.#known.keys()];
   }
 
-  /** What an agent made without naming any is given. */
+  /** What an agent made without naming any is given: every service this stage has. */
   get defaults(): string[] {
-    return DEFAULT_CREDENTIALS.filter((name) => this.#known.has(name));
+    return this.names;
   }
 
   /** Why an agent may not be given `names`; null when it may. */

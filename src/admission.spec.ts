@@ -172,7 +172,7 @@ describe("a request for an agent", () => {
       role: "reviewer",
       item: "item-1",
       createdBy: "approval-service",
-      documents: ["approval"],
+      documents: ["workplace/reviewer"],
       whenDone: "retire",
       state: "working",
     });
@@ -184,7 +184,7 @@ describe("a request for an agent", () => {
     await usage(0.1, 0.1);
     const asked = await ask({ role: "planner" });
     expect(asked).toMatchObject({ state: "started", agentId: asked.id });
-    expect(store.agents.get(asked.id)).toMatchObject({ role: "planner", label: "plan: new work", documents: ["planner"] });
+    expect(store.agents.get(asked.id)).toMatchObject({ role: "planner", label: "plan: new work", documents: ["workplace/planner"] });
   });
 
   it("starts the higher role priority first, and of equal priority the older", async () => {
@@ -194,18 +194,18 @@ describe("a request for an agent", () => {
     later(1);
     const reviewer = await ask({ role: "reviewer", brief: "Review." });
     later(1);
-    const judge = await ask({ role: "judge", brief: "Judge." });
+    const onboarder = await ask({ role: "onboarder", brief: "Onboard." });
     expect((await waiting()).map((r) => [r.id, r.position])).toEqual([
       [reviewer.id, 1],
-      [judge.id, 2],
+      [onboarder.id, 2],
       [implementer.id, 3],
     ]);
     await beat("laptop", 1);
     expect((await request(reviewer.id)).state).toBe("started");
-    expect((await request(judge.id)).state).toBe("waiting");
+    expect((await request(onboarder.id)).state).toBe("waiting");
     expect((await request(implementer.id)).state).toBe("waiting");
     await beat("laptop", 2);
-    expect((await request(judge.id)).state).toBe("started");
+    expect((await request(onboarder.id)).state).toBe("started");
     expect((await request(implementer.id))).toMatchObject({ state: "waiting", position: 1 });
   });
 
@@ -249,20 +249,22 @@ describe("a request for an agent", () => {
     expect(kept.get(`${asked.id}/approval-service`)).toBe("own");
     await beat("laptop", 1);
     const reviewer = SEEDED_ROLES.find((r) => r.name === "reviewer")!;
-    expect(store.agents.get(asked.id)).toMatchObject({
+    const agent = store.agents.get(asked.id)!;
+    expect(agent).toMatchObject({
       role: "reviewer",
       documents: reviewer.documents,
       whenDone: reviewer.whenDone,
-      credentials: reviewer.credentials,
       ownCredentials: ["approval-service"],
     });
+    // The role names none, so the agent is given every service this stage has, its own token for one.
+    expect(agent.credentials ?? null).toBe(reviewer.credentials);
     expect(JSON.stringify(await request(asked.id))).not.toContain("own\"");
   });
 
   it("refuses a token for a service the agent would not be given, or one given twice", async () => {
-    const judge = await call("POST", "/requests", { role: "judge", brief: "Go.", tokens: [{ name: "approval-service", token: "own" }] });
-    expect(judge.status).toBe(400);
-    expect(((await judge.json()) as { error: string }).error).toContain("approval-service is not among document-service");
+    const narrow = await call("POST", "/requests", { role: "reviewer", brief: "Go.", credentials: ["work-tracker"], tokens: [{ name: "approval-service", token: "own" }] });
+    expect(narrow.status).toBe(400);
+    expect(((await narrow.json()) as { error: string }).error).toContain("approval-service is not among work-tracker");
     const twice = await call("POST", "/requests", {
       role: "reviewer",
       brief: "Go.",

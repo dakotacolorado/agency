@@ -1,15 +1,8 @@
 import type { Skill } from "./skill.ts";
 import { layReferences, overlay, type SkillRead } from "./skills.ts";
 
-/** The document every session starts with. */
-export const CONTEXT_KEY = "global";
-
-/**
- * A copy of `global` with a proposal applied, as document-service's
- * `try:beta` writes one: given as a document, it is read in place of `global`,
- * so a proposed `global` can be tried before it merges.
- */
-export const isGlobalTrial = (key: string) => key.startsWith(`proposal.${CONTEXT_KEY}.`);
+/** The honed skill every session starts with, as its `CLAUDE.md`. */
+export const CONTEXT_KEY = "workplace/global";
 
 /**
  * A start carries the context inside one socket message; this leaves the rest
@@ -48,7 +41,7 @@ export interface Attached extends Read {
   ownCredentials: string[];
 }
 
-/** What document-service gave a session, and why it left out what it did. */
+/** What honed gave a session, and why it left out what it did. */
 export interface Read {
   context: SessionContext | null;
   documents: SessionContext[];
@@ -65,14 +58,14 @@ export interface ContextSource {
    * the whole is kept within `limit` bytes, `CONTEXT_LIMIT` unless said.
    */
   forSession(documents: string[], skills?: Skill[], limit?: number): Promise<Read>;
-  /** Why an agent may not be made with `documents`, in document-service's words; null when it may. */
+  /** Why an agent may not be made with `documents`, the honed skills it names; null when it may. */
   refuse(documents: string[]): Promise<string | null>;
 }
 
 /** Nothing attached: tests, the dev server, and a stage deployed without the services' addresses. */
 export const NO_CONTEXT: ContextSource = {
   forSession: async () => ({ context: null, documents: [], skills: [], note: "no context is configured" }),
-  refuse: async (documents) => (documents.length ? "no document-service is configured, so no document can be given" : null),
+  refuse: async (documents) => (documents.length ? "no honed is configured, so no skill can be given" : null),
 };
 
 export interface Service {
@@ -80,103 +73,155 @@ export interface Service {
   token: { value(): Promise<string | null> };
 }
 
+/** Where the last copy of each skill read whole is kept. */
+export interface Copies {
+  keepCopy(name: string, version: number, copy: SessionContext): Promise<void>;
+  copyOf<T>(name: string): Promise<T | null>;
+}
+
+/** honed's `GET /api/skills/{name}`, as much of it as a start needs. */
+export interface HonedSkill {
+  name: string;
+  version: number;
+  files?: { path: string; content: string; executable?: boolean }[];
+}
+
+/** A `SKILL.md`'s text without its front matter, which says when to use a skill, not what to do. */
+export const body = (skill: string) => skill.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").replace(/^\s+/, "");
+
+/** The last segment of a skill's name: `workplace/planner` is laid as `skills/planner/`. */
+const folder = (name: string) => name.split("/").pop()!;
+
 /**
- * Reads the context from document-service. A document that cannot be read,
- * would take the context past its limit, or would write a file one before
- * it writes, is left out, and the session starts without it.
+ * A skill as a session is given it. `workplace/global`'s `SKILL.md` is its
+ * `CLAUDE.md`, and any other file of it goes under `skills/global/`; every
+ * other skill is laid whole as a Claude Code skill, `skills/<last segment>/`.
  */
-export class ServiceContext implements ContextSource {
-  private readonly documents: Service;
+export function laid(skill: HonedSkill): SessionContext {
+  const files = (skill.files ?? []).map(({ path, content, executable }) => ({ path, content, executable: Boolean(executable) }));
+  return {
+    key: skill.name,
+    version: skill.version,
+    files:
+      skill.name === CONTEXT_KEY
+        ? files.map((f) => (f.path === "SKILL.md" ? { ...f, path: "CLAUDE.md", content: body(f.content), executable: false } : { ...f, path: `skills/${folder(skill.name)}/${f.path}` }))
+        : files.map((f) => ({ ...f, path: `skills/${folder(skill.name)}/${f.path}` })),
+  };
+}
+
+/**
+ * Reads the context from honed: `workplace/global`, then each skill the agent
+ * names. A skill read whole is kept, so when honed does not answer a start
+ * is given the last copy, saying so; one honed says it does not have is left
+ * out. A skill that would take the start past its limit, or would write a
+ * file one before it writes, is left out too, and the session starts without it.
+ */
+export class HonedContext implements ContextSource {
+  private readonly honed: Service;
+  private readonly copies: Copies;
   private readonly fetchImpl: typeof globalThis.fetch;
 
-  constructor(documents: Service, fetchImpl: typeof globalThis.fetch = globalThis.fetch) {
-    this.documents = documents;
+  constructor(honed: Service, copies: Copies, fetchImpl: typeof globalThis.fetch = globalThis.fetch) {
+    this.honed = honed;
+    this.copies = copies;
     this.fetchImpl = fetchImpl;
   }
 
   async forSession(documents: string[], skills: Skill[] = [], limit = CONTEXT_LIMIT): Promise<Read> {
-    const ds = await this.documents.token.value();
-    if (!ds) return { context: null, documents: [], skills: [], note: "document-service's token could not be read" };
-    const trial = documents.find(isGlobalTrial);
-    const [global, given] = await Promise.all([
-      this.read(ds, trial ?? CONTEXT_KEY),
-      Promise.all(documents.filter((key) => key !== trial).map((key) => this.read(ds, key))),
-    ]);
+    const [read, given] = await Promise.all([this.read(CONTEXT_KEY), Promise.all(documents.map((key) => this.read(key)))]);
+    const notes: string[] = [];
+    const note = (r: Fetched) => {
+      if (typeof r !== "string" && r.note) notes.push(r.note);
+    };
     // A start without global keeps the context its host wrote last, so it is given nothing beside it.
-    if (typeof global === "string") return { context: null, documents: [], skills: [], note: global };
+    if (typeof read === "string") return { context: null, documents: [], skills: [], note: read };
+    note(read);
+    const global = read.skill;
     if (Buffer.byteLength(JSON.stringify(global)) > limit) {
       const bytes = Buffer.byteLength(JSON.stringify(global));
-      return { context: null, documents: [], skills: [], note: `${CONTEXT_KEY} v${global.version} is ${bytes} bytes, over the ${limit} a start can carry`, cut: true };
+      return { context: null, documents: [], skills: [], note: [...notes, `${CONTEXT_KEY} v${global.version} is ${bytes} bytes, over the ${limit} a start can carry`].join("; "), cut: true };
     }
-    // Clients first, then the documents beside global, then references with what room is left:
+    // Clients first, then the skills beside global, then references with what room is left:
     // an agent can call a service without its reference, but not without its client or its role.
-    const laid = overlay(global, skills, limit);
-    const notes: string[] = [...laid.notes];
-    let cut = laid.notes.length > 0;
+    const overlaid = overlay(global, skills, limit);
+    notes.push(...overlaid.notes);
+    let cut = overlaid.notes.length > 0;
     const taken: SessionContext[] = [];
-    const paths = new Set([...laid.context.files, ...laid.references.flatMap((s) => s.files)].map((f) => f.path));
-    let left = limit - Buffer.byteLength(JSON.stringify(laid.context));
-    for (const doc of given) {
-      if (typeof doc === "string") {
-        notes.push(doc);
+    const paths = new Set([...overlaid.context.files, ...overlaid.references.flatMap((s) => s.files)].map((f) => f.path));
+    let left = limit - Buffer.byteLength(JSON.stringify(overlaid.context));
+    for (const r of given) {
+      if (typeof r === "string") {
+        notes.push(r);
         continue;
       }
+      note(r);
+      const doc = r.skill;
       const bytes = Buffer.byteLength(JSON.stringify(doc));
       const clash = doc.files.find((f) => f.path !== "CLAUDE.md" && paths.has(f.path));
       if (bytes > left) {
         notes.push(`${doc.key} v${doc.version} is ${bytes} bytes, over the ${left} left of the ${limit} a start can carry`);
         cut = true;
       } else if (clash) {
-        notes.push(`${doc.key} v${doc.version} writes ${clash.path}, as a document before it does`);
+        notes.push(`${doc.key} v${doc.version} writes ${clash.path}, as a skill before it does`);
       } else {
         taken.push(doc);
         left -= bytes;
         for (const f of doc.files) paths.add(f.path);
       }
     }
-    const { context, notes: dropped } = layReferences(laid.context, laid.references, limit - taken.reduce((n, doc) => n + Buffer.byteLength(JSON.stringify(doc)), 0));
+    const { context, notes: dropped } = layReferences(overlaid.context, overlaid.references, limit - taken.reduce((n, doc) => n + Buffer.byteLength(JSON.stringify(doc)), 0));
     notes.push(...dropped);
     if (dropped.length) cut = true;
-    return { context, documents: taken, skills: laid.taken, note: notes.length ? notes.join("; ") : null, ...(cut && { cut: true as const }) };
+    return { context, documents: taken, skills: overlaid.taken, note: notes.length ? notes.join("; ") : null, ...(cut && { cut: true as const }) };
   }
 
+  /** A name honed does not have is refused; one it cannot be asked about is let through when a copy is kept. */
   async refuse(documents: string[]): Promise<string | null> {
-    if (!documents.length) return null;
-    const ds = await this.documents.token.value();
-    if (!ds) return "document-service's token could not be read, so no document can be given";
-    for (const key of documents) {
-      try {
-        const res = await this.get(ds, key);
-        if (res.ok) continue;
-        const said = ((await res.json().catch(() => null)) as { error?: string } | null)?.error;
-        return `document-service answered ${res.status} for ${key}${said ? `: ${said}` : ""}`;
-      } catch (err) {
-        return `document-service could not be read: ${(err as Error).message}`;
-      }
+    for (const name of documents) {
+      const got = await this.fetch(name);
+      if (got.kind === "skill") continue;
+      if (got.kind === "missing") return got.why;
+      if (!(await this.copies.copyOf(name))) return `${got.why}, and no copy of ${name} is kept, so it cannot be given`;
     }
     return null;
   }
 
-  private get(token: string, key: string): Promise<Response> {
-    return this.fetchImpl(`${this.documents.url.replace(/\/$/, "")}/documents/${encodeURIComponent(key)}`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(5000),
-    });
+  /** The skill as honed has it now, else its last copy with a note saying so, else why neither. */
+  private async read(name: string): Promise<Fetched> {
+    const got = await this.fetch(name);
+    if (got.kind === "skill") {
+      const skill = laid(got.skill);
+      await this.copies.keepCopy(name, skill.version, skill);
+      return { skill, note: null };
+    }
+    if (got.kind === "missing") return got.why;
+    const copy = await this.copies.copyOf<SessionContext>(name);
+    if (!copy) return `${got.why}, and no copy of ${name} is kept`;
+    return { skill: copy, note: `${got.why}, so ${name} is its last good copy, v${copy.version}` };
   }
 
-  /** The document's latest version, or why it could not be read. */
-  private async read(token: string, key: string): Promise<SessionContext | string> {
+  private async fetch(name: string): Promise<{ kind: "skill"; skill: HonedSkill } | { kind: "missing" | "down"; why: string }> {
+    let token: string | null;
     try {
-      const res = await this.get(token, key);
-      if (!res.ok) return `document-service answered ${res.status} for ${key}`;
-      const doc = (await res.json()) as { key: string; version: number; files?: ContextFile[] };
-      return {
-        key: doc.key,
-        version: doc.version,
-        files: (doc.files ?? []).map(({ path, content, executable }) => ({ path, content, executable: Boolean(executable) })),
-      };
+      token = await this.honed.token.value();
+    } catch {
+      token = null;
+    }
+    if (!token) return { kind: "down", why: "honed's token could not be read" };
+    try {
+      const res = await this.fetchImpl(`${this.honed.url.replace(/\/$/, "")}/api/skills/${name.split("/").map(encodeURIComponent).join("/")}`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.status === 404) return { kind: "missing", why: `honed has no skill named ${name}` };
+      if (!res.ok) return { kind: "down", why: `honed answered ${res.status} for ${name}` };
+      const skill = (await res.json()) as Partial<HonedSkill>;
+      if (typeof skill.name !== "string" || !Number.isInteger(skill.version)) return { kind: "down", why: `honed's answer for ${name} is not a skill` };
+      return { kind: "skill", skill: skill as HonedSkill };
     } catch (err) {
-      return `document-service could not be read for ${key}: ${(err as Error).message}`;
+      return { kind: "down", why: `honed could not be read for ${name}: ${(err as Error).message}` };
     }
   }
 }
+
+type Fetched = { skill: SessionContext; note: string | null } | string;

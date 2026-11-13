@@ -145,7 +145,7 @@ No body carries the server's time: a response's `Date` header is when it was mad
   getSkill
 
 - Description  
-  The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, so an agent calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.
+  The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over `workplace/global`'s files at the same paths, so an agent calls the API that is deployed.
 
 - Tags  
   clients, reading
@@ -462,7 +462,7 @@ id: string //pattern: ^[A-Za-z0-9._-]{1,64}$
   roles: {
     // A role's name, such as `reviewer`: what kind of agent it makes.
     name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-    documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+    documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
     // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
     credentials: array | null //maxItems: 16
     // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -540,7 +540,7 @@ The role.
 {
   // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // Absent, null: the stage's defaults.
   credentials?: array | null //maxItems: 16
   // Absent, `keep`.
@@ -566,7 +566,7 @@ The role.
 {
   // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
   // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -584,7 +584,7 @@ The role.
 }
 ```
 
-- 400 The request failed validation, a credential is not one this stage has, or document-service does not know one of `documents`.
+- 400 The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.
 
 `application/json`
 
@@ -668,7 +668,7 @@ name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
 {
   // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
   // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -761,7 +761,7 @@ What changes.
 
 ```typescript
 {
-  documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials?: array | null //maxItems: 16
   // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -787,7 +787,7 @@ What changes.
 {
   // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
   // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -805,7 +805,7 @@ What changes.
 }
 ```
 
-- 400 The request failed validation, a credential is not one this stage has, or document-service does not know one of `documents`.
+- 400 The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.
 
 `application/json`
 
@@ -1372,7 +1372,7 @@ Who the agent is and where it lives.
      name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
      token: string //minLength: 1 //maxLength: 4096
    })[] //maxItems: 16
-  documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
 }
 ```
 
@@ -1441,7 +1441,7 @@ Who the agent is and where it lives.
 }
 ```
 
-- 400 The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or document-service does not know one of `documents`.
+- 400 The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.
 
 `application/json`
 
@@ -2768,7 +2768,7 @@ id: string //format: uuid
     endedAt: string | null //format: date-time
     // `stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.
     ended: enum[stopped, interrupted, ] | null
-    // The document-service context it started with; null when it was given none.
+    // The `workplace/global` it started with, from honed; null when it was given none.
     context: object | null
     documents: {
       key: string
@@ -3864,7 +3864,7 @@ object | null
   roles: {
     // A role's name, such as `reviewer`: what kind of agent it makes.
     name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-    documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+    documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
     // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
     credentials: array | null //maxItems: 16
     // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -3889,7 +3889,7 @@ object | null
 {
   // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials: array | null //maxItems: 16
   // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -3913,7 +3913,7 @@ object | null
 {
   // A role's name, such as `reviewer`: what kind of agent it makes.
   name: string //pattern: ^[a-z][a-z0-9-]{0,39}$
-  documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // Absent, null: the stage's defaults.
   credentials?: array | null //maxItems: 16
   // Absent, `keep`.
@@ -3933,7 +3933,7 @@ object | null
 
 ```typescript
 {
-  documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
   // The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.
   credentials?: array | null //maxItems: 16
   // What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `retireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.
@@ -4077,7 +4077,7 @@ object | null
      name: string //pattern: ^[a-z0-9][a-z0-9-]{0,63}$
      token: string //minLength: 1 //maxLength: 4096
    })[] //maxItems: 16
-  documents?: string[] //pattern: ^[a-z0-9][a-z0-9.-]{0,99}$ //maxItems: 8
+  documents?: string[] //maxLength: 100 //pattern: ^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$ //maxItems: 8
 }
 ```
 
@@ -4250,7 +4250,7 @@ string //minLength: 1 //maxLength: 512
     endedAt: string | null //format: date-time
     // `stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.
     ended: enum[stopped, interrupted, ] | null
-    // The document-service context it started with; null when it was given none.
+    // The `workplace/global` it started with, from honed; null when it was given none.
     context: object | null
     documents: {
       key: string
@@ -4280,7 +4280,7 @@ string //minLength: 1 //maxLength: 512
   endedAt: string | null //format: date-time
   // `stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.
   ended: enum[stopped, interrupted, ] | null
-  // The document-service context it started with; null when it was given none.
+  // The `workplace/global` it started with, from honed; null when it was given none.
   context: object | null
   documents: {
     key: string

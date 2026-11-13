@@ -1,6 +1,6 @@
 import type { ContextFile, SessionContext } from "./context.ts";
 import type { Credential } from "./credentials.ts";
-import type { Skill } from "./skill.ts";
+import { SKILL_KEY, type Skill } from "./skill.ts";
 
 /** A skill as a session records it. */
 export interface SkillRead {
@@ -11,10 +11,13 @@ export interface SkillRead {
 
 /**
  * Only a client and its reference: a `SKILL.md` or `CLAUDE.md` is guidance,
- * which reaches an agent only through `global`'s votes.
+ * which reaches an agent through honed. This service's own `page` and `title`
+ * say when to use them, as no honed skill does, so its `SKILL.md`s are laid too.
  */
 const CLIENT = /^skills\/[a-z0-9][a-z0-9-]*\/(bin|reference)(\/[A-Za-z0-9._-]+)+$/;
-const client = (path: string) => CLIENT.test(path) && !path.split("/").some((part) => part === "." || part === "..");
+const OWN_GUIDANCE = /^skills\/[a-z0-9][a-z0-9-]*\/SKILL\.md$/;
+const safe = (path: string) => !path.split("/").some((part) => part === "." || part === "..");
+const client = (path: string, own: boolean) => (CLIENT.test(path) || (own && OWN_GUIDANCE.test(path))) && safe(path);
 
 export interface SkillSource {
   /** The skills of the services `names`, in order, and why any was left out. */
@@ -46,9 +49,10 @@ export class ServiceSkills implements SkillSource {
     for (const r of read) {
       if (typeof r === "string") notes.push(r);
       else if (r) {
-        const dropped = r.files.filter((f) => !client(f.path));
-        if (dropped.length) notes.push(`${r.key} skill sent ${dropped.map((f) => f.path).join(", ")}, which only global may write`);
-        skills.push({ ...r, files: r.files.filter((f) => client(f.path)) });
+        const own = r.key === SKILL_KEY;
+        const dropped = r.files.filter((f) => !client(f.path, own));
+        if (dropped.length) notes.push(`${r.key} skill sent ${dropped.map((f) => f.path).join(", ")}, which only honed may write`);
+        skills.push({ ...r, files: r.files.filter((f) => client(f.path, own)) });
       }
     }
     return { skills, notes };
@@ -67,6 +71,8 @@ export class ServiceSkills implements SkillSource {
         // Before global is read (5s), inside the function's 10s, so a slow service cannot time out the start.
         signal: AbortSignal.timeout(3000),
       });
+      // A service with no client to give, as honed, answers 404.
+      if (res.status === 404) return null;
       if (!res.ok) return `${name} answered ${res.status} for its skill`;
       const skill = (await res.json()) as Partial<Skill>;
       if (typeof skill.key !== "string" || !Number.isInteger(skill.version) || !Array.isArray(skill.files)) {

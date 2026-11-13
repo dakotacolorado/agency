@@ -884,7 +884,7 @@
             "items": {
               "type": "string"
             },
-            "description": "What each session is given after `global`, by key."
+            "description": "The honed skills each session is given after `workplace/global`, by name."
           },
           "credentials": {
             "type": [
@@ -1598,11 +1598,12 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9.-]{0,99}$",
-              "example": "approval"
+              "maxLength": 100,
+              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "example": "workplace/reviewer"
             },
             "maxItems": 8,
-            "description": "What each session of an agent made from it reads after `global`, by key, in this order."
+            "description": "The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order."
           },
           "credentials": {
             "type": [
@@ -1695,11 +1696,12 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9.-]{0,99}$",
-              "example": "approval"
+              "maxLength": 100,
+              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "example": "workplace/reviewer"
             },
             "maxItems": 8,
-            "description": "Absent, only `global`."
+            "description": "Absent, only `workplace/global`."
           },
           "credentials": {
             "type": [
@@ -1771,11 +1773,12 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9.-]{0,99}$",
-              "example": "approval"
+              "maxLength": 100,
+              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "example": "workplace/reviewer"
             },
             "maxItems": 8,
-            "description": "What each session of an agent made from it reads after `global`, by key, in this order."
+            "description": "The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order."
           },
           "credentials": {
             "type": [
@@ -2068,7 +2071,7 @@
             "example": [
               "work-tracker",
               {
-                "name": "document-service",
+                "name": "waypoint",
                 "token": "…"
               }
             ],
@@ -2214,21 +2217,22 @@
             "example": [
               "work-tracker",
               {
-                "name": "document-service",
+                "name": "waypoint",
                 "token": "…"
               }
             ],
-            "description": "The services each session is given an address and token for, by name: `document-service`, `work-tracker`, `agent-service`, `approval-service`, as the stage has them. A name it does not have is refused. Absent, the role's, or without one all of those. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired."
+            "description": "The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired."
           },
           "documents": {
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9.-]{0,99}$",
-              "example": "approval"
+              "maxLength": 100,
+              "pattern": "^(?:[a-z0-9]+(?:-[a-z0-9]+)*\\/)?[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "example": "workplace/reviewer"
             },
             "maxItems": 8,
-            "description": "Read after `global` at each start, at their latest version. A key document-service does not know is refused here, in its words. Absent, the role's, or without one only `global`."
+            "description": "Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`."
           }
         },
         "required": [
@@ -2464,7 +2468,7 @@
               "key",
               "version"
             ],
-            "description": "The document-service context it started with; null when it was given none."
+            "description": "The `workplace/global` it started with, from honed; null when it was given none."
           },
           "documents": {
             "type": "array",
@@ -2696,7 +2700,7 @@
       "get": {
         "operationId": "getSkill",
         "summary": "Read the clients agents call this deployment with",
-        "description": "The `page` and `title` skills' `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill`, over `global`'s files at the same paths, so an agent calls the API that is deployed. Their `SKILL.md`s are not here: guidance stays in `global`.",
+        "description": "The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over `workplace/global`'s files at the same paths, so an agent calls the API that is deployed.",
         "security": [
           {
             "bearerAuth": []
@@ -3051,7 +3055,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation, a credential is not one this stage has, or document-service does not know one of `documents`.",
+            "description": "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3230,7 +3234,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation, a credential is not one this stage has, or document-service does not know one of `documents`.",
+            "description": "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3674,7 +3678,7 @@
             }
           },
           "400": {
-            "description": "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or document-service does not know one of `documents`.",
+            "description": "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.",
             "content": {
               "application/json": {
                 "schema": {

@@ -24,11 +24,12 @@ describe("each service's skill, for a start", () => {
     expect(seen).toEqual(["https://wt.beta/skill Bearer t"]);
   });
 
-  it("is left out, saying why, when the service has none, cannot be reached or its token cannot be read", async () => {
+  it("is left out, silently when the service has none, and saying why when it cannot be reached or its token cannot be read", async () => {
     const down = () => {
       throw new Error("timed out");
     };
-    expect(await skills({}).forSession(["work-tracker"])).toEqual({ skills: [], notes: ["work-tracker answered 404 for its skill"] });
+    expect(await skills({}).forSession(["work-tracker"])).toEqual({ skills: [], notes: [] });
+    expect(await skills({ "https://wt.beta/skill": () => new Response("{}", { status: 502 }) }).forSession(["work-tracker"])).toEqual({ skills: [], notes: ["work-tracker answered 502 for its skill"] });
     expect((await skills({ "https://wt.beta/skill": down }).forSession(["work-tracker"])).notes).toEqual(["work-tracker's skill could not be read: timed out"]);
     expect((await skills({}).forSession(["document-service"])).notes).toEqual(["document-service's token could not be read, so its skill was not"]);
     expect((await skills({ "https://wt.beta/skill": () => Response.json({ files: "no" }) }).forSession(["work-tracker"])).notes).toEqual(["work-tracker's skill is not a skill"]);
@@ -47,17 +48,25 @@ describe("each service's skill, for a start", () => {
     const read = await skills({ "https://wt.beta/skill": () => Response.json(sly) }).forSession(["work-tracker"]);
     expect(read.skills[0]!.files).toEqual(WT.files);
     expect(read.notes).toEqual([
-      "work-tracker skill sent skills/work-tracker/SKILL.md, CLAUDE.md, skills/work-tracker/reference/../../page/SKILL.md, which only global may write",
+      "work-tracker skill sent skills/work-tracker/SKILL.md, CLAUDE.md, skills/work-tracker/reference/../../page/SKILL.md, which only honed may write",
     ]);
   });
 });
 
 describe("this service's own skill", () => {
-  it("is page's and title's bin/ and the page reference, with nothing else", () => {
+  it("is page's and title's SKILL.md and bin/, and the page reference, with nothing else", () => {
     expect(readSkill(SKILL_DIR, 1, "c").files.map((f) => [f.path, f.executable])).toEqual([
+      ["skills/page/SKILL.md", false],
       ["skills/page/bin/page", true],
       ["skills/page/reference/api.md", false],
+      ["skills/title/SKILL.md", false],
       ["skills/title/bin/title", true],
     ]);
+  });
+
+  it("is laid with its SKILL.md files, since no honed skill says when to use page and title", async () => {
+    const own = readSkill(SKILL_DIR, 1, "c");
+    const read = await new ServiceSkills({ "agent-service": service(null) }, () => own).forSession(["agent-service"]);
+    expect(read).toEqual({ skills: [own], notes: [] });
   });
 });

@@ -1480,13 +1480,14 @@ describe("a session's context", () => {
     });
   });
 
-  it("refuses a document document-service does not know, in its words, and global or one twice", async () => {
+  it("refuses a skill its source does not know, in its words, and workplace/global or one twice", async () => {
     const res = await call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", documents: ["approval", "nope"] });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("document-service answered 404 for nope: no document nope");
     const named = (documents: string[]) => call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", documents });
-    expect((await named(["global"])).status).toBe(400);
+    expect((await named(["workplace/global"])).status).toBe(400);
     expect((await named(["approval", "approval"])).status).toBe(400);
+    expect((await named(["a/b/c"])).status).toBe(400);
     expect((await named(["Approval"])).status).toBe(400);
     expect((await read("/agents")).agents).toHaveLength(1);
   });
@@ -1775,11 +1776,11 @@ describe("roles", () => {
 
   it("lists the six seeded roles, highest priority first, each with all it gives", async () => {
     const { roles } = await read("/roles");
-    expect(roles.map((r: { name: string }) => r.name)).toEqual(["planner", "conflict", "investigator", "judge", "onboarder", "reviewer", "implementer"]);
+    expect(roles.map((r: { name: string }) => r.name)).toEqual(["planner", "conflict", "investigator", "onboarder", "reviewer", "implementer"]);
     expect(roles.find((r: { name: string }) => r.name === "reviewer")).toEqual({
       name: "reviewer",
-      documents: ["approval"],
-      credentials: ["document-service", "work-tracker", "agent-service", "approval-service"],
+      documents: ["workplace/reviewer"],
+      credentials: null,
       whenDone: "retire",
       label: "review",
       description: expect.stringContaining("**Started by** approval-service"),
@@ -1788,7 +1789,7 @@ describe("roles", () => {
       updatedAt: null,
     });
     for (const role of roles) expect(role.description, role.name).toMatch(/\S/);
-    expect(await read("/roles/implementer")).toMatchObject({ documents: ["tickets"], whenDone: "stop", priority: 10 });
+    expect(await read("/roles/implementer")).toMatchObject({ documents: [], whenDone: "stop", priority: 10 });
     expect((await call("GET", "/roles/nobody")).status).toBe(404);
   });
 
@@ -1800,15 +1801,16 @@ describe("roles", () => {
       role: "reviewer",
       label: "review",
       whenDone: "retire",
-      documents: ["approval"],
-      credentials: ["document-service", "work-tracker", "agent-service", "approval-service"],
+      documents: ["workplace/reviewer"],
+      // Naming none, it is given every service the stage has, at each start.
+      credentials: null,
     });
     expect(start(made.id)).toMatchObject({
       text: "Review PR #18.",
       credentials: ["document-service", "work-tracker", "agent-service", "approval-service"],
       env: { DS_URL: "https://ds", WT_URL: "https://wt", AG_URL: "http://local", AS_URL: "https://as" },
     });
-    expect(asked.at(-1)).toEqual(["approval"]);
+    expect(asked.at(-1)).toEqual(["workplace/reviewer"]);
   });
 
   it("takes what a caller gives over the role's, field by field", async () => {
@@ -1822,14 +1824,14 @@ describe("roles", () => {
         credentials: ["work-tracker", "approval-service"],
       })
     ).json();
-    expect(made).toMatchObject({ role: "reviewer", label: "review: PR #9", documents: ["approval"], credentials: ["work-tracker", "approval-service"] });
+    expect(made).toMatchObject({ role: "reviewer", label: "review: PR #9", documents: ["workplace/reviewer"], credentials: ["work-tracker", "approval-service"] });
   });
 
   it("starts a planner on the role's own brief, so a caller names only the role", async () => {
     const made = await (await call("POST", "/agents", { name: "planner-1", hostId: "laptop", role: "planner" })).json();
-    expect(made).toMatchObject({ role: "planner", documents: ["planner"], whenDone: "stop", label: "plan: new work", state: "working" });
+    expect(made).toMatchObject({ role: "planner", documents: ["workplace/planner"], whenDone: "stop", label: "plan: new work", state: "working" });
     expect(start(made.id).text).toContain("You are a planner");
-    expect(asked.at(-1)).toEqual(["planner"]);
+    expect(asked.at(-1)).toEqual(["workplace/planner"]);
   });
 
   it("still makes an agent from explicit documents and credentials, with no role", async () => {
@@ -1845,10 +1847,10 @@ describe("roles", () => {
 
   it("records an agent's role, and lists agents by it", async () => {
     await call("POST", "/agents", { name: "reviewer-1", hostId: "laptop", role: "reviewer", brief: "Go." });
-    await call("POST", "/agents", { name: "judge-1", hostId: "laptop", role: "judge", brief: "Judge." });
+    await call("POST", "/agents", { name: "onboarder-1", hostId: "laptop", role: "onboarder", brief: "Onboard." });
     await create({ name: "plain-1" });
     expect((await read("/agents?role=reviewer")).agents.map((w: { name: string }) => w.name)).toEqual(["reviewer-1"]);
-    expect((await read("/agents")).agents.map((w: { role: string | null }) => w.role)).toEqual(["reviewer", "judge", null]);
+    expect((await read("/agents")).agents.map((w: { role: string | null }) => w.role)).toEqual(["reviewer", "onboarder", null]);
   });
 
   it("writes roles only with the admin token, which also reads", async () => {
@@ -1876,12 +1878,12 @@ describe("roles", () => {
   });
 
   it("changes a role's description, and clears it with null", async () => {
-    const changed = await call("PATCH", "/roles/judge", { description: "Judges proposals." }, ADMIN);
+    const changed = await call("PATCH", "/roles/onboarder", { description: "Onboards repos." }, ADMIN);
     expect(changed.status).toBe(200);
-    expect((await read("/roles/judge")).description).toBe("Judges proposals.");
-    expect((await call("PATCH", "/roles/judge", { description: null }, ADMIN)).status).toBe(200);
-    expect((await read("/roles/judge")).description).toBeNull();
-    expect((await read("/roles")).roles.find((r: { name: string }) => r.name === "judge").description).toBeNull();
+    expect((await read("/roles/onboarder")).description).toBe("Onboards repos.");
+    expect((await call("PATCH", "/roles/onboarder", { description: null }, ADMIN)).status).toBe(200);
+    expect((await read("/roles/onboarder")).description).toBeNull();
+    expect((await read("/roles")).roles.find((r: { name: string }) => r.name === "onboarder").description).toBeNull();
   });
 
   it("serves a role written before descriptions with its seed's", async () => {
