@@ -59,8 +59,8 @@ export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts
 /** An error's body: its status's exception name, and what went wrong. */
 export const failure = (status: ErrorStatus, message: string) => ({ code: ERROR_CODES[status], message });
 
-/** What answers without a token: whether it is up, and what it serves. */
-export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp"];
+/** What answers without a token: whether it is up, what it serves, and the page, which asks for one itself. */
+export const OPEN_PATHS = ["/health", SPEC_PATH, "/mcp.json", "/docs/api", "/docs/mcp", "/", "/ui/app.js", "/ui/style.css"];
 
 export interface TokenSource {
   value(): Promise<string | null>;
@@ -167,7 +167,7 @@ export class AgentServiceApi {
     });
   }
 
-  /** The API's and the MCP server's docs, read once: none needs a token, and none holds data. */
+  /** The page, and the API's and the MCP server's docs, read once: none needs a token, and none holds data. */
   private docs(): void {
     const file = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
     const serve = (content: () => string, type: string) => (c: Context) => c.body(content(), 200, { "content-type": `${type}; charset=utf-8` });
@@ -175,6 +175,9 @@ export class AgentServiceApi {
       let held: string | undefined;
       return () => (held ??= read());
     };
+    this.hono.get("/", serve(once(() => file("ui/index.html")), "text/html"));
+    this.hono.get("/ui/app.js", serve(once(() => file("ui/app.js")), "text/javascript"));
+    this.hono.get("/ui/style.css", serve(once(() => file("ui/style.css")), "text/css"));
     this.hono.get("/docs/api", serve(once(() => file("docs/index.html")), "text/html"));
     this.hono.get("/mcp.json", serve(once(() => file("mcp.json")), "application/json"));
     // The docs' example address is a local one; served, they give this deployment's own.
