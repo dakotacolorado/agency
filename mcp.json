@@ -1,5 +1,5 @@
 {
-  "instructions": "agent-service runs agents: lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session when none is live. stop_agent ends one; resume_agent starts one carrying on the last conversation; retire_agent ends the agent for good.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
+  "instructions": "agent-service runs agents: lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session carrying on its conversation when none is live. retire_agent ends the agent for good. There is no stopping one: an agent is running or it is not.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
   "tools": [
     {
       "name": "create_agent",
@@ -581,33 +581,6 @@
       }
     },
     {
-      "name": "resume_agent",
-      "title": "Resume an agent",
-      "description": "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
-      "inputSchema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Assigned by the service when the agent is created."
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
       "name": "retire_agent",
       "title": "Retire an agent",
       "description": "Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.",
@@ -656,37 +629,6 @@
           },
           "interrupt": {
             "description": "`true` stops the current turn before `text` is sent.",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id"
-        ]
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false
-      },
-      "execution": {
-        "taskSupport": "forbidden"
-      }
-    },
-    {
-      "name": "stop_agent",
-      "title": "Stop an agent",
-      "description": "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.",
-      "inputSchema": {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Assigned by the service when the agent is created."
-          },
-          "force": {
-            "description": "`true` ends it on record without waiting for the host, even one still connected.",
             "type": "boolean"
           }
         },

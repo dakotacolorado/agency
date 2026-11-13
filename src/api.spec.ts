@@ -75,6 +75,12 @@ const EMPTY = { version: "0.1.0", labels: [] };
 /** A host's heartbeat, as its socket hands it over. */
 const beat = (id: string, body: { labels?: string[]; capacity?: number } = {}) => api.beat(id, { ...EMPTY, ...body });
 
+/** Ends the agent's live session as its host does, reporting it idle; there is no stopping one from outside. */
+const endSession = async (id: string, hostId = "laptop") => {
+  const live = ((await (await call("GET", `/agents/${id}`)).json()) as { session: { id: string } | null }).session;
+  if (live) await report(hostId, { agents: [{ id, state: "idle", sessionId: live.id }] });
+};
+
 /** A host's report, on a socket of its own kept for reporting. */
 const report = async (hostId: string, body: object) => {
   const connectionId = `reports-${hostId}`;
@@ -420,7 +426,7 @@ describe("a session's life, as its host reports it", () => {
     const [first] = (await read(`/agents/${id}/sessions`)).sessions;
     expect(first).toMatchObject({ id: sessionId, ended: "stopped", endedAt: NOW.toISOString() });
 
-    const res = await call("POST", `/agents/${id}/resume`);
+    const res = await call("POST", `/agents/${id}/messages`, { text: "Again." });
     expect(res.status).toBe(202);
     const again = (await agent(id)).session.id;
     await reports([{ id, state: "interrupted", sessionId: again }]);
@@ -697,7 +703,7 @@ describe("what an agent says of itself", () => {
   });
 
   it("refuses an agent with no live session, an unknown one, and a bad status or summary", async () => {
-    await call("POST", `/agents/${id}/stop`, { force: true });
+    await endSession(id);
     expect((await page("working", "x")).status).toBe(409);
     expect((await call("PUT", `/agents/${crypto.randomUUID()}/status`, { status: "working", summary: "x" })).status).toBe(404);
     expect((await page("finished", "x")).status).toBe(400);
@@ -751,7 +757,7 @@ describe("an agent that says it is done", () => {
     expect(stop).toBeDefined();
     await report("laptop", { commandResults: ack([stop!]), agents: [{ id, state: "idle", sessionId: null }] });
     expect(await agent(id)).toMatchObject({ state: "idle", status: "done", summary: "Approved PR #18." });
-    expect((await call("POST", `/agents/${id}/resume`)).status).toBe(202);
+    expect((await call("POST", `/agents/${id}/messages`, { text: "Again." })).status).toBe(202);
     expect((await agent(id)).status).toBe("working");
   });
 
@@ -872,89 +878,6 @@ describe("messaging an agent", () => {
   it("keeps a command's record for its time and no longer", async () => {
     later(KEPT_FOR + 1);
     expect((await read(`/agents/${id}/commands`)).commands).toEqual([]);
-  });
-});
-
-describe("stopping an agent", () => {
-  let id: string;
-  let sessionId: string;
-
-  beforeEach(async () => {
-    await beat("laptop", { capacity: 2 });
-    const made = await create({ brief: "Go." });
-    id = made.id;
-    sessionId = made.session!.id;
-  });
-
-  it("queues a stop, and ends the session when its host has done it", async () => {
-    const res = await call("POST", `/agents/${id}/stop`, {});
-    expect(res.status).toBe(202);
-    const { commandId } = await res.json();
-    expect(queued().at(-1)).toEqual({ kind: "stop", id: commandId, agentId: id });
-    expect((await agent(id)).state).toBe("working");
-    await report("laptop", { commandResults: ack(queued()) });
-    expect(await agent(id)).toMatchObject({ state: "idle", session: null });
-    expect((await read(`/agents/${id}/sessions`)).sessions[0].ended).toBe("stopped");
-  });
-
-  it("refuses an agent with no session", async () => {
-    await call("POST", `/agents/${id}/stop`, { force: true });
-    const res = await call("POST", `/agents/${id}/stop`, {});
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ message: "frontend-1 is idle, with no session to stop." });
-  });
-
-  it("ends the session on record when the host is lost, with no force asked, and withdraws what is queued", async () => {
-    later(LOST_AFTER + 1);
-    const forced = await call("POST", `/agents/${id}/stop`, {});
-    expect(forced.status).toBe(202);
-    expect(await forced.json()).toEqual({ commandId: null });
-    expect(await agent(id)).toMatchObject({ state: "idle", session: null });
-    expect((await read(`/agents/${id}/sessions`)).sessions[0]).toMatchObject({ ended: "stopped", endedAt: now.toISOString() });
-    expect(queued().map((c) => c.kind)).toEqual(["create"]);
-    expect((await read(`/agents/${id}/commands`)).commands.map((s: { delivery: string }) => s.delivery)).toEqual([
-      "queued",
-      "withdrawn",
-    ]);
-  });
-
-  it("ends the session on record when the host was deregistered", async () => {
-    await call("DELETE", "/hosts/laptop");
-    const res = await call("POST", `/agents/${id}/stop`, {});
-    expect(res.status).toBe(202);
-    expect(await res.json()).toEqual({ commandId: null });
-    expect(await agent(id)).toMatchObject({ state: "idle", session: null });
-  });
-
-  it("still asks a disconnected host, not yet lost, to stop it", async () => {
-    later(3 * HEARTBEAT_INTERVAL);
-    const res = await call("POST", `/agents/${id}/stop`, {});
-    expect(res.status).toBe(202);
-    expect((await res.json()).commandId).not.toBeNull();
-    expect((await agent(id)).state).toBe("working");
-  });
-
-  it("tells a host still running a force-stopped session to stop, once until it is taken", async () => {
-    await call("POST", `/agents/${id}/stop`, { force: true });
-    await report("laptop", { agents: [{ id, state: "working", sessionId }] });
-    await report("laptop", { agents: [{ id, state: "working", sessionId }] });
-    expect(queued().filter((c) => c.kind === "stop")).toHaveLength(1);
-    expect((await agent(id)).state).toBe("idle");
-  });
-});
-
-describe("resuming an agent", () => {
-  it("starts a session, fresh if it never had one, and refuses one already live", async () => {
-    await beat("laptop");
-    const { id } = await create();
-    const res = await call("POST", `/agents/${id}/resume`);
-    expect(res.status).toBe(202);
-    const { commandId } = await res.json();
-    expect(queued().find((c) => c.id === commandId)).toMatchObject({ kind: "start", resume: false });
-    expect(queued().find((c) => c.id === commandId)).not.toHaveProperty("text");
-    const again = await call("POST", `/agents/${id}/resume`);
-    expect(again.status).toBe(409);
-    expect(await again.json()).toMatchObject({ message: "frontend-1 is working, in a live session already." });
   });
 });
 
@@ -1088,11 +1011,11 @@ describe("an agent's title", () => {
     expect((await call("PATCH", `/agents/${id}`, {})).status).toBe(400);
   });
 
-  it("survives its session stopping and resuming", async () => {
+  it("survives its session ending and a new one starting", async () => {
     await name("Short status headline");
-    await call("POST", `/agents/${id}/stop`, { force: true });
+    await endSession(id);
     expect((await agent(id)).title).toBe("Short status headline");
-    expect((await call("POST", `/agents/${id}/resume`)).status).toBe(202);
+    expect((await call("POST", `/agents/${id}/messages`, { text: "Again." })).status).toBe(202);
     expect(await agent(id)).toMatchObject({ state: "working", title: "Short status headline" });
   });
 
@@ -1170,7 +1093,6 @@ describe("a write racing a report or a retire", () => {
     ["a message", () => call("POST", `/agents/${id}/messages`, { text: "And this." })],
     ["a title", () => call("PUT", `/agents/${id}/title`, { title: "Guarded writes" })],
     ["a rename", () => call("PATCH", `/agents/${id}`, { name: "scout", label: "racing" })],
-    ["a force stop", () => call("POST", `/agents/${id}/stop`, { force: true })],
   ];
 
   for (const [what, send] of routes) {
@@ -1208,13 +1130,12 @@ describe("a write racing a report or a retire", () => {
 
   describe("with no session", () => {
     beforeEach(async () => {
-      await call("POST", `/agents/${id}/stop`, { force: true });
+      await endSession(id);
     });
 
     const idleLine = () => report("laptop", { agents: [{ id, state: "idle", sessionId: null }], lines: [line()] });
 
     for (const [what, send] of [
-      ["a resume", () => call("POST", `/agents/${id}/resume`)],
       ["a message's start", () => call("POST", `/agents/${id}/messages`, { text: "Again." })],
     ] as [string, () => Promise<Res>][]) {
       it(`keeps what a report wrote between ${what}'s read and its write`, async () => {
@@ -1414,8 +1335,8 @@ describe("an agent's credentials", () => {
       body: JSON.stringify({ type: "ping" }),
     });
     expect(poster.to("again")).toContainEqual({ type: "command", command: expect.objectContaining({ kind: "start", secrets: { WT_TOKEN: "wt-2" } }) });
-    await call("POST", `/agents/${made.id}/stop`, { force: true });
-    await call("POST", `/agents/${made.id}/resume`);
+    await endSession(made.id);
+    await call("POST", `/agents/${made.id}/messages`, { text: "Again." });
     expect(pushed().at(-1)).toMatchObject({ secrets: { WT_TOKEN: "wt-2" } });
   });
 

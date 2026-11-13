@@ -215,10 +215,8 @@ describe.skipIf(!url || !token)("deployed stage", () => {
         expect(await read(`/agents/${agent.id}`)).toMatchObject({ status: "idle", tasks: 0, told: true });
       });
 
-      // Stopped, it is idle with its session on record.
-      expect((await call("POST", `/agents/${agent.id}/stop`, {})).status).toBe(202);
-      const stop = await socket.next("stop");
-      socket.report({ commandResults: ack([stop]) });
+      // Its session over, as its host reports it, it is idle with the session on record.
+      socket.report({ agents: [{ id: agent.id, state: "idle", sessionId: start.sessionId }] });
       await eventually(async () => {
         expect((await read(`/agents/${agent.id}`)).state).toBe("idle");
       });

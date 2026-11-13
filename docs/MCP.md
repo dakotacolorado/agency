@@ -29,7 +29,7 @@ What the server tells an agent when it connects:
 >
 > - An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.
 > - A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).
-> - send_message talks to an agent: it starts a session when none is live. stop_agent ends one; resume_agent starts one carrying on the last conversation; retire_agent ends the agent for good.
+> - send_message talks to an agent: it starts a session carrying on its conversation when none is live. retire_agent ends the agent for good. There is no stopping one: an agent is running or it is not.
 > - An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.
 > - list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.
 > - Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.
@@ -54,10 +54,8 @@ What the server tells an agent when it connects:
 | [`list_transcript_lines`](#list_transcript_lines) | List transcript lines | yes |
 | [`put_agent_status`](#put_agent_status) | Put an agent's status |  |
 | [`put_agent_title`](#put_agent_title) | Put an agent's title |  |
-| [`resume_agent`](#resume_agent) | Resume an agent |  |
 | [`retire_agent`](#retire_agent) | Retire an agent |  |
 | [`send_message`](#send_message) | Send a message |  |
-| [`stop_agent`](#stop_agent) | Stop an agent |  |
 | [`update_agent`](#update_agent) | Update an agent |  |
 | [`withdraw_request`](#withdraw_request) | Withdraw a request |  |
 
@@ -211,14 +209,6 @@ Called by the agent itself, early in its first session, once it knows what it is
 | `id` | string | yes | Assigned by the service when the agent is created. |
 | `title` | string | yes | What the agent is there to do, in a few words. |
 
-### resume_agent
-
-Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.
-
-| Input | Type | Required | |
-| --- | --- | --- | --- |
-| `id` | string | yes | Assigned by the service when the agent is created. |
-
 ### retire_agent
 
 Records it `retired` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `retire`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
@@ -236,15 +226,6 @@ To an agent with a live session, `text` is a `message`, delivered at its next tu
 | `id` | string | yes | Assigned by the service when the agent is created. |
 | `text` | string |  | Required unless `interrupt` is true. |
 | `interrupt` | boolean |  | `true` stops the current turn before `text` is sent. |
-
-### stop_agent
-
-Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.
-
-| Input | Type | Required | |
-| --- | --- | --- | --- |
-| `id` | string | yes | Assigned by the service when the agent is created. |
-| `force` | boolean |  | `true` ends it on record without waiting for the host, even one still connected. |
 
 ### update_agent
 

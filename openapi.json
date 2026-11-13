@@ -3,7 +3,7 @@
   "info": {
     "version": "2026-11-12",
     "title": "agent-service",
-    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
+    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `RetireAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
   },
   "tags": [
     {
@@ -1305,7 +1305,7 @@
               "done",
               "rejected"
             ],
-            "description": "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not."
+            "description": "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted). `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not."
           },
           "reportedAt": {
             "type": [
@@ -2050,15 +2050,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "Stop": {
-        "type": "object",
-        "properties": {
-          "force": {
-            "type": "boolean",
-            "description": "`true` ends it on record without waiting for the host, even one still connected."
-          }
-        }
       },
       "AgentRename": {
         "type": "object",
@@ -3552,199 +3543,6 @@
           },
           "409": {
             "description": "ConflictException: Nothing was queued: the agent is retired, has no session to interrupt, or its host is `lost` or full.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agents/{id}/stop": {
-      "post": {
-        "operationId": "StopAgent",
-        "summary": "Stop an agent",
-        "description": "Queues a `stop`; the session ends and the agent is `idle` once its host reports doing it. When its host is `lost` or deregistered, and so cannot be told, or with `force: true`, the session is ended and the agent `idle` at once, and everything queued for it but `create` is withdrawn; nothing is sent. If its host later reports that session still running, it is sent a `stop`. A caller need not send `force`: the service decides it from the host.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Agents"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Assigned by the service when the agent is created.",
-              "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
-            },
-            "required": true,
-            "description": "Assigned by the service when the agent is created.",
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "description": "Optional. Absent, the host is asked to stop it.",
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Stop"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "The `stop` is queued; ended on record (its host `lost`, or `force`), and `commandId` is null.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Accepted"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ResourceNotFoundException: No agent has this id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "ConflictException: Nothing was queued: the agent has no live session.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agents/{id}/resume": {
-      "post": {
-        "operationId": "ResumeAgent",
-        "summary": "Resume an agent",
-        "description": "Queues a `start` with `resume: true`, or `false` for an agent that has never had a session.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Agents"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "Assigned by the service when the agent is created.",
-              "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
-            },
-            "required": true,
-            "description": "Assigned by the service when the agent is created.",
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "The `start` is queued.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Accepted"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "ResourceNotFoundException: No agent has this id.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "ConflictException: Nothing was queued: the agent is retired or has a live session, or its host is `lost` or full.",
             "content": {
               "application/json": {
                 "schema": {

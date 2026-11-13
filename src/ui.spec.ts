@@ -28,7 +28,7 @@ describe("the page", () => {
 
   it("calls only routes the API has", async () => {
     const { paths } = (await (await api.fetch(new Request("http://local/openapi.json"))).json()) as { paths: Record<string, unknown> };
-    // Each call's path, as `api("GET", "/agents")` or `api("POST", `/agents/${agent.id}/stop`)` writes it.
+    // Each call's path, as `api("GET", "/agents")` or `api("POST", `/agents/${agent.id}/messages`)` writes it.
     const all = [
       ...new Set(
         [...file("ui/app.js").matchAll(/(?:api|request)\("(?:GET|POST|DELETE)", (["`])(.*?)\1/g)].map((m) =>
@@ -40,9 +40,7 @@ describe("the page", () => {
       "/agents",
       "/agents/{id}",
       "/agents/{id}/messages",
-      "/agents/{id}/resume",
       "/agents/{id}/sessions",
-      "/agents/{id}/stop",
       "/agents/{id}/transcript",
       "/hosts",
       "/requests",
