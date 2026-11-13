@@ -57,7 +57,7 @@ export function start(config: Config): Running {
     context,
     roles,
   });
-  const handler = new SocketHandler(store, token, sockets, undefined, credentials);
+  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat));
   const stopTimers = startTimers(store);
   const waypoint = credentials[WAYPOINT];
   if (config.pickUp && !waypoint?.url) throw new Error(`picking up tasks needs the services to name ${WAYPOINT}`);

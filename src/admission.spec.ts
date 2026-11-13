@@ -48,10 +48,7 @@ const call = async (method: string, path: string, body?: unknown, headers: Recor
     }),
   );
 
-const beat = async (id: string, capacity: number) => {
-  const res = await call("POST", `/hosts/${id}/heartbeat`, { version: "1", labels: [], capacity });
-  expect(res.status).toBe(200);
-};
+const beat = (id: string, capacity: number) => api.beat(id, { version: "1", labels: [], capacity });
 
 const usage = async (fiveHour: number, sevenDay: number, readAt = now) => {
   const window = (utilization: number) => ({
@@ -267,7 +264,7 @@ describe("a request for an agent", () => {
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go." });
     await beat("laptop", 3);
-    await Promise.all([api.admit("http://local"), api.admit("http://local"), call("POST", "/hosts/laptop/heartbeat", { version: "1", labels: [], capacity: 3 })]);
+    await Promise.all([api.admit("http://local"), api.admit("http://local"), beat("laptop", 3)]);
     expect([...store.agents.values()].filter((w) => w.id === asked.id)).toHaveLength(1);
     expect(store.agents.size).toBe(1);
   });

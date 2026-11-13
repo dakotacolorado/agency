@@ -286,14 +286,6 @@ export const CommandReportSchema = z
     commandId: z.string().min(1).max(128).describe("The command reported on, by its `id`."),
     ok: z.boolean().describe("False when the host could not do the command."),
     error: z.string().max(4096).optional().describe("Why not, when `ok` is false, in the host's words."),
-    taken: z
-      .boolean()
-      .optional()
-      .describe(
-        "`false` with `ok` true: a command with text, written to its agent's session but not yet " +
-          "taken by it. The command is off the queue (`written`), and its host reports it once more, " +
-          "`ok` true once the session takes it, false if it never will. Absent or true: settled.",
-      ),
   })
   .openapi("CommandReport");
 
@@ -327,9 +319,9 @@ export const ReportSchema = z.object({ ...reports, tokens: reports.tokens.option
 
 export type Report = z.infer<typeof ReportSchema>;
 
-// Strict, so a host still sending reports here is refused rather than silently dropped.
 export const HeartbeatSchema = z
   .strictObject({
+    type: z.literal("heartbeat").describe("Which message this is."),
     version: z.string().max(64).describe("The agent-host build that sent the heartbeat."),
     labels: Labels.optional().describe(
       "What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host).",
@@ -338,8 +330,12 @@ export const HeartbeatSchema = z
       "How many sessions the host will run at once. Absent, capacity is unknown.",
     ),
   })
+  .describe(
+    "Up a host's socket, after its first full report on connecting and then every 30 seconds: that it is " +
+      "there and what it offers. The first from a host id registers it, and only these keep a host `connected`.",
+  )
   .openapi("Heartbeat", {
-    example: { version: "0.1.0", labels: ["macos", "arm64"], capacity: 4 },
+    example: { type: "heartbeat", version: "0.1.0", labels: ["macos", "arm64"], capacity: 4 },
   });
 
 export type Heartbeat = z.infer<typeof HeartbeatSchema>;
@@ -431,22 +427,6 @@ export const CommandSchema = z
 
 export type Command = z.infer<typeof CommandSchema>;
 
-export const HeartbeatResponseSchema = z
-  .object({
-    heartbeatInterval: z
-      .number()
-      .int()
-      .positive()
-      .describe("Seconds until the host should send its next heartbeat."),
-    socketUrl: SocketUrl.describe(
-      "Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as " +
-        "`Authorization: Bearer`. Commands and reports go by the socket alone, so on a " +
-        "server with none (null) no command reaches the host.",
-    ),
-  })
-  .openapi("HeartbeatResponse");
-
-export type HeartbeatResponse = z.infer<typeof HeartbeatResponseSchema>;
 
 // --- what a client reads ----------------------------------------------------
 
@@ -671,11 +651,9 @@ export const SentCommandSchema = z
     delivery: z
       .enum(DELIVERIES)
       .describe(
-        "`queued`: not yet reported by the host. `written`: its text is in the agent's session, which " +
-          "has not yet taken it (it takes it at its next step); a session that ends first makes it " +
-          "`rejected`. `withdrawn`: never to be sent, because it went " +
+        "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went " +
           `unreported for ${LOST_AFTER} seconds (\`create\` and \`retire\` excepted) or its agent ` +
-          "was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.",
+          "was force-stopped. `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.",
       ),
     reportedAt: Instant.nullable().describe("When the host last reported it; null until then."),
     error: z
@@ -789,7 +767,7 @@ export const SocketPingSchema = z
   .openapi("SocketPing");
 
 export const SocketInboundSchema = z
-  .discriminatedUnion("type", [SocketReportSchema, SocketPingSchema])
+  .discriminatedUnion("type", [SocketReportSchema, HeartbeatSchema, SocketPingSchema])
   .openapi("SocketInbound");
 
 export type SocketInbound = z.infer<typeof SocketInboundSchema>;
@@ -855,7 +833,6 @@ export const TAGS = {
   hosts: "Hosts",
   usage: "Usage",
   pages: "Pages",
-  hostProtocol: "Host protocol",
   platform: "Platform",
 } as const;
 
@@ -878,8 +855,6 @@ type Untagged = Omit<RouteConfig, "tags" | "security">;
 
 const secured = { security: [{ bearerAuth: [] }] };
 
-/** Called by agent-host, not by people or agents. */
-const forHost = <R extends Untagged>(route: R) => createRoute({ ...route, ...secured, tags: [TAGS.hostProtocol] });
 /** Reads nothing but state. */
 const forClientReading = <R extends Untagged & { method: "get" }>(route: R) => createRoute({ ...route, ...secured, tags: [tagOf(route.path)] });
 const forClientActing = <R extends Untagged & { method: "post" | "patch" | "delete" }>(route: R) => createRoute({ ...route, ...secured, tags: [tagOf(route.path)] });
@@ -902,25 +877,6 @@ export const healthRoute = createRoute({
       }),
       "Service is up.",
     ),
-  },
-});
-
-export const heartbeatRoute = forHost({
-  method: "post",
-  path: "/hosts/{id}/heartbeat",
-  operationId: "SendHeartbeat",
-  summary: "Send a heartbeat",
-  description:
-    "Liveness and what the host offers, nothing more: commands come down the host's socket at " +
-    "`socketUrl`, and reports go up it. The host chooses its id; the first heartbeat from an id " +
-    "registers it. Only a heartbeat keeps a host `connected`.",
-  request: {
-    params: z.object({ id: HostId }),
-    body: json(HeartbeatSchema, "What the host is and offers."),
-  },
-  responses: {
-    200: json(HeartbeatResponseSchema, "Accepted."),
-    ...FAILS,
   },
 });
 

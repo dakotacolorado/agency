@@ -3,7 +3,7 @@
   "info": {
     "version": "2026-11-12",
     "title": "agent-service",
-    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at `socketUrl`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
+    "description": "Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
   },
   "tags": [
     {
@@ -31,10 +31,6 @@
       "description": "What a page needs to watch agents live."
     },
     {
-      "name": "Host protocol",
-      "description": "Called by agent-host on each host, not by you."
-    },
-    {
       "name": "Platform",
       "description": "Health, and the clients agents are given."
     }
@@ -53,6 +49,9 @@
             "$ref": "#/components/schemas/SocketReport"
           },
           {
+            "$ref": "#/components/schemas/Heartbeat"
+          },
+          {
             "$ref": "#/components/schemas/SocketPing"
           }
         ],
@@ -60,6 +59,7 @@
           "propertyName": "type",
           "mapping": {
             "report": "#/components/schemas/SocketReport",
+            "heartbeat": "#/components/schemas/Heartbeat",
             "ping": "#/components/schemas/SocketPing"
           }
         }
@@ -260,10 +260,6 @@
             "type": "string",
             "maxLength": 4096,
             "description": "Why not, when `ok` is false, in the host's words."
-          },
-          "taken": {
-            "type": "boolean",
-            "description": "`false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled."
           }
         },
         "required": [
@@ -370,6 +366,54 @@
           "resetsAt"
         ],
         "description": "The 5-hour window; absent when the event did not carry it."
+      },
+      "Heartbeat": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "heartbeat"
+            ],
+            "description": "Which message this is."
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The agent-host build that sent the heartbeat."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9:._-]{0,63}$",
+              "example": "gpu"
+            },
+            "maxItems": 64,
+            "description": "What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host)."
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 256,
+            "description": "How many sessions the host will run at once. Absent, capacity is unknown."
+          }
+        },
+        "required": [
+          "type",
+          "version"
+        ],
+        "additionalProperties": false,
+        "description": "Up a host's socket, after its first full report on connecting and then every 30 seconds: that it is there and what it offers. The first from a host id registers it, and only these keep a host `connected`.",
+        "example": {
+          "type": "heartbeat",
+          "version": "0.1.0",
+          "labels": [
+            "macos",
+            "arm64"
+          ],
+          "capacity": 4
+        }
       },
       "SocketPing": {
         "type": "object",
@@ -1257,12 +1301,11 @@
             "type": "string",
             "enum": [
               "queued",
-              "written",
               "withdrawn",
               "done",
               "rejected"
             ],
-            "description": "`queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not."
+            "description": "`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not."
           },
           "reportedAt": {
             "type": [
@@ -1491,26 +1534,19 @@
         ],
         "description": "To the socket whose message could not be handled, saying why."
       },
-      "HeartbeatResponse": {
+      "HostList": {
         "type": "object",
         "properties": {
-          "heartbeatInterval": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "description": "Seconds until the host should send its next heartbeat."
-          },
-          "socketUrl": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as `Authorization: Bearer`. Commands and reports go by the socket alone, so on a server with none (null) no command reaches the host.",
-            "example": "wss://abc123.execute-api.us-east-1.amazonaws.com/live"
+          "hosts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Host"
+            },
+            "description": "The hosts."
           }
         },
         "required": [
-          "heartbeatInterval",
-          "socketUrl"
+          "hosts"
         ]
       },
       "Error": {
@@ -1539,59 +1575,6 @@
           "message"
         ],
         "description": "Every error's body."
-      },
-      "Heartbeat": {
-        "type": "object",
-        "properties": {
-          "version": {
-            "type": "string",
-            "maxLength": 64,
-            "description": "The agent-host build that sent the heartbeat."
-          },
-          "labels": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9:._-]{0,63}$",
-              "example": "gpu"
-            },
-            "maxItems": 64,
-            "description": "What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host)."
-          },
-          "capacity": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 256,
-            "description": "How many sessions the host will run at once. Absent, capacity is unknown."
-          }
-        },
-        "required": [
-          "version"
-        ],
-        "additionalProperties": false,
-        "example": {
-          "version": "0.1.0",
-          "labels": [
-            "macos",
-            "arm64"
-          ],
-          "capacity": 4
-        }
-      },
-      "HostList": {
-        "type": "object",
-        "properties": {
-          "hosts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Host"
-            },
-            "description": "The hosts."
-          }
-        },
-        "required": [
-          "hosts"
-        ]
       },
       "RoleList": {
         "type": "object",
@@ -2379,85 +2362,6 @@
                     "version",
                     "commit"
                   ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/hosts/{id}/heartbeat": {
-      "post": {
-        "operationId": "SendHeartbeat",
-        "summary": "Send a heartbeat",
-        "description": "Liveness and what the host offers, nothing more: commands come down the host's socket at `socketUrl`, and reports go up it. The host chooses its id; the first heartbeat from an id registers it. Only a heartbeat keeps a host `connected`.",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "tags": [
-          "Host protocol"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9._-]{1,64}$",
-              "example": "dakotas-macbook"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "description": "What the host is and offers.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Heartbeat"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Accepted.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HeartbeatResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "ValidationException: The request failed validation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedException: Missing or incorrect bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "ServiceUnavailableException: No API token is configured.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

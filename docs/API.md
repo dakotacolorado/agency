@@ -7,7 +7,7 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.
 - **Talk to it** with `SendMessage`, which starts a session when none is live; `StopAgent`, `ResumeAgent` and `RetireAgent` end, carry on and end it for good.
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
-- **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at `socketUrl`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from `CreateSocketTicket`.
+- **Hosts** run agent-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.
 
 **Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.
 
@@ -37,7 +37,6 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [PutAgentTitle](#putagenttitle): Put an agent's title
 - [ResumeAgent](#resumeagent): Resume an agent
 - [RetireAgent](#retireagent): Retire an agent
-- [SendHeartbeat](#sendheartbeat): Send a heartbeat
 - [SendMessage](#sendmessage): Send a message
 - [StopAgent](#stopagent): Stop an agent
 - [UpdateAgent](#updateagent): Update an agent
@@ -1242,7 +1241,7 @@ Content-type: application/json
    "commands": [ {
       "command": value,
       "queuedAt": "string",
-      "delivery": "queued | written | withdrawn | done | rejected",
+      "delivery": "queued | withdrawn | done | rejected",
       "reportedAt": "string",
       "error": "string"
    } ]
@@ -2123,81 +2122,6 @@ HTTP status: 503
 
 ---
 
-## SendHeartbeat
-
-Liveness and what the host offers, nothing more: commands come down the host's socket at `socketUrl`, and reports go up it. The host chooses its id; the first heartbeat from an id registers it. Only a heartbeat keeps a host `connected`.
-
-### Request syntax
-
-```http
-POST /hosts/{id}/heartbeat HTTP/1.1
-Authorization: Bearer token
-Content-type: application/json
-
-{
-   "version": "string",
-   "labels": [ "string" ],
-   "capacity": number
-}
-```
-
-### URI request parameters
-
-**id**  
-Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: Yes.
-
-### Request body
-
-**version**  
-The agent-host build that sent the heartbeat.  
-Type: String. Length: 0 to 64. Required: Yes.
-
-**labels**  
-What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host).  
-Type: Array of strings. At most 64 items. Required: No.
-
-**capacity**  
-How many sessions the host will run at once. Absent, capacity is unknown.  
-Type: Integer. Range: 0 to 256. Required: No.
-
-### Response syntax
-
-```http
-HTTP/1.1 200
-Content-type: application/json
-
-{
-   "heartbeatInterval": number,
-   "socketUrl": "string"
-}
-```
-
-### Response elements
-
-**heartbeatInterval**  
-Seconds until the host should send its next heartbeat.  
-Type: Integer.
-
-**socketUrl**  
-Where to open the host's socket: `<socketUrl>?hostId=<id>` with this token as `Authorization: Bearer`. Commands and reports go by the socket alone, so on a server with none (null) no command reaches the host.  
-Type: String. Nullable: Yes.
-
-### Errors
-
-**ValidationException**  
-The request failed validation.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
 ## SendMessage
 
 To an agent with a live session, `text` is a `message`, delivered at its next turn; with `interrupt: true` it is an `interrupt`, stopping the current turn first, and with no `text` it only interrupts. To an `idle` or `interrupted` agent, it queues a `start` with `text` as its first message, resuming its last conversation if it has had one. 202 means queued, not delivered.
@@ -3000,10 +2924,6 @@ Type: Boolean. Required: Yes.
 Why not, when `ok` is false, in the host's words.  
 Type: String. Length: 0 to 4096. Required: No.
 
-**taken**  
-`false` with `ok` true: a command with text, written to its agent's session but not yet taken by it. The command is off the queue (`written`), and its host reports it once more, `ok` true once the session takes it, false if it never will. Absent or true: settled.  
-Type: Boolean. Required: No.
-
 ## CreateCommand
 
 Make the agent's home folder.
@@ -3048,7 +2968,13 @@ Type: String. Required: Yes.
 
 ## Heartbeat
 
+Up a host's socket, after its first full report on connecting and then every 30 seconds: that it is there and what it offers. The first from a host id registers it, and only these keep a host `connected`.
+
 ### Contents
+
+**type**  
+Which message this is.  
+Type: String. Valid values: `heartbeat`. Required: Yes.
 
 **version**  
 The agent-host build that sent the heartbeat.  
@@ -3375,8 +3301,8 @@ When it was queued for its host.
 Type: String. Required: Yes.
 
 **delivery**  
-`queued`: not yet reported by the host. `written`: its text is in the agent's session, which has not yet taken it (it takes it at its next step); a session that ends first makes it `rejected`. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: taken) or not.  
-Type: String. Valid values: `queued` | `written` | `withdrawn` | `done` | `rejected`. Required: Yes.
+`queued`: not yet reported by the host. `withdrawn`: never to be sent, because it went unreported for 300 seconds (`create` and `retire` excepted) or its agent was force-stopped. `done` / `rejected`: the host reported it, done (a text: delivered to the session) or not.  
+Type: String. Valid values: `queued` | `withdrawn` | `done` | `rejected`. Required: Yes.
 
 **reportedAt**  
 When the host last reported it; null until then.  

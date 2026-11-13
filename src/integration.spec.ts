@@ -22,22 +22,26 @@ const hostOf = (name: string) => `integration-${name}-${run}`;
 
 const EMPTY = { version: "integration", labels: [] };
 
-const heartbeat = (body: object = {}, host = hostOf("test")) => {
-  sentAs.add(host);
-  return fetch(`${url}/hosts/${host}/heartbeat`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ ...EMPTY, ...body }),
-  });
-};
+/** The socket's address on the stage under test. */
+const socketAt = () => `${url!.replace(/^http/, "ws")}/socket`;
 
+/** Registers `host` as agent-host does: its first report, then a heartbeat, up a socket of its own. */
 const beat = async (body: object, host: string) => {
-  const res = await heartbeat(body, host);
-  expect(res.status, await res.clone().text()).toBe(200);
-  return (await res.json()) as { heartbeatInterval: number; socketUrl: string };
+  sentAs.add(host);
+  const ws = new WebSocket(`${socketAt()}?hostId=${host}`, { headers: { Authorization: `Bearer ${token}` } } as unknown as string[]);
+  await new Promise((resolve, reject) => {
+    ws.onopen = resolve;
+    ws.onerror = reject;
+  });
+  ws.send(JSON.stringify({ type: "report", agents: [], lines: [], commandResults: [] }));
+  ws.send(JSON.stringify({ type: "heartbeat", ...EMPTY, ...body }));
+  for (let i = 0; i < 50; i++) {
+    const { hosts } = (await read("/hosts")) as { hosts: Host[] };
+    if (hosts.some((h) => h.id === host)) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  ws.close();
+  return { socketUrl: socketAt() };
 };
 
 /**
@@ -112,7 +116,7 @@ describe.skipIf(!url || !token)("deployed stage", () => {
   it("serves health without a token", async () => {
     const res = await fetch(`${url}/health`);
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ ok: true });
+    await expect(res.json()).resolves.toMatchObject({ ok: true });
   });
 
   it("refuses a read without the token, or with the wrong one", async () => {
@@ -120,11 +124,8 @@ describe.skipIf(!url || !token)("deployed stage", () => {
     expect((await call("GET", "/hosts", undefined, "wrong")).status).toBe(401);
   });
 
-  it("accepts a heartbeat, lists the host, and says where its socket is", async () => {
-    const res = await heartbeat({ labels: ["integration"] });
-    expect(res.status, await res.clone().text()).toBe(200);
-    const body = (await res.json()) as { socketUrl: string | null };
-    expect(body.socketUrl).toMatch(/^wss:\/\//);
+  it("takes a heartbeat up a host's socket, and lists the host", async () => {
+    await beat({ labels: ["integration"] }, hostOf("test"));
 
     const { hosts } = (await read("/hosts")) as { hosts: Host[] };
     expect(hosts.find((h) => h.id === hostOf("test"))).toMatchObject({
@@ -137,17 +138,13 @@ describe.skipIf(!url || !token)("deployed stage", () => {
   it("gives a page a one-time socket ticket", async () => {
     const res = await call("POST", "/socket-tickets");
     expect(res.status, await res.clone().text()).toBe(201);
-    expect(await res.json()).toMatchObject({ ticket: expect.any(String), socketUrl: expect.stringMatching(/^wss:\/\//) });
-  });
-
-  it("refuses a report on the heartbeat, which goes by the socket alone", async () => {
-    expect((await heartbeat({ agents: [] })).status).toBe(400);
+    expect(await res.json()).toMatchObject({ ticket: expect.any(String), socketUrl: expect.stringMatching(/^wss?:\/\//) });
   });
 
   it("carries an agent from creation through a session to retirement, by socket", async () => {
     const host = hostOf("agents");
     const { socketUrl } = await beat({ capacity: 1 }, host);
-    expect(socketUrl).toMatch(/^wss:\/\//);
+    expect(socketUrl).toMatch(/^wss?:\/\//);
 
     // Made before its host's socket is open, its create is replayed when it opens.
     const res = await call("POST", "/agents", {

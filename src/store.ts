@@ -55,10 +55,6 @@ CREATE TABLE IF NOT EXISTS sent (
   PRIMARY KEY (agent_id, id)
 );
 CREATE INDEX IF NOT EXISTS sent_by_queued ON sent (queued_at);
-CREATE TABLE IF NOT EXISTS written (
-  host_id TEXT NOT NULL, id TEXT NOT NULL, queued_at TEXT NOT NULL, record TEXT NOT NULL,
-  PRIMARY KEY (host_id, id)
-);
 CREATE TABLE IF NOT EXISTS sessions (
   agent_id TEXT NOT NULL, id TEXT NOT NULL, started_at TEXT NOT NULL, record TEXT NOT NULL,
   PRIMARY KEY (agent_id, id)
@@ -94,8 +90,8 @@ export class Store {
     this.db = db;
     db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
     db.exec(SCHEMA);
-    // Roles now live in honed, and agents have no tokens of their own: a database from before keeps neither.
-    db.exec("DROP TABLE IF EXISTS roles; DROP TABLE IF EXISTS agent_secrets;");
+    // Roles now live in honed, agents have no tokens of their own, and a message is delivered or not: a database from before keeps none of those tables.
+    db.exec("DROP TABLE IF EXISTS roles; DROP TABLE IF EXISTS agent_secrets; DROP TABLE IF EXISTS written;");
   }
 
   /** The database at `path`, made if absent; `:memory:` for one that lasts as long as the process. */
@@ -185,11 +181,6 @@ export class Store {
     return all<Queued>(this.db.prepare("SELECT record FROM pending WHERE host_id = ? ORDER BY rowid").all(hostId));
   }
 
-  /** Oldest first. */
-  async written(hostId: string): Promise<Sent[]> {
-    return all<Sent>(this.db.prepare("SELECT record FROM written WHERE host_id = ? ORDER BY queued_at, id").all(hostId));
-  }
-
   /**
    * Off the host's queue for good, and on the agent's record as delivered,
    * written or withdrawn; a written command is held for its host's next word.
@@ -200,10 +191,7 @@ export class Store {
 
   /** Oldest first. */
   async sentTo(agentId: string): Promise<Sent[]> {
-    return all<Sent>(this.db.prepare("SELECT record FROM sent WHERE agent_id = ? ORDER BY queued_at, id").all(agentId)).map((sent) => ({
-      ...sent,
-      taken: sent.taken ?? null,
-    }));
+    return all<Sent>(this.db.prepare("SELECT record FROM sent WHERE agent_id = ? ORDER BY queued_at, id").all(agentId));
   }
 
   /** Oldest first. */
@@ -348,7 +336,6 @@ export class Store {
       () =>
         Number(this.db.prepare("DELETE FROM sent WHERE queued_at < ?").run(before).changes) +
         Number(this.db.prepare("DELETE FROM pending WHERE durable = 0 AND queued_at < ?").run(before).changes) +
-        Number(this.db.prepare("DELETE FROM written WHERE queued_at < ?").run(before).changes) +
         Number(this.db.prepare("DELETE FROM requests WHERE ended_at IS NOT NULL AND ended_at < ?").run(before).changes) +
         Number(this.db.prepare("DELETE FROM tickets WHERE valid_until < ?").run(now.toISOString()).changes),
     );
@@ -363,11 +350,6 @@ export class Store {
   private settling(hostId: string, sent: Sent): void {
     this.db.prepare("DELETE FROM pending WHERE host_id = ? AND id = ?").run(hostId, sent.command.id);
     this.record(sent);
-    if (sent.taken === false) {
-      this.db.prepare("INSERT OR REPLACE INTO written (host_id, id, queued_at, record) VALUES (?, ?, ?, ?)").run(hostId, sent.command.id, sent.queuedAt, JSON.stringify(sent));
-    } else {
-      this.db.prepare("DELETE FROM written WHERE host_id = ? AND id = ?").run(hostId, sent.command.id);
-    }
   }
 
   /** Nested calls join the outer transaction. */

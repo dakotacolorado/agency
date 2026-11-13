@@ -92,7 +92,7 @@ export class Fleet {
     ]);
   }
 
-  /** Off its host's queue, or its written record settled, and every viewer told. */
+  /** Off its host's queue, and every viewer told. */
   async settle(hostId: string, sent: Sent): Promise<void> {
     await this.store.settle(hostId, sent);
     await this.tell([sent]);
@@ -185,7 +185,6 @@ export class Fleet {
     // Pending before agents: a start settled by a concurrent report is then either still pending
     // here, or settled with its agent's `begun` in one write that the agents read after sees.
     let pending = await this.store.pending(hostId);
-    let written = await this.store.written(hostId);
     const agents = new Map(
       (await this.store.listAgents()).filter((w) => w.hostId === hostId).map((w) => [w.id, w]),
     );
@@ -198,11 +197,6 @@ export class Fleet {
     const end = (agent: Agent, ended: SessionEnding) => {
       if (!agent.session) return;
       sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended });
-      // Its text was in a session that is gone; a host that restarted cannot say so itself.
-      for (const sent of written.filter((s) => s.command.agentId === agent.id)) {
-        settled.push({ hostId, sent: { ...sent, reportedAt: at, ok: false, error: NEVER_TAKEN, taken: null } });
-      }
-      written = written.filter((s) => s.command.agentId !== agent.id);
       const next: Agent = {
         ...agent,
         state: ended === "stopped" ? "idle" : "interrupted",
@@ -224,22 +218,12 @@ export class Fleet {
     const begun = new Map([...agents].map(([id, w]) => [id, w.begun ?? null]));
 
     for (const result of report.commandResults) {
-      const taken = result.ok && result.taken === false ? false : null;
-      const held = written.find((s) => s.command.id === result.commandId);
-      if (held) {
-        // Written already, it is settled by the report that it was taken, or never will be.
-        if (taken === false) continue;
-        written = written.filter((s) => s !== held);
-        await this.settle(hostId, { ...held, reportedAt: at, ok: result.ok, error: result.error ?? null, taken });
-        continue;
-      }
       const queued = pending.find((q) => q.command.id === result.commandId);
       if (!queued) continue;
       pending = pending.filter((q) => q !== queued);
       const { command } = queued;
       const agent = agents.get(command.agentId);
-      const sent: Sent = { ...queued, reportedAt: at, ok: result.ok, error: result.error ?? null, withdrawnAt: null, taken };
-      if (taken === false) written.push(sent);
+      const sent: Sent = { ...queued, reportedAt: at, ok: result.ok, error: result.error ?? null, withdrawnAt: null };
       // A start or stop is settled in the write that records what it did to its agent.
       if (command.kind === "start" || command.kind === "stop") settled.push({ hostId, sent });
       else await this.settle(hostId, sent);
@@ -341,7 +325,6 @@ export class Fleet {
   }
 }
 
-const NEVER_TAKEN = "Its session ended before it took the message.";
 
 /** A command as it is served, on `ListCommands` and to viewers. */
 export const sentView = (sent: Sent, now: Date) => ({

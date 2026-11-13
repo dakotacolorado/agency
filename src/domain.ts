@@ -332,8 +332,6 @@ export interface Sent extends Queued {
   reportedAt: string | null;
   ok: boolean | null;
   error: string | null;
-  /** False while its text is written to its agent's session and not yet taken; null otherwise. */
-  taken?: false | null;
   /** Taken off its host's queue by the service, because its agent was force-stopped. */
   withdrawnAt: string | null;
 }
@@ -370,10 +368,10 @@ export const DURABLE: readonly Command["kind"][] = ["create", "retire"];
 export const withdrawn = ({ command, queuedAt }: Queued, now: Date) =>
   !DURABLE.includes(command.kind) && now.getTime() - Date.parse(queuedAt) > LOST_AFTER * 1000;
 
-export const DELIVERIES = ["queued", "written", "withdrawn", "done", "rejected"] as const;
+export const DELIVERIES = ["queued", "withdrawn", "done", "rejected"] as const;
 
 export function delivery(sent: Sent, now: Date): (typeof DELIVERIES)[number] {
   if (sent.withdrawnAt !== null) return "withdrawn";
-  if (sent.reportedAt !== null) return !sent.ok ? "rejected" : sent.taken === false ? "written" : "done";
+  if (sent.reportedAt !== null) return sent.ok ? "done" : "rejected";
   return withdrawn(sent, now) ? "withdrawn" : "queued";
 }
