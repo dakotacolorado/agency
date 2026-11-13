@@ -863,7 +863,16 @@ export const healthRoute = createRoute({
   operationId: "healthCheck",
   tags: ["meta"],
   summary: "Health check",
-  responses: { 200: json(z.object({ ok: z.literal(true) }), "Service is up.") },
+  responses: {
+    200: json(
+      z.object({
+        ok: z.literal(true),
+        version: z.string().describe("The package's version."),
+        commit: z.string().describe("The commit it was built from, ending `-dirty` when built with uncommitted changes."),
+      }),
+      "Service is up.",
+    ),
+  },
 });
 
 export const heartbeatRoute = forHost({
