@@ -2,10 +2,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { Host } from "./domain.ts";
 import type { Command, SocketOutbound } from "./schema.ts";
 
-/** Runs against a running instance, never prod: `INTEGRATION_AG_URL=... INTEGRATION_AG_TOKEN=... npm test` */
+/** Runs against a running instance, never prod: `INTEGRATION_AGENCY_URL=... INTEGRATION_AGENCY_TOKEN=... npm test` (or INTEGRATION_AG_*, their older names) */
 
-const url = process.env.INTEGRATION_AG_URL?.replace(/\/$/, "");
-const token = process.env.INTEGRATION_AG_TOKEN;
+const url = (process.env.INTEGRATION_AGENCY_URL ?? process.env.INTEGRATION_AG_URL)?.replace(/\/$/, "");
+const token = process.env.INTEGRATION_AGENCY_TOKEN ?? process.env.INTEGRATION_AG_TOKEN;
 
 /**
  * Each run sends heartbeats as hosts of its own and names its agents after
@@ -25,7 +25,7 @@ const EMPTY = { version: "integration", labels: [] };
 /** The socket's address on the stage under test. */
 const socketAt = () => `${url!.replace(/^http/, "ws")}/socket`;
 
-/** Registers `host` as agent-host does: its first report, then a heartbeat, up a socket of its own. */
+/** Registers `host` as agency-host does: its first report, then a heartbeat, up a socket of its own. */
 const beat = async (body: object, host: string) => {
   sentAs.add(host);
   const ws = new WebSocket(`${socketAt()}?hostId=${host}`, { headers: { Authorization: `Bearer ${token}` } } as unknown as string[]);
@@ -45,7 +45,7 @@ const beat = async (body: object, host: string) => {
 };
 
 /**
- * A host's socket, as agent-host opens it: the token in a header, which
+ * A host's socket, as agency-host opens it: the token in a header, which
  * Node's WebSocket (undici's) takes and a browser's does not. Commands are
  * kept as they arrive, for `next` to take in order.
  */
@@ -173,16 +173,16 @@ describe.skipIf(!url || !token)("deployed stage", () => {
       expect(start).toMatchObject({ kind: "start", resume: false, text: "Say hello." });
       // The session can reach this service as the agent, and says it waits on its own subagents.
       // The address is on record; the token comes only as the start is pushed, never in env.
-      expect(start.env).toMatchObject({ AG_URL: url });
+      expect(start.env).toMatchObject({ AGENCY_URL: url, AG_URL: url });
       expect(start.env).not.toHaveProperty("AG_TOKEN");
       expect(start.secrets?.AG_TOKEN === token).toBe(true);
-      const paged = await fetch(`${start.env!.AG_URL}/agents/${agent.id}/status`, {
+      const paged = await fetch(`${start.env!.AGENCY_URL}/agents/${agent.id}/status`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${start.secrets!.AG_TOKEN}`, "Content-Type": "application/json" },
         body: JSON.stringify({ status: "working", summary: "Waiting on a background subagent", headline: "On a subagent" }),
       });
       expect(paged.status, await paged.clone().text()).toBe(200);
-      const titled = await fetch(`${start.env!.AG_URL}/agents/${agent.id}/title`, {
+      const titled = await fetch(`${start.env!.AGENCY_URL}/agents/${agent.id}/title`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${start.secrets!.AG_TOKEN}`, "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Integration check" }),

@@ -1,6 +1,8 @@
-# agent-service's MCP server
+# agency's MCP server
 
 <!-- Generated from src/mcp.ts by `npm run spec`; do not edit. -->
+
+agency runs your agents across your computers. Its MCP server is how an agent, or your own Claude Code, starts agents, talks to them and follows what they do, each tool one call of agency's API.
 
 Streamable HTTP at `/mcp`, stateless, answering JSON. Every request takes the bearer token, as the API does,
 and may send `claimed-by`: each tool is one API operation made with them, so it is refused, recorded and
@@ -10,7 +12,7 @@ Each tool is its operation's `operationId` in snake_case, its input the operatio
 ```json
 {
   "mcpServers": {
-    "agent-service": {
+    "agency": {
       "type": "http",
       "url": "http://127.0.0.1:4600/mcp",
       "headers": {
@@ -25,7 +27,7 @@ Each tool is its operation's `operationId` in snake_case, its input the operatio
 
 What the server tells an agent when it connects:
 
-> agent-service runs agents: lasting Claude Code agents, each living on one host and run in sessions.
+> agency: Agents at your command, across all your computers. It runs lasting Claude Code agents, each living on one host and run in sessions.
 >
 > - An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.
 > - A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).
@@ -71,7 +73,7 @@ Records the agent `idle` and queues `create` for its host, which makes its home.
 | `label` | string |  | Absent, the role's, or without one none. |
 | `item` | string |  | The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none. |
 | `whenDone` | `keep`, `stop`, `delete` |  | Absent, the role's, or without one `keep`. |
-| `credentials` | string[] |  | The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. |
+| `credentials` | string[] |  | The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. |
 | `skills` | string[] |  | Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none. |
 
 ### create_request

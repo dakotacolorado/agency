@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AgentServiceApi } from "./api.ts";
+import { AgencyApi } from "./api.ts";
 import { LOST_AFTER } from "./domain.ts";
 import { FakeStore } from "./fake-store.ts";
 import type { Poster } from "./push.ts";
@@ -25,14 +25,14 @@ class FakePoster implements Poster {
 let store: FakeStore;
 let poster: FakePoster;
 let socket: SocketHandler;
-let api: AgentServiceApi;
+let api: AgencyApi;
 let now: Date;
 
 beforeEach(() => {
   store = new FakeStore();
   poster = new FakePoster();
   now = NOW;
-  api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: "wss://socket.example/live" });
+  api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: "wss://socket.example/live" });
   socket = new SocketHandler(store, TOKEN, poster, () => now, undefined, (hostId, heartbeat) => api.beat(hostId, heartbeat));
 });
 
@@ -303,7 +303,7 @@ describe("replaying a host's queue to a socket that connects", () => {
     expect(poster.posts).toEqual([]);
     await send("host", { type: "ping" });
     // A start goes with the tokens its record leaves out.
-    const sealed = (command: Command) => (command.kind === "start" ? { ...command, secrets: { AG_TOKEN: "secret" } } : command);
+    const sealed = (command: Command) => (command.kind === "start" ? { ...command, secrets: { AGENCY_TOKEN: "secret", AG_TOKEN: "secret" } } : command);
     expect(poster.to("host")).toEqual(store.commands.get("laptop")!.map((q) => ({ type: "command", command: sealed(q.command) })));
     expect(kinds("host")).toEqual(["create", "start", "message"]);
   });

@@ -3,20 +3,25 @@
 #
 #   title 'Short status headline'
 #
-# Prints the agent as agent-service now has it. Exits 1 on an HTTP error,
+# Prints the agent as agency now has it. Exits 1 on an HTTP error,
 # and 409 once you have a title: only the person changes it after that.
 #
-# Env: AG_URL and AG_TOKEN (set for the session); AG_AGENT_ID overrides the agent.
+# Env: AGENCY_URL and AGENCY_TOKEN (set for the session); AGENCY_AGENT_ID overrides
+# the agent. AG_URL, AG_TOKEN and AG_AGENT_ID, their names before agency was
+# renamed from agent-service, are read when those are not set.
 set -eu
 
 usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -eq 1 ] || usage
 
-url=${AG_URL:?"title: AG_URL is not set: this session was started without agent-service's address"}
-token=${AG_TOKEN:?"title: AG_TOKEN is not set: this session was started without agent-service's token"}
+url=${AGENCY_URL:-${AG_URL:-}}
+token=${AGENCY_TOKEN:-${AG_TOKEN:-}}
+[ -n "$url" ] || { echo "title: AGENCY_URL is not set: this session was started without agency's address" >&2; exit 1; }
+[ -n "$token" ] || { echo "title: AGENCY_TOKEN is not set: this session was started without agency's token" >&2; exit 1; }
 
-if [ -n "${AG_AGENT_ID-}" ]; then
-  id=$AG_AGENT_ID
+agent=${AGENCY_AGENT_ID:-${AG_AGENT_ID:-}}
+if [ -n "$agent" ]; then
+  id=$agent
 else
   config=${CLAUDE_CONFIG_DIR:?"title: CLAUDE_CONFIG_DIR is not set, so which agent this is is unknown"}
   file=$(dirname "$(dirname "$config")")/agent.json

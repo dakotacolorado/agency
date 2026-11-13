@@ -85,7 +85,7 @@ const CredentialNames = z
   .array(CredentialName)
   .max(16)
   .refine((names) => new Set(names).size === names.length, "Name each credential once.")
-  .openapi({ example: ["work-tracker", "agent-service"] });
+  .openapi({ example: ["work-tracker", "agency"] });
 
 const Credentials = CredentialNames;
 
@@ -322,7 +322,7 @@ export type Report = z.infer<typeof ReportSchema>;
 export const HeartbeatSchema = z
   .strictObject({
     type: z.literal("heartbeat").describe("Which message this is."),
-    version: z.string().max(64).describe("The agent-host build that sent the heartbeat."),
+    version: z.string().max(64).describe("The agency-host build that sent the heartbeat."),
     labels: Labels.optional().describe(
       "What the host offers, as its owner configured it. A full snapshot; absent, the host's last labels stand (none for a new host).",
     ),
@@ -363,7 +363,7 @@ export const CommandSchema = z
           .describe("True to carry on the agent's last conversation (`--continue`), false to begin one."),
         text: Text.optional().describe("The session's first message, when it has one."),
         context: ContextSchema.optional().describe(
-          "agent-service's own clients, `page` and `title`, as files to write into the agent's Claude Code " +
+          "agency's own clients, `page` and `title`, as files to write into the agent's Claude Code " +
             "folder before it starts, under `skills/`, replacing the last start's.",
         ),
         documents: z
@@ -573,7 +573,7 @@ export const SessionSchema = z
       .describe("The honed skills it started with, in order."),
     clients: z
       .object({
-        version: z.number().int().describe("The commit count of the agent-service build they came from."),
+        version: z.number().int().describe("The commit count of the agency build they came from."),
         commit: z.string().describe("Its commit."),
       })
       .nullable()
@@ -589,7 +589,7 @@ export const HostSchema = z
   .object({
     id: HostId.describe("As the host names itself."),
     heartbeatAt: Instant.describe("When its last heartbeat came."),
-    version: z.string().nullable().describe("The agent-host build of its last heartbeat."),
+    version: z.string().nullable().describe("The agency-host build of its last heartbeat."),
     status: HostStatus,
     labels: z.array(Label).describe("As the host last declared them."),
     capacity: Capacity.nullable().describe(
@@ -957,7 +957,7 @@ export const createAgentRoute = forClientActing({
           ),
           whenDone: WhenDone.optional().describe("Absent, the role's, or without one `keep`."),
           credentials: Credentials.optional().describe(
-            "The services each session is given an address and token for, by name: `agent-service` and each " +
+            "The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each " +
               "its services file names, such as `waypoint` and `honed`. A name it does not have is refused. " +
               "Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.",
           ),
@@ -1266,7 +1266,7 @@ const Subject = z
   .min(1)
   .max(200)
   .describe("What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read.")
-  .openapi({ example: "dakotacolorado/agent-service#41" });
+  .openapi({ example: "dakotacolorado/agency#41" });
 
 const ADMISSION =
   `A request starts once both usage windows read under ${USAGE_LIMIT * 100}% (from a reading under ` +

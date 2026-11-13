@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AgentServiceApi, type TokenSource } from "./api.ts";
+import { AgencyApi, type TokenSource } from "./api.ts";
 import {
   expired,
   HEADLINE_LIMIT,
@@ -44,14 +44,14 @@ class FakePoster implements Poster {
 
 let store: FakeStore;
 let poster: FakePoster;
-let api: AgentServiceApi;
+let api: AgencyApi;
 let now: Date;
 
 beforeEach(() => {
   store = new FakeStore();
   poster = new FakePoster();
   now = NOW;
-  api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET });
+  api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET });
 });
 
 const later = (seconds: number) => {
@@ -129,9 +129,9 @@ const host = async (id: string) => (await read("/hosts")).hosts.find((h: { id: s
 /** What a start is queued with to reach this service: its address and the name of its token, never the token. */
 /** What every start carries without any honed skill: this service's address, and its own clients. */
 const SELF = {
-  env: { AG_URL: "http://local" },
-  credentials: ["agent-service"],
-  context: { key: "agent-service", version: expect.any(Number), files: expect.arrayContaining([expect.objectContaining({ path: "skills/page/bin/page" })]) },
+  env: { AGENCY_URL: "http://local", AG_URL: "http://local" },
+  credentials: ["agency"],
+  context: { key: "agency", version: expect.any(Number), files: expect.arrayContaining([expect.objectContaining({ path: "skills/page/bin/page" })]) },
 };
 
 describe("auth", () => {
@@ -145,7 +145,7 @@ describe("auth", () => {
   });
 
   it("says plainly when no token is configured", async () => {
-    const unconfigured = new AgentServiceApi(store, { value: async () => null });
+    const unconfigured = new AgencyApi(store, { value: async () => null });
     const res = await unconfigured.fetch(new Request("http://local/hosts"));
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ message: "API token is not configured." });
@@ -1183,7 +1183,7 @@ describe("socket tickets", () => {
   });
 
   it("says so where there is no socket", async () => {
-    api = new AgentServiceApi(store, TOKEN, { now: () => now });
+    api = new AgencyApi(store, TOKEN, { now: () => now });
     const res = await call("POST", "/socket-tickets");
     expect(res.status).toBe(503);
   });
@@ -1222,7 +1222,7 @@ describe("a session's context", () => {
       },
       refuse: async (skills) => (skills.includes("team/nope") ? "honed has no skill named team/nope" : null),
     };
-    api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, context, roles: testRoles() });
+    api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, context, roles: testRoles() });
     await beat("laptop", { capacity: 1 });
     id = (await create({ skills: ["agent-roles/planner"] })).id;
   });
@@ -1266,12 +1266,12 @@ describe("an agent's credentials", () => {
   const credentials = () => ({
     "document-service": known("document-service", "https://ds", "DS"),
     "work-tracker": known("work-tracker", "https://wt", "WT"),
-    "agent-service": known("agent-service", null, "AG"),
+    agency: known("agency", null, "AG"),
   });
 
   beforeEach(async () => {
-    tokens = { "document-service": "ds-1", "work-tracker": "wt-1", "agent-service": "secret" };
-    api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: credentials() });
+    tokens = { "document-service": "ds-1", "work-tracker": "wt-1", "agency": "secret" };
+    api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: credentials() });
     await store.putConnection({ connectionId: "host", kind: "host", hostId: "laptop", connectedAt: now.toISOString() });
     await beat("laptop", { capacity: 4 });
   });
@@ -1288,20 +1288,20 @@ describe("an agent's credentials", () => {
     ]);
 
   it("gives an agent the services it names, their tokens only as its start is pushed to the host", async () => {
-    const made = await create({ name: "reviewer-1", brief: "Review PR #18.", credentials: ["work-tracker", "agent-service"] });
-    expect(made).toMatchObject({ credentials: ["work-tracker", "agent-service"] });
+    const made = await create({ name: "reviewer-1", brief: "Review PR #18.", credentials: ["work-tracker", "agency"] });
+    expect(made).toMatchObject({ credentials: ["work-tracker", "agency"] });
     const [start] = pushed();
     expect(start).toMatchObject({
       env: { WT_URL: "https://wt", AG_URL: "http://local" },
-      credentials: ["work-tracker", "agent-service"],
+      credentials: ["work-tracker", "agency"],
       secrets: { WT_TOKEN: "wt-1", AG_TOKEN: "secret" },
     });
     expect(start!.env).not.toHaveProperty("DS_URL");
     expect(queued().find((c) => c.kind === "start")).not.toHaveProperty("secrets");
   });
 
-  it("gives an agent this service at the public address it was given, not the one the request came to", async () => {
-    api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: credentials(), publicUrl: "https://beta.example.ts.net:8445/" });
+  it("gives an agent this service at the public address it was given, not the one the request came to, by its former name too", async () => {
+    api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: credentials(), publicUrl: "https://beta.example.ts.net:8445/" });
     await create({ name: "reviewer-1", brief: "Review PR #18.", credentials: ["agent-service"] });
     expect(pushed()[0]!.env).toEqual({ AG_URL: "https://beta.example.ts.net:8445" });
   });
@@ -1318,7 +1318,7 @@ describe("an agent's credentials", () => {
     await create({ brief: "Go." });
     expect(pushed()[0]).toMatchObject({
       env: { DS_URL: "https://ds", WT_URL: "https://wt", AG_URL: "http://local" },
-      credentials: ["document-service", "work-tracker", "agent-service"],
+      credentials: ["document-service", "work-tracker", "agency"],
       secrets: { DS_TOKEN: "ds-1", WT_TOKEN: "wt-1", AG_TOKEN: "secret" },
     });
   });
@@ -1327,7 +1327,7 @@ describe("an agent's credentials", () => {
     const res = await call("POST", "/agents", { name: "x-1", hostId: "laptop", credentials: ["work-tracker", "github"] });
     expect(res.status).toBe(400);
     expect((await res.json()).message).toBe(
-      "No credential is named github; this stage has document-service, work-tracker, agent-service.",
+      "No credential is named github; this stage has document-service, work-tracker, agency.",
     );
     expect((await call("POST", "/agents", { name: "x-1", hostId: "laptop", credentials: ["work-tracker", "work-tracker"] })).status).toBe(400);
   });
@@ -1348,7 +1348,7 @@ describe("an agent's credentials", () => {
 
   it("starts without a token it cannot read", async () => {
     tokens["work-tracker"] = null;
-    await create({ brief: "Go.", credentials: ["work-tracker", "agent-service"] });
+    await create({ brief: "Go.", credentials: ["work-tracker", "agency"] });
     expect(pushed()[0]!.secrets).toEqual({ AG_TOKEN: "secret" });
   });
 });
@@ -1411,7 +1411,7 @@ describe("roles", () => {
       },
       refuse: async (skills) => (skills.includes("team/nope") ? "honed has no skill named team/nope" : null),
     };
-    api = new AgentServiceApi(store, TOKEN, {
+    api = new AgencyApi(store, TOKEN, {
       now: () => now,
       poster,
       socketUrl: SOCKET,
@@ -1420,7 +1420,7 @@ describe("roles", () => {
       credentials: {
         "document-service": known("document-service", "https://ds", "DS"),
         "work-tracker": known("work-tracker", "https://wt", "WT"),
-        "agent-service": known("agent-service", null, "AG"),
+        agency: known("agency", null, "AG"),
         "approval-service": known("approval-service", "https://as", "AS"),
       },
     });
@@ -1456,7 +1456,7 @@ describe("roles", () => {
     });
     expect(start(made.id)).toMatchObject({
       text: "Review PR #18.",
-      credentials: ["document-service", "work-tracker", "agent-service", "approval-service"],
+      credentials: ["document-service", "work-tracker", "agency", "approval-service"],
       env: { DS_URL: "https://ds", WT_URL: "https://wt", AG_URL: "http://local", AS_URL: "https://as" },
     });
     expect(asked.at(-1)).toEqual(["agent-roles/reviewer"]);

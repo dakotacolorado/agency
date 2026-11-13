@@ -15,7 +15,7 @@ Run `"$CLAUDE_CONFIG_DIR/skills/title/bin/title"`:
 
 ```sh
 title 'Short status headline'
-title 'agent-service on SQLite'
+title 'agency on SQLite'
 ```
 
 At most 40 characters: what you are there to do, in a few words. It is not

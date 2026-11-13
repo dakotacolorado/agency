@@ -25,7 +25,7 @@ export interface Read {
  * its scripts need, and why anything was left out.
  */
 export interface Attached extends Read {
-  /** agent-service's own clients, `page` and `title`, and the build they came from. */
+  /** agency's own clients, `page` and `title`, and the build they came from. */
   clients: SessionContext & { commit: string };
   /** The addresses of the services it is given; their tokens go only to its host, with `credentials`. */
   env: Record<string, string>;

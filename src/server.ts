@@ -1,4 +1,4 @@
-import { fixedToken, AgentServiceApi } from "./api.ts";
+import { fixedToken, AgencyApi } from "./api.ts";
 import { HonedContext, NO_CONTEXT } from "./context.ts";
 import { credentialsOf, type Services } from "./services.ts";
 import { HonedRoles, NO_ROLES } from "./roles.ts";
@@ -30,7 +30,7 @@ export interface Config {
 }
 
 export interface Running {
-  api: AgentServiceApi;
+  api: AgencyApi;
   store: Store;
   /** Serves the hosts' and pages' socket on `server`, the one serving `api`. */
   listen(server: Server): void;
@@ -49,7 +49,7 @@ export function start(config: Config): Running {
   const context = honed?.url ? new HonedContext({ url: honed.url, token: honed.token }, store) : NO_CONTEXT;
   const roles = honed?.url ? new HonedRoles({ url: honed.url, token: honed.token }, store) : NO_ROLES;
   const sockets = new Sockets();
-  const api = new AgentServiceApi(store, token, {
+  const api = new AgencyApi(store, token, {
     poster: sockets,
     socketPath: SOCKET_PATH,
     publicUrl: config.publicUrl ?? null,

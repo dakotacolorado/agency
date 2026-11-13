@@ -1,7 +1,32 @@
-# agent-service
+# agency
+
+**Agents at your command, across all your computers.**
+
+```
+ █████╗  ██████╗ ███████╗███╗   ██╗ ██████╗██╗   ██╗        ▄▄██▄▄
+██╔══██╗██╔════╝ ██╔════╝████╗  ██║██╔════╝╚██╗ ██╔╝    ▄▄██████████▄▄
+███████║██║  ███╗█████╗  ██╔██╗ ██║██║      ╚████╔╝    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+██╔══██║██║   ██║██╔══╝  ██║╚██╗██║██║       ╚██╔╝      ██  ██  ██  ██
+██║  ██║╚██████╔╝███████╗██║ ╚████║╚██████╗   ██║       ██  ██  ██  ██
+╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝   ╚═╝     ▄████████████████▄
+v0.2.0
+
+Agents at your command, across all your computers.
+Agents, their sessions, the requests that start them and the hosts they run on.
+
+  ▸ Page      http://127.0.0.1:4600/
+  ▸ API       http://127.0.0.1:4600/agents   docs http://127.0.0.1:4600/docs/api
+  ▸ MCP       http://127.0.0.1:4600/mcp      docs http://127.0.0.1:4600/docs/mcp
+
+  sessions may be given: agency
+  listening on http://127.0.0.1:4600, data in ~/.local/share/agency/agency.db
+  Ctrl+C to stop.
+```
+
+agency was formerly called agent-service, and agency-host, which runs on each host, agent-host.
 
 The API for agents: lasting agents, each living on one host, run in sessions.
-Hosts run `agent-host`, which keeps each agent's home folder and its tmux
+Hosts run `agency-host`, which keeps each agent's home folder and its tmux
 session; this service keeps the record and carries commands and reports between
 hosts and the page. A **session** is one run of an agent; one that dies leaves
 its agent `interrupted`, and it can be resumed.
@@ -27,13 +52,13 @@ contract disagree. Generate a client rather than writing types:
 
 ```sh
 npm ci
-AUTH_TOKEN=… node src/cli.ts --port 4600 --db ~/.local/share/agent-service/agent-service.db \
+AUTH_TOKEN=… node src/cli.ts --port 4600 --db ~/.local/share/agency/agency.db \
   --public-url https://<host>.<tailnet>.ts.net:<port> --services services.json
 node src/cli.ts backup <file>     # a consistent copy while it serves
 ```
 
 `AUTH_TOKEN` is what every caller and host presents. `--public-url` is the address agents and
-hosts reach it at, given to each session as `AG_URL`; without it, the address
+hosts reach it at, given to each session as `AGENCY_URL`; without it, the address
 each request came to. `--services` names the other services a session may be
 given, with no token in the file:
 
@@ -47,19 +72,29 @@ each token read from this process's variable `tokenEnv`. A service that
 serves MCP names its path as `"mcp": "/mcp"`; each session given it is then
 handed its server in the start's `mcpServers`, its address and token written
 as `${urlVar}` and `${tokenVar}`, which the session's own environment fills,
-and agent-host passes them to Claude Code with `--mcp-config`. What ages out (a
+and agency-host passes them to Claude Code with `--mcp-config`. What ages out (a
 command's record, a pending command not durable, an ended request, a spent
 ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
+
+### Its settings
+
+Each option can also be set in the environment, `AGENCY_<NAME>`: `AGENCY_HOST`,
+`AGENCY_PORT`, `AGENCY_DB`, `AGENCY_URL` (`--public-url`), `AGENCY_SERVICES` and
+`AGENCY_PICK_UP`. The names it had as agent-service, `AGENT_SERVICE_<NAME>`, are
+deprecated but still read when the new one is not set, and without `--db` or
+`AGENCY_DB` an existing `~/.local/share/agent-service/agent-service.db` is used,
+so an install from before the rename keeps working unchanged. Requests and
+roles that name the `agent-service` credential are given `agency`'s.
 
 ## Hosts
 
 Each machine that runs agents runs
-[agent-host](https://github.com/dakotacolorado/agent-host), pointed at this
+[agency-host](https://github.com/dakotacolorado/agency-host), pointed at this
 service's address and `AUTH_TOKEN`; it connects over the protocol below.
 
 ## Protocol
 
-A host speaks to agent-service over one WebSocket at `/socket` on the API's
+A host speaks to agency over one WebSocket at `/socket` on the API's
 own address and port (`wss://` behind an HTTPS proxy): it connects with
 `?hostId=<id>` and the stage's token as `Authorization: Bearer`, and nothing
 else of the API is for it. On every (re)connect it sends its full `report`,
@@ -78,8 +113,8 @@ agent's live session or not: `done` or `rejected`, with nothing between.
 ```mermaid
 sequenceDiagram
     participant P as Page (browser)
-    participant S as agent-service
-    participant H as Host (agent-host)
+    participant S as agency
+    participant H as Host (agency-host)
 
     H-->>S: wss /socket?hostId= with Authorization: Bearer
     H-->>S: { type: report } (in full)
@@ -154,7 +189,7 @@ An agent is made, by a person or a program, with what its job needs:
   skills (`skill/`), as this build has them, so an agent calls the API that is
   deployed.
 - **credentials**: the services it is given an address and token for, by name
-  (`agent-service`, and each the services file names; without any, all of
+  (`agency`, which `agent-service`, its former name, also gives, and each the services file names; without any, all of
   them). Only names are kept. The queued `start` holds the addresses; each
   token is read from the service's environment as the `start` is pushed to its
   host's socket, as `secrets`, so no token is stored, listed by `ListCommands`
@@ -169,9 +204,8 @@ An agent is made, by a person or a program, with what its job needs:
 
 ## Picking up waypoint's tasks
 
-waypoint has no queue, so agent-service finds work itself when started with
-`--pick-up <role>` (or `AGENT_SERVICE_PICK_UP`, which a host sets in
-`~/.config/agent-service/env`): every 30 seconds it reads the services'
+waypoint has no queue, so agency finds work itself when started with
+`--pick-up <role>` (or `AGENCY_PICK_UP` in its environment): every 30 seconds it reads the services'
 `waypoint` for `ListTasks?ready=true&assignee=none`, oldest first, and for each,
 at most 5 a look, asks for an agent in that role (`CreateRequest`, its `item`
 the task's id) and sets the task's `assignee` to the agent's name. A task
@@ -207,7 +241,8 @@ seconds.
 A host can see that an agent's turn ended, its `state` going from `working`
 to `waiting`, but not why: a question, finished
 work and waiting on its own subagents all end the turn alike. So the agent
-says it. Each session is given `AG_URL` and `AG_TOKEN`, and the agent's `page`
+says it. Each session is given `AGENCY_URL` and `AGENCY_TOKEN` (and, for now, the
+same as `AG_URL` and `AG_TOKEN`, their names before the rename), and the agent's `page`
 skill calls `PUT /agents/{id}/status` with `working` or `waiting` and a
 one-line `summary`, or `done` with its result once it has finished what it was
 made for. An agent made with `whenDone: stop` then has its session stopped, and

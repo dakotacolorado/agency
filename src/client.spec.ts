@@ -81,7 +81,7 @@ describe("a client generated from openapi.json", async () => {
   `;
 
   it("compiles a consumer that uses only generated types", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agent-service-client-"));
+    const dir = mkdtempSync(join(tmpdir(), "agency-client-"));
     try {
       writeFileSync(join(dir, "fleet.d.ts"), astToString(await openapiTS(document as never)));
       writeFileSync(join(dir, "consumer.ts"), consumer);

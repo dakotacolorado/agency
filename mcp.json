@@ -1,5 +1,5 @@
 {
-  "instructions": "agent-service runs agents: lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session carrying on its conversation when none is live. delete_agent ends the agent for good. There is no stopping one: an agent is running or it is not.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
+  "instructions": "agency: Agents at your command, across all your computers. It runs lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session carrying on its conversation when none is live. delete_agent ends the agent for good. There is no stopping one: an agent is running or it is not.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
   "tools": [
     {
       "name": "create_agent",
@@ -61,7 +61,7 @@
             ]
           },
           "credentials": {
-            "description": "The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.",
+            "description": "The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.",
             "maxItems": 16,
             "type": "array",
             "items": {
