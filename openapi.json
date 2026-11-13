@@ -2684,10 +2684,20 @@
                       "enum": [
                         true
                       ]
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "The package's version."
+                    },
+                    "commit": {
+                      "type": "string",
+                      "description": "The commit it was built from, ending `-dirty` when built with uncommitted changes."
                     }
                   },
                   "required": [
-                    "ok"
+                    "ok",
+                    "version",
+                    "commit"
                   ]
                 }
               }

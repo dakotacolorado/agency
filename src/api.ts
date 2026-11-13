@@ -31,6 +31,7 @@ import { CONTEXT_LIMIT, FETCH_LIMIT, NO_CONTEXT, type Attached, type ContextSour
 import { Credentials, selfCredential, type Credential } from "./credentials.ts";
 import type { AgentSecrets } from "./agent-secrets.ts";
 import { ownSkill, type Skill } from "./skill.ts";
+import { buildOf, PACKAGE_VERSION, type Build } from "./build.ts";
 import { NO_SKILLS, type SkillSource } from "./skills.ts";
 import { rolesOf, type Role } from "./roles.ts";
 import { inStartOrder, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
@@ -89,6 +90,7 @@ export class AgentServiceApi {
   private readonly context: ContextSource;
   private readonly skills: SkillSource;
   private readonly skill: () => Skill;
+  private readonly build: Build = buildOf();
 
   constructor(store: Store, token: TokenSource, options: ApiOptions = {}) {
     this.store = store;
@@ -169,7 +171,7 @@ export class AgentServiceApi {
   private routes(): void {
     const app = this.hono;
 
-    app.openapi(routes.healthRoute, (c) => c.json({ ok: true } as const, 200));
+    app.openapi(routes.healthRoute, (c) => c.json({ ok: true as const, version: PACKAGE_VERSION, commit: this.build.commit }, 200));
 
     app.openapi(routes.getSkillRoute, (c) => c.json(this.skill(), 200));
 

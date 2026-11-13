@@ -131,6 +131,10 @@ No body carries the server's time: a response's `Date` header is when it was mad
 ```typescript
 {
   ok: enum[true]
+  // The package's version.
+  version: string
+  // The commit it was built from, ending `-dirty` when built with uncommitted changes.
+  commit: string
 }
 ```
 

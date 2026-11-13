@@ -1,0 +1,67 @@
+#!/bin/sh
+# agent-host BINARY HOST_ID CAPACITY LABELS: run on a host after ops/deploy.
+# Installs BINARY (an agent-host build, from dakotacolorado/agent-host) as
+# ~/.local/bin/agent-host, writes ~/.config/agent-host/config.toml (mode 600)
+# pointing it at this host's agent-service with its AUTH_TOKEN, writes and
+# restarts agent-host.service, and waits for agent-service to list HOST_ID
+# as connected. LABELS is comma-separated, e.g. linux,x86_64. agent-host runs
+# beside worker-host, sharing none of its files.
+set -eu
+[ $# -eq 4 ] || { echo "usage: agent-host BINARY HOST_ID CAPACITY LABELS" >&2; exit 2; }
+binary=$1 host_id=$2 capacity=$3 labels=$4
+here=$(cd "$(dirname "$0")" && pwd)
+. "$here/common"
+[ -x "$binary" ] || { echo "agent-host: $binary is not executable" >&2; exit 1; }
+"$binary" --help >/dev/null 2>&1 || { echo "agent-host: $binary does not run here" >&2; exit 1; }
+
+mkdir -p "$HOME/.local/bin"
+cp "$binary" "$HOME/.local/bin/.agent-host.new"
+# A rename, so a host already running keeps the binary it started with.
+mv "$HOME/.local/bin/.agent-host.new" "$HOME/.local/bin/agent-host"
+
+host_conf=$HOME/.config/agent-host
+quoted=$(printf '%s' "$labels" | sed 's/[^,][^,]*/"&"/g; s/,/, /g')
+umask 077
+mkdir -p "$host_conf"
+cat >"$host_conf/config.toml.new" <<TOML
+service_url = "$url"
+token = "$(token AUTH_TOKEN)"
+host_id = "$host_id"
+capacity = $capacity
+labels = [$quoted]
+TOML
+mv "$host_conf/config.toml.new" "$host_conf/config.toml"
+umask 022
+
+mkdir -p "$units"
+cat >"$units/agent-host.service" <<UNIT
+[Unit]
+Description=agent-host: this machine's place among $app's hosts (dakotacolorado/agent-service ops/)
+After=network-online.target $app.service
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/agent-host
+Restart=always
+RestartSec=5
+Environment=PATH=%h/.local/bin:$(dirname "$node"):/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+[Install]
+WantedBy=default.target
+UNIT
+systemctl --user daemon-reload
+systemctl --user enable agent-host.service >/dev/null 2>&1
+systemctl --user restart agent-host.service
+
+i=0
+while [ $i -lt 30 ]; do
+  if printf 'Authorization: Bearer %s\n' "$(token AUTH_TOKEN)" | curl -fsS -H @- "$url/hosts?status=connected" 2>/dev/null | grep -q "\"id\":\"$host_id\""; then
+    echo "agent-host: $host_id is connected to $url"
+    exit 0
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+echo "agent-host: $host_id did not connect to $url" >&2
+journalctl --user -u agent-host.service -n 20 --no-pager >&2 || true
+exit 1

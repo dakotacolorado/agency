@@ -36,6 +36,25 @@ each token read from this process's variable `tokenEnv`. What ages out (a
 command's record, a pending command not durable, an ended request, a spent
 ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
 
+## On a host
+
+`ops/` installs it on a host by hand, as the hosts' other services are:
+
+```sh
+ops/deploy beta dakotajp-lenovo-laptop        # from a clean checkout at the commit to release
+ops/agent-host ~/agent-host dakotas-hp-laptop 2 linux,x86_64
+ops/check                                     # a real session: its context, and a read of waypoint
+```
+
+`ops/deploy` builds the checkout, installs it under
+`~/.local/share/routines/agent-service/`, keeps `previous` to put back, makes
+the host's tokens once in `~/.config/agent-service/env` (its own, and one named
+`agent-service` from this host's honed and waypoint), writes the services file
+naming them, restarts `agent-service.service` and checks `/health` answers the
+commit, serves it at `https://<host>:8446` with `tailscale serve`, and installs
+the nightly backup to the other host. `ops/agent-host` installs an agent-host
+build beside worker-host and points it at this host's agent-service.
+
 ## Protocol
 
 The socket is a WebSocket at `/socket` on the API's own address and port

@@ -1,0 +1,31 @@
+#!/bin/sh
+# check [HOST_ID]: run on a host after ops/deploy and ops/agent-host. Starts
+# an agent in the planner role on HOST_ID (default: the one agent-host is
+# configured as) at this host's agent-service, with a brief to read this
+# host's waypoint over its API, and waits for its session to answer. Prints
+# the context it started with (workplace/global and the role's skills, by
+# version, and its context note) and its last reply, then retires it. Exits 0
+# once it has answered with the number of tasks waypoint has.
+set -eu
+here=$(cd "$(dirname "$0")" && pwd)
+. "$here/common"
+host_id=${1:-$(sed -n 's/^host_id = "\(.*\)"/\1/p' "$HOME/.config/agent-host/config.toml")}
+call() { printf 'Authorization: Bearer %s\nContent-Type: application/json\nclaimed-by: agent-service-check\n' "$(token AUTH_TOKEN)" | curl -fsS -H @- -X "$1" "$url$2" ${3:+-d "$3"}; }
+field() { "$node" -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);console.log($1)})"; }
+
+brief='This is a check of the agent service, not real work. Read this host'"'"'s task tracker over its API: GET "$WAYPOINT_URL/tasks" with the header "Authorization: Bearer $WAYPOINT_TOKEN" (never print the token). Reply with one line: "waypoint has N tasks", N being the number of tasks it answers. Do not plan anything or write anything.'
+body=$("$node" -e 'console.log(JSON.stringify({name:`check-${Date.now().toString(36)}`,hostId:process.argv[1],role:"planner",brief:process.argv[2],whenDone:"keep"}))' "$host_id" "$brief")
+id=$(call POST /agents "$body" | field v.id)
+echo "check: agent $id on $host_id at $url"
+call GET "/agents/$id/sessions" | field 'v.sessions.map(s=>`check: started with ${s.context?`${s.context.key} v${s.context.version}`:"no context"}, ${s.documents.map(d=>`${d.key} v${d.version}`).join(", ")||"no skills"}, clients ${s.skills.map(k=>k.key).join(", ")}; note: ${s.contextNote??"none"}`).join("\n")'
+i=0 state=working
+while [ $i -lt 60 ] && [ "$state" = working ]; do
+  sleep 5
+  state=$(call GET "/agents/$id" | field 'v.state')
+  i=$((i + 1))
+done
+reply=$(call GET "/agents/$id/transcript" | field 'v.lines.filter(l=>l.from==="agent").map(l=>l.text).at(-1)??""')
+echo "check: it is $state, and said: $reply"
+call DELETE "/agents/$id" >/dev/null
+echo "check: retired $id"
+printf '%s' "$reply" | grep -Eq 'waypoint has [0-9]+ tasks?'
