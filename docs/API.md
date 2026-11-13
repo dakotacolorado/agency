@@ -56,9 +56,9 @@ No body carries the server's time: a response's `Date` header is when it was mad
 | SessionTokensReport | [#/components/schemas/SessionTokensReport](#componentsschemassessiontokensreport) | A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice. |
 | UsageReport | [#/components/schemas/UsageReport](#componentsschemasusagereport) | The account's usage, when a session's stream has said it since the last report. |
 | UsageWindowReport | [#/components/schemas/UsageWindowReport](#componentsschemasusagewindowreport) | The 5-hour window; absent when the event did not carry it. |
-| SocketPing | [#/components/schemas/SocketPing](#componentsschemassocketping) | Either side's keep-alive: API Gateway closes a socket idle for 10 minutes. |
+| SocketPing | [#/components/schemas/SocketPing](#componentsschemassocketping) | Either side's keep-alive, beside the server's WebSocket pings, which close a socket that misses one. |
 | SocketOutbound | [#/components/schemas/SocketOutbound](#componentsschemassocketoutbound) |  |
-| CommandPush | [#/components/schemas/CommandPush](#componentsschemascommandpush) | To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), since API Gateway takes no post to a socket still in `$connect`, and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`. |
+| CommandPush | [#/components/schemas/CommandPush](#componentsschemascommandpush) | To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`. |
 | Command | [#/components/schemas/Command](#componentsschemascommand) |  |
 | CreateCommand | [#/components/schemas/CreateCommand](#componentsschemascreatecommand) | Make the agent's home folder. |
 | StartCommand | [#/components/schemas/StartCommand](#componentsschemasstartcommand) |  |
@@ -3329,7 +3329,7 @@ id: string //format: uuid
 ### #/components/schemas/SocketPing
 
 ```typescript
-// Either side's keep-alive: API Gateway closes a socket idle for 10 minutes.
+// Either side's keep-alive, beside the server's WebSocket pings, which close a socket that misses one.
 {
   type: enum[ping]
 }
@@ -3345,7 +3345,7 @@ id: string //format: uuid
 ### #/components/schemas/CommandPush
 
 ```typescript
-// To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), since API Gateway takes no post to a socket still in `$connect`, and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`.
+// To every socket of the command's host, the moment it is queued; and to a host's socket once it is open, every command still pending for that host, oldest first. That replay follows the first message the host sends on it (its full report on connecting), and leaves out commands that message reports. A command is pending until a report names it, or until it is withdrawn; a host may see one more than once, and knows it by `id`.
 {
   type: enum[command]
   // discriminator: kind

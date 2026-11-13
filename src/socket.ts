@@ -8,7 +8,7 @@ import { Push, type Poster } from "./push.ts";
 import { SocketInboundSchema, type SocketInbound } from "./schema.ts";
 import type { Connection, Store } from "./store.ts";
 
-/** The parts of API Gateway's WebSocket event this reads. */
+/** A socket's connecting, closing or message, as `ws-server.ts` hands it over. */
 export interface SocketEvent {
   requestContext: {
     connectionId: string;
@@ -29,10 +29,9 @@ export interface SocketResult {
 const HOST_ID = /^[A-Za-z0-9._-]{1,64}$/;
 
 /**
- * One handler for every route: `$connect` decides who a socket is,
- * `$disconnect` forgets it, and anything else is a message, told apart by
- * its `type`. What a message's handling says back goes as a post, since a
- * route without a route response returns nothing to its socket.
+ * One handler for every event: connecting decides who a socket is, closing
+ * forgets it, and anything else is a message, told apart by its `type`. What
+ * a message's handling says back goes as a post to its socket.
  */
 export class SocketHandler {
   private readonly store: Store;
@@ -125,9 +124,9 @@ export class SocketHandler {
 
   /**
    * Every command still pending for the host, oldest first, once per socket.
-   * Not in `$connect`, which is where it belongs, because API Gateway refuses
-   * a post to a socket until `$connect` has returned: it is sent on the first
-   * message the host sends, which on connecting is its full report. Commands
+   * Sent on the first message the host sends, which on connecting is its full
+   * report, rather than on connecting, so that report can say what it already
+   * did, and a host that connects and says nothing is sent nothing. Commands
    * that message reports are left out, as done; it is replayed before the
    * report is applied, so what applying it queues is pushed once, not twice.
    */

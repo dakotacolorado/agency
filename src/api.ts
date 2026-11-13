@@ -58,6 +58,8 @@ export interface ApiOptions {
   publicUrl?: string | null;
   /** The socket's `wss://` address, given to hosts and pages; null where there is none. */
   socketUrl?: string | null;
+  /** Where on this service's own address the socket is served, when `socketUrl` is not given. */
+  socketPath?: string | null;
   /** What every session starts with; without one, nothing is attached. */
   context?: ContextSource;
   /** The services' clients laid over the context; without one, the context's own copies stay. */
@@ -81,6 +83,7 @@ export class AgentServiceApi {
   private readonly now: () => Date;
   private readonly fleet: Fleet;
   private readonly socketUrl: string | null;
+  private readonly socketPath: string | null;
   private readonly publicUrl: string | null;
 
   private readonly context: ContextSource;
@@ -93,6 +96,7 @@ export class AgentServiceApi {
     this.admin = options.admin ?? NO_TOKEN;
     this.now = options.now ?? (() => new Date());
     this.socketUrl = options.socketUrl ?? null;
+    this.socketPath = options.socketPath ?? null;
     this.publicUrl = options.publicUrl?.replace(/\/$/, "") ?? null;
     this.context = options.context ?? NO_CONTEXT;
     this.skills = options.skills ?? NO_SKILLS;
@@ -115,6 +119,15 @@ export class AgentServiceApi {
   /** This service's address as agents reach it: the one it was given, else the one the request came to. */
   private origin(c: Context): string {
     return this.publicUrl ?? new URL(c.req.url).origin;
+  }
+
+  /** The socket's address: the one given, else `socketPath` on this service's own, `ws` for `http`. */
+  private socketFor(c: Context): string | null {
+    if (this.socketUrl) return this.socketUrl;
+    if (!this.socketPath) return null;
+    const url = new URL(this.socketPath, this.origin(c));
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url.toString();
   }
 
   get fetch() {
@@ -161,7 +174,7 @@ export class AgentServiceApi {
     app.openapi(routes.getSkillRoute, (c) => c.json(this.skill(), 200));
 
     app.openapi(routes.heartbeatRoute, async (c) => {
-      const answer = await this.heartbeat(c.req.valid("param").id, c.req.valid("json"));
+      const answer = await this.heartbeat(c.req.valid("param").id, c.req.valid("json"), this.socketFor(c));
       await this.admitting(this.origin(c));
       return c.json(answer, 200);
     });
@@ -519,11 +532,12 @@ export class AgentServiceApi {
     app.openapi(routes.getUsageRoute, async (c) => c.json(await this.fleet.usage(), 200));
 
     app.openapi(routes.socketTicketRoute, async (c) => {
-      if (!this.socketUrl) return c.json({ error: "This server has no socket." }, 503);
+      const socketUrl = this.socketFor(c);
+      if (!socketUrl) return c.json({ error: "This server has no socket." }, 503);
       const issued = ticket();
       const expiresAt = new Date(this.now().getTime() + routes.TICKET_TTL * 1000).toISOString();
       await this.store.putTicket(hash(issued), expiresAt);
-      return c.json({ ticket: issued, socketUrl: this.socketUrl, expiresAt }, 201);
+      return c.json({ ticket: issued, socketUrl, expiresAt }, 201);
     });
 
     // Hono throws HTTPException for a malformed body before any handler runs;
@@ -537,7 +551,7 @@ export class AgentServiceApi {
     });
   }
 
-  private async heartbeat(id: string, heartbeat: Heartbeat): Promise<HeartbeatResponse> {
+  private async heartbeat(id: string, heartbeat: Heartbeat, socketUrl: string | null): Promise<HeartbeatResponse> {
     const was = await this.store.getHost(id);
     const host: Host = {
       id,
@@ -550,7 +564,7 @@ export class AgentServiceApi {
     await this.fleet.push.toViewers([
       { type: "host", host: hostView(host, await this.store.listAgents(), this.now()) },
     ]);
-    return { heartbeatInterval: HEARTBEAT_INTERVAL, socketUrl: this.socketUrl };
+    return { heartbeatInterval: HEARTBEAT_INTERVAL, socketUrl };
   }
 
   /** Every request as served: the waiting in start order, each with its place, then the rest newest first. */

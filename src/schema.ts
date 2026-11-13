@@ -772,7 +772,7 @@ export const SocketReportSchema = z
 
 export const SocketPingSchema = z
   .object({ type: z.literal("ping") })
-  .describe("Either side's keep-alive: API Gateway closes a socket idle for 10 minutes.")
+  .describe("Either side's keep-alive, beside the server's WebSocket pings, which close a socket that misses one.")
   .openapi("SocketPing");
 
 export const SocketInboundSchema = z
@@ -788,9 +788,8 @@ export const SocketOutboundSchema = z
       .describe(
         "To every socket of the command's host, the moment it is queued; and to a host's socket " +
           "once it is open, every command still pending for that host, oldest first. That replay " +
-          "follows the first message the host sends on it (its full report on connecting), since " +
-          "API Gateway takes no post to a socket still in `$connect`, and leaves out commands " +
-          "that message reports. A command is pending until a report names it, or until it is " +
+          "follows the first message the host sends on it (its full report on connecting), and " +
+          "leaves out commands that message reports. A command is pending until a report names it, or until it is " +
           "withdrawn; a host may see one more than once, and knows it by `id`.",
       )
       .openapi("CommandPush"),

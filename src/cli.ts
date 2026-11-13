@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { serve } from "@hono/node-server";
 import { mkdirSync } from "node:fs";
+import type { Server } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -101,6 +102,8 @@ const server = serve({ fetch: running.api.fetch, hostname: host, port }, (info) 
       "\n",
   );
 });
+
+running.listen(server as Server);
 
 server.on("error", (err) => {
   running.close();

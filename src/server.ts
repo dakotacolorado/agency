@@ -3,7 +3,10 @@ import { credentialsOf, type Services } from "./services.ts";
 import { ServiceSkills } from "./skills.ts";
 import { ownSkill } from "./skill.ts";
 import { Store } from "./store.ts";
+import type { Server } from "node:http";
+import { SocketHandler } from "./socket.ts";
 import { startTimers } from "./sweep.ts";
+import { serveSockets, SOCKET_PATH, Sockets } from "./ws-server.ts";
 import { storeSecrets } from "./agent-secrets.ts";
 
 export interface Config {
@@ -23,28 +26,40 @@ export interface Config {
 export interface Running {
   api: AgentServiceApi;
   store: Store;
-  /** Stops the timers and closes the database. */
+  /** Serves the hosts' and pages' socket on `server`, the one serving `api`. */
+  listen(server: Server): void;
+  /** Closes every socket, stops the timers and closes the database. */
   close(): void;
 }
 
-/** The API on the database at `config.db`, with its timers running. */
+/** The API on the database at `config.db`, with its timers running, and its socket once `listen` is called. */
 export function start(config: Config): Running {
   const store = Store.open(config.db);
   store.forgetConnections();
   const token = fixedToken(config.token);
   const credentials = credentialsOf(config.services, token, config.env);
+  const sockets = new Sockets();
+  const agentSecrets = storeSecrets(store);
   const api = new AgentServiceApi(store, token, {
+    poster: sockets,
+    socketPath: SOCKET_PATH,
     admin: fixedToken(config.adminToken),
     publicUrl: config.publicUrl ?? null,
     credentials,
-    agentSecrets: storeSecrets(store),
+    agentSecrets,
     skills: new ServiceSkills(credentials, ownSkill),
   });
+  const handler = new SocketHandler(store, token, sockets, undefined, credentials, agentSecrets);
   const stop = startTimers(store);
+  let unlisten = () => {};
   return {
     api,
     store,
+    listen: (server) => {
+      unlisten = serveSockets(server, handler, sockets);
+    },
     close: () => {
+      unlisten();
       stop();
       store.close();
     },
