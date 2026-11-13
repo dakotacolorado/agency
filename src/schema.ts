@@ -417,6 +417,18 @@ export const CommandSchema = z
               "start. The host writes them to a file in the agent's folder that only it can read, and the " +
               "session's environment is set from that file, never from a command line.",
           ),
+        mcpServers: z
+          .record(
+            z.string(),
+            z.object({ type: z.literal("http"), url: z.string(), headers: z.record(z.string(), z.string()) }),
+          )
+          .optional()
+          .describe(
+            "The MCP servers the session may call, by service, as Claude Code's `mcpServers` takes them: each " +
+              "given service that serves one, its address and token written as `${URL_VAR}` and `${TOKEN_VAR}`, " +
+              "which the session's own environment fills, so the command holds no token. The host passes them " +
+              "to Claude Code with `--mcp-config`.",
+          ),
       })
       .openapi("StartCommand"),
     z

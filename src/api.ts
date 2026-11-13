@@ -749,7 +749,8 @@ export class AgentServiceApi {
     const read = await this.context.forSession(agent.documents ?? [], skills.skills, limit);
     const notes = [...skills.notes, ...(read.note ? [read.note] : [])];
     const env = this.fleet.credentials.addresses(credentials, self);
-    return { ...read, note: notes.length ? notes.join("; ") : null, env, credentials, ownCredentials: agent.ownCredentials ?? [] };
+    const mcpServers = this.fleet.credentials.mcpServers(credentials);
+    return { ...read, note: notes.length ? notes.join("; ") : null, env, credentials, ownCredentials: agent.ownCredentials ?? [], mcpServers };
   }
 
   /**

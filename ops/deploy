@@ -62,8 +62,8 @@ keep_token HONED_TOKEN 'honed_[A-Za-z0-9_-]*' honed_token
 keep_token WAYPOINT_TOKEN 'wp_[A-Za-z0-9_-]*' waypoint_token
 cat >"$conf/services.json" <<JSON
 {
-  "honed": { "url": "$honed_url", "urlVar": "HONED_URL", "tokenVar": "HONED_TOKEN", "tokenEnv": "HONED_TOKEN" },
-  "waypoint": { "url": "$waypoint_url", "urlVar": "WAYPOINT_URL", "tokenVar": "WAYPOINT_TOKEN", "tokenEnv": "WAYPOINT_TOKEN" }
+  "honed": { "url": "$honed_url", "urlVar": "HONED_URL", "tokenVar": "HONED_TOKEN", "tokenEnv": "HONED_TOKEN", "mcp": "/mcp" },
+  "waypoint": { "url": "$waypoint_url", "urlVar": "WAYPOINT_URL", "tokenVar": "WAYPOINT_TOKEN", "tokenEnv": "WAYPOINT_TOKEN", "mcp": "/mcp" }
 }
 JSON
 umask 022

@@ -32,7 +32,11 @@ given, with no token in the file:
 }
 ```
 
-each token read from this process's variable `tokenEnv`. What ages out (a
+each token read from this process's variable `tokenEnv`. A service that
+serves MCP names its path as `"mcp": "/mcp"`; each session given it is then
+handed its server in the start's `mcpServers`, its address and token written
+as `${urlVar}` and `${tokenVar}`, which the session's own environment fills,
+and agent-host passes them to Claude Code with `--mcp-config`. What ages out (a
 command's record, a pending command not durable, an ended request, a spent
 ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
 

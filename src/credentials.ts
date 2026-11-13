@@ -9,6 +9,15 @@ export interface Credential {
   urlVar: string;
   tokenVar: string;
   token: TokenSource;
+  /** Where on its address it serves MCP; null or absent for none. */
+  mcp?: string | null;
+}
+
+/** One MCP server as Claude Code's `mcpServers` takes it. */
+export interface McpServer {
+  type: "http";
+  url: string;
+  headers: Record<string, string>;
 }
 
 /**
@@ -50,6 +59,21 @@ export class Credentials {
       names.flatMap((name) => {
         const known = this.#known.get(name);
         return known ? [[known.urlVar, known.url ?? self]] : [];
+      }),
+    );
+  }
+
+  /**
+   * The MCP servers of `names` that serve one, by name, their address and
+   * token as references to the session's own variables, so no token is in them.
+   */
+  mcpServers(names: string[]): Record<string, McpServer> {
+    return Object.fromEntries(
+      names.flatMap((name) => {
+        const known = this.#known.get(name);
+        if (!known?.mcp) return [];
+        const server: McpServer = { type: "http", url: `\${${known.urlVar}}${known.mcp}`, headers: { Authorization: `Bearer \${${known.tokenVar}}` } };
+        return [[name, server]];
       }),
     );
   }

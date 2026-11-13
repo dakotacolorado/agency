@@ -405,7 +405,7 @@ export function begin(
   text?: string,
   attached: Attached = { context: null, documents: [], skills: [], env: {}, credentials: [], ownCredentials: [], note: null },
 ): { agent: Agent; session: Session; command: Command } {
-  const { context, documents, skills, env, credentials, ownCredentials, note } = attached;
+  const { context, documents, skills, env, credentials, ownCredentials, note, mcpServers = {} } = attached;
   const session: Session = {
     id: randomUUID(),
     agentId: agent.id,
@@ -443,6 +443,7 @@ export function begin(
       ...(Object.keys(env).length && { env }),
       ...(credentials.length && { credentials }),
       ...(ownCredentials.length && { ownCredentials }),
+      ...(Object.keys(mcpServers).length && { mcpServers }),
     },
   };
 }
