@@ -22,6 +22,9 @@ Options:
   --db <path>         the SQLite file (default ~/.local/share/agent-service/agent-service.db, or AGENT_SERVICE_DB)
   --public-url <url>  this service's address as agents and hosts reach it, such as its Tailscale
                       HTTPS one (or AGENT_SERVICE_URL); without it, the address each request came to
+  --pick-up <role>    for each ready, unassigned task of the waypoint the services name, ask for an
+                      agent in <role> and assign the task to it (or AGENT_SERVICE_PICK_UP); without it,
+                      no task is taken
   --services <file>   the other services a session may be given, as JSON (or AGENT_SERVICE_SERVICES):
                       {"<name>": {"url", "urlVar", "tokenVar", "tokenEnv"}}, each token read from
                       this process's variable tokenEnv
@@ -42,6 +45,7 @@ const { values, positionals } = parseArgs({
     db: { type: "string" },
     services: { type: "string" },
     "public-url": { type: "string" },
+    "pick-up": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -92,12 +96,21 @@ if (servicesFile) {
 }
 
 const publicUrl = values["public-url"] ?? env.AGENT_SERVICE_URL ?? null;
-const running: Running = start({ db: path, token: env.AUTH_TOKEN || null, adminToken: env.ADMIN_TOKEN || null, services, publicUrl });
+const pickUp = values["pick-up"] ?? (env.AGENT_SERVICE_PICK_UP || null);
+const starting = (): Running => {
+  try {
+    return start({ db: path, token: env.AUTH_TOKEN || null, adminToken: env.ADMIN_TOKEN || null, services, publicUrl, pickUp });
+  } catch (err) {
+    return fail((err as Error).message);
+  }
+};
+const running = starting();
 const server = serve({ fetch: running.api.fetch, hostname: host, port }, (info) => {
   const missing = [!env.AUTH_TOKEN && "AUTH_TOKEN", !env.ADMIN_TOKEN && "ADMIN_TOKEN"].filter(Boolean);
   process.stdout.write(
     `agent-service v${PACKAGE_VERSION} on http://${host.includes(":") ? `[${host}]` : host}:${info.port}, data in ${path}` +
       `, services: ${Object.keys(services).join(", ") || "none"}` +
+      (pickUp ? `, picking up waypoint's ready tasks as ${pickUp}` : "") +
       (missing.length ? ` (${missing.join(" and ")} not set)` : "") +
       "\n",
   );
