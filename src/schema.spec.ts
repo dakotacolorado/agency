@@ -162,7 +162,7 @@ describe("the shapes", async () => {
     expect(fields("Usage")).toEqual(["fiveHour", "readAt", "sevenDay"]);
     expect(fields("UsageWindow")).toEqual(["hostId", "readAt", "resetsAt", "utilization"]);
     expect(fields("CreateCommand")).toEqual(["id", "kind", "name", "agentId"].sort());
-    expect(fields("StartCommand")).toEqual(["context", "contextUrl", "credentials", "documents", "env", "id", "kind", "ownCredentials", "resume", "secrets", "sessionId", "text", "agentId"].sort());
+    expect(fields("StartCommand")).toEqual(["context", "contextUrl", "credentials", "documents", "env", "id", "kind", "mcpServers", "ownCredentials", "resume", "secrets", "sessionId", "text", "agentId"].sort());
     expect(fields("NewAgent")).toEqual(["brief", "credentials", "documents", "hostId", "item", "label", "labels", "name", "role", "whenDone"]);
     expect(fields("Message")).toEqual(["interrupt", "text"]);
     expect(fields("SocketTicket")).toEqual(["expiresAt", "socketUrl", "ticket"]);

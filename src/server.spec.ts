@@ -50,7 +50,7 @@ beforeEach(async () => {
     adminToken: null,
     services: {
       honed: { url: stubUrl, urlVar: "HONED_URL", tokenVar: "HONED_TOKEN", tokenEnv: "TEST_HONED_TOKEN" },
-      waypoint: { url: `${stubUrl}/waypoint`, urlVar: "WAYPOINT_URL", tokenVar: "WAYPOINT_TOKEN", tokenEnv: "TEST_WAYPOINT_TOKEN" },
+      waypoint: { url: `${stubUrl}/waypoint`, urlVar: "WAYPOINT_URL", tokenVar: "WAYPOINT_TOKEN", tokenEnv: "TEST_WAYPOINT_TOKEN", mcp: "/mcp" },
     },
     env: { TEST_HONED_TOKEN: "honed-token", TEST_WAYPOINT_TOKEN: "waypoint-token" },
   });
@@ -127,6 +127,17 @@ describe("a session started by the served process", () => {
       "honed answered 502 for workplace/global, so workplace/global is its last good copy, v3; " +
         "honed answered 502 for workplace/planner, so workplace/planner is its last good copy, v5",
     );
+  });
+
+  it("names the MCP servers of the services it is given that serve one, with no token in the command", async () => {
+    const id = await planner("planner-1");
+    const begin = await startOf(id);
+    expect(begin.mcpServers).toEqual({
+      waypoint: { type: "http", url: "${WAYPOINT_URL}/mcp", headers: { Authorization: "Bearer ${WAYPOINT_TOKEN}" } },
+    });
+    expect(JSON.stringify(begin)).not.toContain("waypoint-token");
+    const narrow = await call("POST", "/agents", { name: "plain-1", hostId: "laptop", brief: "Go.", credentials: ["honed"] });
+    expect((await startOf(narrow.body.id)).mcpServers).toBeUndefined();
   });
 
   it("refuses an agent naming a skill honed does not have", async () => {

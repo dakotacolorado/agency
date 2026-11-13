@@ -1,3 +1,4 @@
+import type { McpServer } from "./credentials.ts";
 import type { Skill } from "./skill.ts";
 import { layReferences, overlay, type SkillRead } from "./skills.ts";
 
@@ -39,6 +40,8 @@ export interface Attached extends Read {
   credentials: string[];
   /** Of `credentials`, those the agent has a token of its own for. */
   ownCredentials: string[];
+  /** The MCP servers of `credentials` that serve one. */
+  mcpServers?: Record<string, McpServer>;
 }
 
 /** What honed gave a session, and why it left out what it did. */

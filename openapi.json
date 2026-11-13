@@ -656,6 +656,35 @@
               "type": "string"
             },
             "description": "The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the agent's folder that only it can read, and the session's environment is set from that file, never from a command line."
+          },
+          "mcpServers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "http"
+                  ]
+                },
+                "url": {
+                  "type": "string"
+                },
+                "headers": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "url",
+                "headers"
+              ]
+            },
+            "description": "The MCP servers the session may call, by service, as Claude Code's `mcpServers` takes them: each given service that serves one, its address and token written as `${URL_VAR}` and `${TOKEN_VAR}`, which the session's own environment fills, so the command holds no token. The host passes them to Claude Code with `--mcp-config`."
           }
         },
         "required": [

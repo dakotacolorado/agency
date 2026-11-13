@@ -9,6 +9,8 @@ const ServiceSchema = z.strictObject({
   tokenVar: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
   /** The variable of this process's environment its token is read from. */
   tokenEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+  /** Where on `url` it serves MCP, when it does, as `/mcp`. */
+  mcp: z.string().regex(/^\/[A-Za-z0-9._~\/-]*$/).optional(),
 });
 
 export const ServicesSchema = z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), ServiceSchema);
@@ -23,8 +25,8 @@ export type Services = z.infer<typeof ServicesSchema>;
  */
 export function credentialsOf(services: Services, token: TokenSource, env: NodeJS.ProcessEnv = process.env): Record<string, Credential> {
   const known: Record<string, Credential> = { "agent-service": selfCredential(token) };
-  for (const [name, { url, urlVar, tokenVar, tokenEnv }] of Object.entries(services)) {
-    known[name] = { url: url.replace(/\/$/, ""), urlVar, tokenVar, token: fixedToken(env[tokenEnv]) };
+  for (const [name, { url, urlVar, tokenVar, tokenEnv, mcp }] of Object.entries(services)) {
+    known[name] = { url: url.replace(/\/$/, ""), urlVar, tokenVar, token: fixedToken(env[tokenEnv]), mcp: mcp ?? null };
   }
   return known;
 }

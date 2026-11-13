@@ -3425,6 +3425,16 @@ id: string //format: uuid
   secrets: {
     [key: string]: string
   }
+  // The MCP servers the session may call, by service, as Claude Code's `mcpServers` takes them: each given service that serves one, its address and token written as `${URL_VAR}` and `${TOKEN_VAR}`, which the session's own environment fills, so the command holds no token. The host passes them to Claude Code with `--mcp-config`.
+  mcpServers: {
+    [key: string]: {
+      type: enum[http]
+      url: string
+      headers: {
+        [key: string]: string
+      }
+    }
+  }
 }
 ```
 
