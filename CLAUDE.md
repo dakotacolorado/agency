@@ -22,10 +22,17 @@ OS picks. `integration.spec.ts` hits a running instance and skips without
 ## Changing the API
 
 Edit `src/schema.ts`; it validates every request and generates the document.
-Name an operation as AWS does (a verb, then what it acts on, in PascalCase);
-`src/mcp.ts` makes each a snake_case tool. `npm run spec` writes
+Name an operation VerbNoun as AWS does, keep its summary to a few words
+starting with that verb, describe every field, tag it by its resource (the
+hosts' calls as `Host protocol`), and answer errors as `{code, message}` with
+the status's exception name (`ERROR_CODES`): tests hold all of it, as
+job-service's do. `src/mcp.ts` makes each operation a snake_case tool. `npm run spec` writes
 `openapi.json`, `mcp.json` and `docs/` from them, the pre-commit hook
 runs it, and `schema.spec.ts` fails if they drift. A host reports on its
 socket alone (`SocketReport`); the heartbeat carries no report and returns no
 commands. The host and the service deploy together: there is no versioning
 between them.
+
+The page is `ui/`, served at `/` as it is, with no build: it makes every
+element as text, never HTML, and `src/ui.spec.ts` holds that it calls only
+paths the contract has.

@@ -6,7 +6,11 @@ session; this service keeps the record and carries commands and reports between
 hosts and the page. A **session** is one run of an agent; one that dies leaves
 its agent `interrupted`, and it can be resumed.
 
-One Node 24 process serves it over HTTP, with its data in one SQLite file.
+One Node 24 process serves it over HTTP, with its data in one SQLite file,
+and a page at `/` that lists agents, requests, hosts, roles and usage, follows
+an agent's transcript, and makes, messages, stops, resumes and retires agents,
+under the token it asks for. Errors answer `{code, message}`, `code` an
+AWS-style exception name such as `ValidationException`.
 The contract is [`openapi.json`](./openapi.json), its operations named as
 AWS names theirs (`ListAgents`, `CreateRequest`, `PutAgentStatus`), rendered in
 [`docs/API.md`](./docs/API.md) in the layout of an AWS API reference and served
