@@ -3,8 +3,7 @@ import { AgentServiceApi, type TokenSource } from "./api.ts";
 import { FRESH_FOR_MS, inStartOrder, usageRefusal, type AgentRequest } from "./admission.ts";
 import type { Credential } from "./credentials.ts";
 import { FakeStore } from "./fake-store.ts";
-import { SEEDED_ROLES } from "./roles.ts";
-import type { AgentSecrets } from "./agent-secrets.ts";
+import { TEST_ROLES as SEEDED_ROLES, testRoles } from "./test-roles.ts";
 
 const TOKEN = { value: async () => "secret" } satisfies TokenSource;
 const NOW = new Date("2026-11-07T12:00:00.000Z");
@@ -12,7 +11,6 @@ const NOW = new Date("2026-11-07T12:00:00.000Z");
 let store: FakeStore;
 let api: AgentServiceApi;
 let now: Date;
-let kept: Map<string, string>;
 
 const known = (name: string, url: string | null, prefix: string): Credential => ({
   url,
@@ -24,16 +22,10 @@ const known = (name: string, url: string | null, prefix: string): Credential => 
 beforeEach(() => {
   store = new FakeStore();
   now = NOW;
-  kept = new Map();
-  const secrets: AgentSecrets = {
-    put: async (agentId, name, value) => void kept.set(`${agentId}/${name}`, value),
-    get: async (agentId, name) => kept.get(`${agentId}/${name}`) ?? null,
-    remove: async (agentId, names) => names.forEach((name) => kept.delete(`${agentId}/${name}`)),
-  };
   api = new AgentServiceApi(store, TOKEN, {
     now: () => now,
-    agentSecrets: secrets,
-    context: { forSession: async () => ({ context: null, documents: [], skills: [], note: null }), refuse: async () => null },
+    roles: testRoles(),
+    context: { forSession: async () => ({ skills: [], note: null }), refuse: async () => null },
     credentials: {
       "document-service": known("document-service", "https://ds", "DS"),
       "work-tracker": known("work-tracker", "https://wt", "WT"),
@@ -172,7 +164,7 @@ describe("a request for an agent", () => {
       role: "reviewer",
       item: "item-1",
       createdBy: "approval-service",
-      documents: ["workplace/reviewer"],
+      skills: ["agent-roles/reviewer"],
       whenDone: "retire",
       state: "working",
     });
@@ -184,7 +176,7 @@ describe("a request for an agent", () => {
     await usage(0.1, 0.1);
     const asked = await ask({ role: "planner" });
     expect(asked).toMatchObject({ state: "started", agentId: asked.id });
-    expect(store.agents.get(asked.id)).toMatchObject({ role: "planner", label: "plan: new work", documents: ["workplace/planner"] });
+    expect(store.agents.get(asked.id)).toMatchObject({ role: "planner", label: "plan: new work", skills: ["agent-roles/planner"] });
   });
 
   it("starts the higher role priority first, and of equal priority the older", async () => {
@@ -212,12 +204,10 @@ describe("a request for an agent", () => {
   it("can be withdrawn while waiting, and then never starts", async () => {
     await beat("laptop", 0);
     await usage(0.1, 0.1);
-    const asked = await ask({ role: "reviewer", brief: "Go.", credentials: ["work-tracker", { name: "approval-service", token: "own" }] });
-    expect(kept.get(`${asked.id}/approval-service`)).toBe("own");
+    const asked = await ask({ role: "reviewer", brief: "Go.", credentials: ["work-tracker"] });
     const res = await call("DELETE", `/requests/${asked.id}`);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ state: "withdrawn", withdrawnAt: now.toISOString(), position: null });
-    expect(kept.size).toBe(0);
     await beat("laptop", 2);
     expect((await request(asked.id)).state).toBe("withdrawn");
     expect(store.agents.size).toBe(0);
@@ -232,47 +222,21 @@ describe("a request for an agent", () => {
     expect((await call("DELETE", `/requests/${asked.id}`)).status).toBe(409);
   });
 
-  it("gives the agent it starts a token of the requester's own, kept from when it was asked", async () => {
+  it("gives an agent its role's skills, settings and, naming none, every service this stage has", async () => {
     await beat("laptop", 0);
     await usage(0.1, 0.1);
-    const asked = await ask({ role: "reviewer", brief: "Go.", credentials: ["work-tracker", { name: "approval-service", token: "own" }] });
-    await beat("laptop", 1);
-    expect(store.agents.get(asked.id)).toMatchObject({ credentials: ["work-tracker", "approval-service"], ownCredentials: ["approval-service"] });
-    expect(kept.get(`${asked.id}/approval-service`)).toBe("own");
-    expect(JSON.stringify(await request(asked.id))).not.toContain("own\"");
-  });
-
-  it("gives an agent its role's services with a token of the requester's own for one of them", async () => {
-    await beat("laptop", 0);
-    await usage(0.1, 0.1);
-    const asked = await ask({ role: "reviewer", brief: "Go.", tokens: [{ name: "approval-service", token: "own" }] });
-    expect(kept.get(`${asked.id}/approval-service`)).toBe("own");
+    const asked = await ask({ role: "reviewer", brief: "Go." });
     await beat("laptop", 1);
     const reviewer = SEEDED_ROLES.find((r) => r.name === "reviewer")!;
     const agent = store.agents.get(asked.id)!;
-    expect(agent).toMatchObject({
-      role: "reviewer",
-      documents: reviewer.documents,
-      whenDone: reviewer.whenDone,
-      ownCredentials: ["approval-service"],
-    });
-    // The role names none, so the agent is given every service this stage has, its own token for one.
+    expect(agent).toMatchObject({ role: "reviewer", skills: reviewer.skills, whenDone: reviewer.whenDone });
     expect(agent.credentials ?? null).toBe(reviewer.credentials);
-    expect(JSON.stringify(await request(asked.id))).not.toContain("own\"");
   });
 
-  it("refuses a token for a service the agent would not be given, or one given twice", async () => {
-    const narrow = await call("POST", "/requests", { role: "reviewer", brief: "Go.", credentials: ["work-tracker"], tokens: [{ name: "approval-service", token: "own" }] });
-    expect(narrow.status).toBe(400);
-    expect(((await narrow.json()) as { message: string }).message).toContain("approval-service is not among work-tracker");
-    const twice = await call("POST", "/requests", {
-      role: "reviewer",
-      brief: "Go.",
-      credentials: ["work-tracker", { name: "approval-service", token: "a" }],
-      tokens: [{ name: "approval-service", token: "b" }],
-    });
-    expect(twice.status).toBe(400);
-    expect(kept.size).toBe(0);
+  it("refuses a service this stage does not have", async () => {
+    const unknown = await call("POST", "/requests", { role: "reviewer", brief: "Go.", credentials: ["nothing"] });
+    expect(unknown.status).toBe(400);
+    expect(((await unknown.json()) as { message: string }).message).toContain("No credential is named nothing");
   });
 
   it("names no host or agent name, and needs a brief its role lacks", async () => {
@@ -313,7 +277,7 @@ describe("start order", () => {
   const at = (id: string, role: string, createdAt: string) => ({ id, role, createdAt }) as AgentRequest;
   it("is by role priority, then age", () => {
     const order = inStartOrder(
-      [at("a", "implementer", "1"), at("b", "planner", "3"), at("c", "conflict", "2"), at("d", "reviewer", "1")],
+      [at("a", "implementer", "1"), at("b", "planner", "3"), at("c", "onboarder", "2"), at("d", "reviewer", "1")],
       [...SEEDED_ROLES],
     );
     expect(order.map((r) => r.id)).toEqual(["b", "d", "c", "a"]);

@@ -32,7 +32,6 @@ const request = (fields: Partial<AgentRequest> = {}): AgentRequest => ({
   label: null,
   labels: [],
   credentials: null,
-  ownCredentials: [],
   requester: null,
   state: "waiting",
   why: null,
@@ -75,7 +74,6 @@ describe("a restart", () => {
     await store.putLines("w", [{ seq: 0, at: AT, sessionId: "s", from: "agent" as const, text: "Hello." }]);
     await store.putUsage("fiveHour", { utilization: 0.5, resetsAt: AT, readAt: AT, hostId: "laptop" });
     await store.putRequest(request());
-    await store.putSecret("w", "waypoint", "s3cret");
     await store.putConnection({ connectionId: "c", kind: "host", hostId: "laptop", connectedAt: AT });
     reopen();
     expect(await store.listHosts()).toEqual([host]);
@@ -86,7 +84,6 @@ describe("a restart", () => {
     expect((await store.sentTo("w")).map((s) => s.command.id)).toEqual(["c1", "c2"]);
     expect((await store.usage()).fiveHour?.utilization).toBe(0.5);
     expect((await store.listRequests()).map((r) => r.id)).toEqual(["r"]);
-    expect(await store.getSecret("w", "waypoint")).toBe("s3cret");
     await expect(store.commit({ claim: { name: "a", agentId: "other" } })).rejects.toBeInstanceOf(NameTaken);
     // Kept for a backup's open of a served database; forgotten only by the process that serves.
     expect((await store.connections()).map((c) => c.connectionId)).toEqual(["c"]);
@@ -122,10 +119,11 @@ describe("a change", () => {
   });
 
   it("writes only a session's ending over what it began with", async () => {
-    const context = { key: "global", version: 3 };
-    await store.commit({ sessions: [{ id: "s", agentId: "w", startedAt: AT, endedAt: null, ended: null, context, documents: [], skills: [], contextNote: null }] });
+    const skills = [{ name: "agent-roles/planner", version: 3 }];
+    const clients = { version: 7, commit: "abc" };
+    await store.commit({ sessions: [{ id: "s", agentId: "w", startedAt: AT, endedAt: null, ended: null, skills, clients, contextNote: null }] });
     await store.commit({ sessions: [{ id: "s", agentId: "w", startedAt: AT, endedAt: AT, ended: "stopped" }] });
-    expect(await store.sessionsOf("w")).toEqual([{ id: "s", agentId: "w", startedAt: AT, endedAt: AT, ended: "stopped", context, documents: [], skills: [], contextNote: null }]);
+    expect(await store.sessionsOf("w")).toEqual([{ id: "s", agentId: "w", startedAt: AT, endedAt: AT, ended: "stopped", skills, clients, contextNote: null }]);
   });
 });
 

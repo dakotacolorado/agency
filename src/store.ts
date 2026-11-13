@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { backup, DatabaseSync } from "node:sqlite";
 import { DURABLE, KEPT_FOR, unreported, type Host, type Queued, type Sent, type Session, type Agent } from "./domain.ts";
 import type { TranscriptLine, UsageWindow, UsageWindowName } from "./schema.ts";
-import type { Role } from "./roles.ts";
 import type { AgentRequest } from "./admission.ts";
 
 export interface Connection {
@@ -16,8 +15,7 @@ export interface Connection {
  * A session as a change writes it: whole when it begins, and only its ending
  * when it ends, so what it began with is kept.
  */
-export type SessionWrite = Omit<Session, "context" | "documents" | "skills" | "contextNote"> &
-  Partial<Pick<Session, "context" | "documents" | "skills" | "contextNote">>;
+export type SessionWrite = Omit<Session, "skills" | "clients" | "contextNote"> & Partial<Pick<Session, "skills" | "clients" | "contextNote">>;
 
 /** What one request changes, written together or not at all. */
 export interface Change {
@@ -72,15 +70,10 @@ CREATE TABLE IF NOT EXISTS transcript (
 CREATE TABLE IF NOT EXISTS connections (id TEXT PRIMARY KEY, record TEXT NOT NULL, replayed_at TEXT);
 CREATE TABLE IF NOT EXISTS tickets (hash TEXT PRIMARY KEY, valid_until TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS usage (name TEXT PRIMARY KEY, read_at TEXT NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS roles (name TEXT PRIMARY KEY, record TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS requests (
   id TEXT PRIMARY KEY, rev TEXT NOT NULL, state TEXT NOT NULL, ended_at TEXT, record TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS skill_copies (name TEXT PRIMARY KEY, version INTEGER NOT NULL, record TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS agent_secrets (
-  agent_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL,
-  PRIMARY KEY (agent_id, name)
-);
 `;
 
 type Row = Record<string, unknown>;
@@ -164,7 +157,7 @@ export class Store {
       for (const session of change.sessions ?? []) {
         const held = parse<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? AND id = ?").get(session.agentId, session.id));
         const fields = Object.fromEntries(Object.entries(session).filter(([, value]) => value !== undefined));
-        const merged = { context: null, documents: [], skills: [], contextNote: null, ...held, ...fields } as Session;
+        const merged = { skills: [], clients: null, contextNote: null, ...held, ...fields } as Session;
         this.db
           .prepare("INSERT INTO sessions (agent_id, id, started_at, record) VALUES (?, ?, ?, ?) ON CONFLICT (agent_id, id) DO UPDATE SET record = excluded.record")
           .run(merged.agentId, merged.id, merged.startedAt, JSON.stringify(merged));
@@ -293,13 +286,9 @@ export class Store {
     );
   }
 
-  async listRoles(): Promise<Role[]> {
-    return all<Role>(this.db.prepare("SELECT record FROM roles ORDER BY name").all());
-  }
 
-  async putRole(role: Role): Promise<void> {
-    this.db.prepare("INSERT OR REPLACE INTO roles (name, record) VALUES (?, ?)").run(role.name, JSON.stringify(role));
-  }
+
+
 
   async listRequests(): Promise<AgentRequest[]> {
     return this.db
@@ -340,19 +329,11 @@ export class Store {
     return parse<T>(this.db.prepare("SELECT record FROM skill_copies WHERE name = ?").get(name));
   }
 
-  async putSecret(agentId: string, name: string, value: string): Promise<void> {
-    this.db.prepare("INSERT OR REPLACE INTO agent_secrets (agent_id, name, value) VALUES (?, ?, ?)").run(agentId, name, value);
-  }
 
-  async getSecret(agentId: string, name: string): Promise<string | null> {
-    const row = this.db.prepare("SELECT value FROM agent_secrets WHERE agent_id = ? AND name = ?").get(agentId, name) as { value: string } | undefined;
-    return row?.value ?? null;
-  }
 
-  async removeSecrets(agentId: string, names: string[]): Promise<void> {
-    const remove = this.db.prepare("DELETE FROM agent_secrets WHERE agent_id = ? AND name = ?");
-    for (const name of names) remove.run(agentId, name);
-  }
+
+
+
 
   /**
    * Forgets what ages out `KEPT_FOR` after it was queued or ended: every

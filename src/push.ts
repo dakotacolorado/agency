@@ -9,13 +9,6 @@ export interface Poster {
 /** Where there is no socket, such as `npm run dev`: nothing reaches a host, and pages poll. */
 export const NO_SOCKET: Poster = { post: async () => "sent" };
 
-/**
- * The most one socket message carries, as API Gateway's limit was, which
- * the host's own cuts are sized for. Lines are split to stay under it; a
- * single message still over it is dropped, which a viewer can bear, since
- * the routes hold everything. `TEXT_LIMIT` keeps every command under it.
- */
-export const MESSAGE_LIMIT = 120 * 1024;
 
 /**
  * Best effort, always: the queue and the table are the truth, and a command
@@ -39,7 +32,7 @@ export class Push {
 
   async toViewers(messages: SocketOutbound[]): Promise<void> {
     if (!messages.length) return;
-    await this.#send((c) => c.kind === "viewer", messages.flatMap(split));
+    await this.#send((c) => c.kind === "viewer", messages);
   }
 
   /** In order, stopping at a socket found gone. */
@@ -76,30 +69,4 @@ export class Push {
       return "sent";
     }
   }
-}
-
-const size = (message: unknown) => Buffer.byteLength(JSON.stringify(message));
-
-function split(message: SocketOutbound): SocketOutbound[] {
-  if (size(message) <= MESSAGE_LIMIT) return [message];
-  if (message.type === "sent") {
-    // A start's context is what makes it large; a viewer wanting it reads `ListCommands`.
-    const { context: _, documents: __, ...command } = message.sent.command as typeof message.sent.command & {
-      context?: unknown;
-      documents?: unknown;
-    };
-    return [{ ...message, sent: { ...message.sent, command: command as typeof message.sent.command } }];
-  }
-  if (message.type !== "lines") return [message];
-  const parts: SocketOutbound[] = [];
-  let lines: typeof message.lines = [];
-  for (const line of message.lines) {
-    if (lines.length && size({ ...message, lines: [...lines, line] }) > MESSAGE_LIMIT) {
-      parts.push({ ...message, lines });
-      lines = [];
-    }
-    lines.push(line);
-  }
-  if (lines.length) parts.push({ ...message, lines });
-  return parts;
 }

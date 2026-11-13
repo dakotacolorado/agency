@@ -3,8 +3,8 @@
 # an agent in the planner role on HOST_ID (default: the one agent-host is
 # configured as) at this host's agent-service, with a brief to say which
 # skills it was given, and waits for its session to answer. Prints the
-# context it started with (workplace/global and the role's skills, by
-# version, and its context note) and its last reply, then retires it. Exits 0
+# skills it started with (its role's, by version), its clients and its
+# context note) and its last reply, then retires it. Exits 0
 # once it has answered naming its planner skill.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -17,7 +17,7 @@ brief='This is a check of the agent service, not real work. Reply with one line:
 body=$("$node" -e 'console.log(JSON.stringify({name:`check-${Date.now().toString(36)}`,hostId:process.argv[1],role:"planner",brief:process.argv[2],whenDone:"keep"}))' "$host_id" "$brief")
 id=$(call POST /agents "$body" | field v.id)
 echo "check: agent $id on $host_id at $url"
-call GET "/agents/$id/sessions" | field 'v.sessions.map(s=>`check: started with ${s.context?`${s.context.key} v${s.context.version}`:"no context"}, ${s.documents.map(d=>`${d.key} v${d.version}`).join(", ")||"no skills"}, clients ${s.skills.map(k=>k.key).join(", ")}; note: ${s.contextNote??"none"}`).join("\n")'
+call GET "/agents/$id/sessions" | field 'v.sessions.map(s=>`check: started with ${s.skills.map(k=>`${k.name} v${k.version}`).join(", ")||"no skills"}, clients ${s.clients?s.clients.commit.slice(0,7):"none"}; note: ${s.contextNote??"none"}`).join("\n")'
 i=0 state=working
 while [ $i -lt 60 ] && [ "$state" = working ]; do
   sleep 5

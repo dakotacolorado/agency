@@ -54,7 +54,7 @@ describe("agent-service serve", () => {
 
   it("says which token is missing, and answers 503 for what needs it", async () => {
     const { url, out } = await serve(join(temp(), "as.db"), {});
-    expect(out()).toContain("AUTH_TOKEN and ADMIN_TOKEN not set");
+    expect(out()).toContain("AUTH_TOKEN not set");
     expect((await fetch(`${url}/hosts`, { headers: auth("a") })).status).toBe(503);
   });
 
@@ -83,7 +83,8 @@ describe("agent-service serve", () => {
     writeFileSync(file, JSON.stringify({ waypoint: { url: "https://waypoint.example/", urlVar: "WAYPOINT_URL", tokenVar: "WAYPOINT_TOKEN", tokenEnv: "WP_SECRET" } }));
     const { url, out } = await serve(join(dir, "as.db"), { AUTH_TOKEN: "a", WP_SECRET: "w" }, ["--services", file]);
     expect(out()).toContain("services: waypoint");
-    const refused = await fetch(`${url}/requests`, { method: "POST", headers: auth("a"), body: JSON.stringify({ role: "implementer", brief: "x", credentials: ["nothing"] }) });
+    await fetch(`${url}/hosts/laptop/heartbeat`, { method: "POST", headers: auth("a"), body: JSON.stringify({ version: "t", labels: [], capacity: 1 }) });
+    const refused = await fetch(`${url}/agents`, { method: "POST", headers: auth("a"), body: JSON.stringify({ name: "x-1", hostId: "laptop", credentials: ["nothing"] }) });
     expect(await refused.text()).toContain("this stage has agent-service, waypoint.");
   });
 

@@ -29,7 +29,7 @@ describe("a client generated from openapi.json", async () => {
     const agent: S["Agent"] = {
       id: "w", name: "frontend-1", hostId: "h",
       state: "idle", session: null, createdAt: "t", reportedAt: null, hostStatus: "lost", title: null, label: null, item: null, role: null,
-      tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, createdBy: null, whenDone: "keep", documents: [], credentials: null,
+      tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, createdBy: null, whenDone: "keep", skills: [], credentials: null,
       status: null, summary: null, headline: null, saidAt: null, activity: null, tasks: 0, told: null,
     };
     const live: S["Agent"] = { ...agent, state: "working", session: { id: "s", startedAt: "t" } };
@@ -37,7 +37,7 @@ describe("a client generated from openapi.json", async () => {
     const failed: S["Agent"] = { ...agent, state: "failed" };
     // @ts-expect-error an agent is not scoped to a ticket
     const ticketed: S["Agent"] = { ...agent, workItemId: "t" };
-    const session: S["Session"] = { id: "s", agentId: "w", startedAt: "t", endedAt: null, ended: null, context: null, documents: [], skills: [], contextNote: null };
+    const session: S["Session"] = { id: "s", agentId: "w", startedAt: "t", endedAt: null, ended: null, skills: [], clients: null, contextNote: null };
     const line: S["TranscriptLine"] = { seq: 0, at: "t", sessionId: "s", from: "agent", text: "hi" };
     const host: S["Host"] = {
       id: "h", heartbeatAt: "t", version: null, status: "connected", labels: [],

@@ -1,6 +1,5 @@
 import type { TokenSource } from "./api.ts";
 import type { Command } from "./schema.ts";
-import { NO_AGENT_SECRETS, type AgentSecrets } from "./agent-secrets.ts";
 
 /** A service an agent may be given: its address and token, by the variables a session reads them from. */
 export interface Credential {
@@ -28,12 +27,9 @@ export interface McpServer {
  */
 export class Credentials {
   readonly #known: ReadonlyMap<string, Credential>;
-  /** Values callers gave one agent in place of a name's shared secret. */
-  readonly own: AgentSecrets;
 
-  constructor(known: Record<string, Credential>, own: AgentSecrets = NO_AGENT_SECRETS) {
+  constructor(known: Record<string, Credential>) {
     this.#known = new Map(Object.entries(known));
-    this.own = own;
   }
 
   get names(): string[] {
@@ -79,16 +75,15 @@ export class Credentials {
   }
 
   /**
-   * The tokens of `names`, by variable: of those in `own`, the value the
-   * agent was given; of the rest, the stage's. One that cannot be read is left out.
+   * The tokens of `names`, by variable, as the stage has them. One that cannot be read is left out.
    */
-  async secrets(names: string[], own: { agentId: string; names: string[] } | null = null): Promise<Record<string, string>> {
+  async secrets(names: string[]): Promise<Record<string, string>> {
     const read = await Promise.all(
       names.map(async (name) => {
         const known = this.#known.get(name);
         if (!known) return [];
         try {
-          const value = own?.names.includes(name) ? await this.own.get(own.agentId, name) : await known.token.value();
+          const value = await known.token.value();
           return value ? [[known.tokenVar, value] as const] : [];
         } catch (err) {
           console.error(`Could not read the ${name} credential:`, (err as Error).name);
@@ -102,8 +97,7 @@ export class Credentials {
   /** A command as it goes to its host: a `start` with its tokens. */
   async seal(command: Command): Promise<Command> {
     if (command.kind !== "start" || !command.credentials?.length) return command;
-    const own = command.ownCredentials?.length ? { agentId: command.agentId, names: command.ownCredentials } : null;
-    const secrets = await this.secrets(command.credentials, own);
+    const secrets = await this.secrets(command.credentials);
     return Object.keys(secrets).length ? { ...command, secrets } : command;
   }
 }

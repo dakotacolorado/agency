@@ -58,18 +58,18 @@ const AgentTitle = z
   .openapi({ example: "Short status headline" });
 
 /** As honed names its skills: a name, with its group prefix if it has one. */
-const DocumentKey = z
+const SkillName = z
   .string()
   .max(100)
   .regex(/^(?:[a-z0-9]+(?:-[a-z0-9]+)*\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  .openapi({ example: "workplace/reviewer" });
+  .openapi({ example: "agent-roles/planner" });
 
-const Documents = z
-  .array(DocumentKey.refine((key) => key !== "workplace/global", "workplace/global is given to every agent"))
+const Skills = z
+  .array(SkillName)
   .max(8)
   .refine((keys) => new Set(keys).size === keys.length, "Name each skill once.")
   .describe(
-    "The honed skills each session is given after `workplace/global`, by name, at their current version, in this order, " +
+    "The honed skills each session is given, by name, at their current version, in this order, " +
       "each laid whole as a Claude Code skill at `skills/<the name's last segment>/`.",
   );
 
@@ -87,18 +87,7 @@ const CredentialNames = z
   .refine((names) => new Set(names).size === names.length, "Name each credential once.")
   .openapi({ example: ["work-tracker", "agent-service"] });
 
-const OwnToken = z
-  .strictObject({ name: CredentialName, token: z.string().min(1).max(4096) })
-  .describe("A name with a token of the caller's, given this agent in place of the name's shared secret.");
-
-const Credentials = z
-  .array(z.union([CredentialName, OwnToken]))
-  .max(16)
-  .refine(
-    (given) => new Set(given.map((c) => (typeof c === "string" ? c : c.name))).size === given.length,
-    "Name each credential once.",
-  )
-  .openapi({ example: ["work-tracker", { name: "waypoint", token: "…" }] });
+const Credentials = CredentialNames;
 
 const WhenDone = z
   .enum(WHEN_DONE)
@@ -378,25 +367,15 @@ export const CommandSchema = z
           .describe("True to carry on the agent's last conversation (`--continue`), false to begin one."),
         text: Text.optional().describe("The session's first message, when it has one."),
         context: ContextSchema.optional().describe(
-          "Files to write into the agent's own Claude Code folder before it starts, replacing the last " +
-            "context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the " +
-            "last context and documents written stand.",
+          "agent-service's own clients, `page` and `title`, as files to write into the agent's Claude Code " +
+            "folder before it starts, under `skills/`, replacing the last start's.",
         ),
         documents: z
           .array(ContextSchema)
           .optional()
           .describe(
-            "Written after `context`, as it is, each with its own files and its `CLAUDE.md` after the one " +
-              "before; they replace the last start's. No two write the same file under `skills/`. Only " +
-              "with a `context`; absent with one, there are none.",
-          ),
-        contextUrl: z
-          .string()
-          .optional()
-          .describe(
-            "Present when the whole context is too large for a socket message: the path of `GetSessionContext` " +
-              "for this session. A host reads it, with the stage's token, and writes what it answers in place of " +
-              "`context` and `documents`, which then hold only what fitted. A host that cannot read it writes them.",
+            "The honed skills the session is given, each written after `context` under `skills/<its last segment>/`, " +
+              "replacing the last start's.",
           ),
         env: z
           .record(z.string(), z.string())
@@ -404,9 +383,6 @@ export const CommandSchema = z
           .describe("Set in the session's environment: the addresses of the services it is given. Never a secret."),
         credentials: CredentialNames.optional().describe(
           "The services the session is given, by name, as kept on record. Their tokens are in `secrets`.",
-        ),
-        ownCredentials: CredentialNames.optional().describe(
-          "Of `credentials`, those the agent was given a token of its own for, read in place of the shared one.",
         ),
         secrets: z
           .record(z.string(), z.string())
@@ -508,14 +484,11 @@ export const AgentSchema = z
       .nullable()
       .describe("The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none."),
     whenDone: WhenDone,
-    documents: z.array(z.string()).describe("The honed skills each session is given after `workplace/global`, by name."),
+    skills: z.array(z.string()).describe("The honed skills each session is given, by name: its role's own first."),
     credentials: z
       .array(z.string())
       .nullable()
-      .describe(
-        "The services each session is given, by name; null for the stage's defaults. Never a token, nor whether " +
-          "one was the caller's own.",
-      ),
+      .describe("The services each session is given, by name; null for every one the stage has. Never a token."),
     hostId: HostId.describe("The host it lives on."),
     state: z
       .enum(AGENT_STATES)
@@ -602,22 +575,25 @@ export const SessionSchema = z
       .enum(SESSION_ENDINGS)
       .nullable()
       .describe("`stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live."),
-    context: z
-      .object({ key: z.string(), version: z.number().int() })
-      .nullable()
-      .describe("The `workplace/global` it started with, from honed; null when it was given none."),
-    documents: z
-      .array(z.object({ key: z.string(), version: z.number().int() }))
-      .describe("The documents it started with beside `context`, in order."),
     skills: z
-      .array(z.object({ key: z.string(), version: z.number().int(), commit: z.string() }))
-      .describe(
-        "The clients it started with, each read from its service's `GET /skill` for this stage and written over `context`'s files at the same paths.",
-      ),
+      .array(
+        z.object({
+          name: z.string().describe("The honed skill."),
+          version: z.number().int().describe("The version it was given."),
+        }),
+      )
+      .describe("The honed skills it started with, in order."),
+    clients: z
+      .object({
+        version: z.number().int().describe("The commit count of the agent-service build they came from."),
+        commit: z.string().describe("Its commit."),
+      })
+      .nullable()
+      .describe("The `page` and `title` clients it started with; null on a session that started with none."),
     contextNote: z
       .string()
       .nullable()
-      .describe("Why it was given no context, or why a document it was made with, or a service's skill, was left out."),
+      .describe("Why a skill it was made with was left out, or given from honed's last good copy; null when none was."),
   })
   .openapi("Session");
 
@@ -1002,7 +978,7 @@ export const createAgentRoute = forClientActing({
         .object({
           name: AgentName,
           role: RoleName.optional().describe(
-            "The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` " +
+            "The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` " +
               "are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.",
           ),
           hostId: HostId.optional().describe(
@@ -1019,13 +995,11 @@ export const createAgentRoute = forClientActing({
           credentials: Credentials.optional().describe(
             "The services each session is given an address and token for, by name: `agent-service` and each " +
               "its services file names, such as `waypoint` and `honed`. A name it does not have is refused. " +
-              "Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. " +
-              "`{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart " +
-              "from its record, never returned by any read, and deleted when the agent is retired.",
+              "Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.",
           ),
-          documents: Documents.optional().describe(
-            "Given after `workplace/global` at each start, at their current version. A skill honed does not " +
-              "have is refused here. Absent, the role's, or without one only `workplace/global`.",
+          skills: Skills.optional().describe(
+            "Given at each start, at their current version. A skill honed does not have is refused here. " +
+              "Absent, the role's, or without one none.",
           ),
         })
         .openapi("NewAgent"),
@@ -1038,7 +1012,7 @@ export const createAgentRoute = forClientActing({
     ...REFUSED("an agent not retired already has `name`, the host is `lost`, or it is full and a `brief` was given."),
     ...FAILS,
     503: fails(503, "No API token is configured, or no `hostId` was given and no connected host fits and has room."),
-    400: fails(400, "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.",
+    400: fails(400, "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.",
     ),
   },
 });
@@ -1253,30 +1227,6 @@ export const listSessionsRoute = forClientReading({
   },
 });
 
-export const SessionContextSchema = z
-  .object({
-    context: ContextSchema.nullable().describe("Written as a start's `context` is; null when there is none to give."),
-    documents: z.array(ContextSchema).describe("Written after it, as a start's `documents` are."),
-  })
-  .openapi("SessionContext");
-
-export const getSessionContextRoute = forHost({
-  method: "get",
-  path: "/agents/{id}/sessions/{sessionId}/context",
-  operationId: "GetSessionContext",
-  summary: "Get a session's context",
-  description:
-    "Read at the moment it is asked, as a start's is, and recorded on the session in place of what its " +
-    "start carried, so the session's `contextNote` says what it was given.",
-  request: { params: z.object({ id: AgentId, sessionId: SessionId }) },
-  responses: {
-    200: json(SessionContextSchema, "Its context and documents."),
-    ...NO_AGENT,
-    409: fails(409, "The session is not the agent's live one."),
-    ...FAILS,
-  },
-});
-
 export const listAgentCommandsRoute = forClientReading({
   method: "get",
   path: "/agents/{id}/commands",
@@ -1379,32 +1329,22 @@ export const getUsageRoute = forClientReading({
 
 const Priority = z.number().int().min(0).max(1000);
 
-const RoleFields = {
-  documents: Documents.describe("The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order."),
-  credentials: CredentialNames.nullable().describe(
-    "The services each session is given, by name; null for the stage's defaults. A caller can still give one of these " +
-      "a token of its own, by naming it in `credentials` as `{name, token}`.",
-  ),
-  whenDone: WhenDone,
-  label: AgentLabel,
-  description: Text.nullable().describe(
-    "What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.",
-  ),
-  priority: Priority.describe("Of two requests waiting to start, the higher starts first."),
-  brief: Text.nullable().describe("The first message of an agent made from it with no `brief` of its own; null when the caller must give one."),
-};
-
 export const RoleSchema = z
   .object({
     name: RoleName,
-    ...RoleFields,
-    updatedAt: Instant.nullable().describe("When it was last written; null for a role as the stage was seeded with it."),
+    skills: z.array(z.string()).describe("The honed skills each session of an agent made from it is given: the role's own, `agent-roles/<name>`, first."),
+    credentials: CredentialNames.nullable().describe("The services each session is given, by name; null for every one the stage has."),
+    whenDone: WhenDone,
+    label: AgentLabel,
+    description: Text.nullable().describe("What an agent in it is for and who starts one: markdown, a sentence or two. Null for none."),
+    priority: Priority.describe("Of two requests waiting to start, the higher starts first."),
+    brief: Text.nullable().describe("The first message of an agent made from it with no `brief` of its own; null when the caller must give one."),
+    version: z.number().int().describe("The version of its honed skill it was read at."),
   })
+  .describe("A role, as its honed skill `agent-roles/<name>` defines it: its `SKILL.md` is what an agent in it is told, and its `role.json` these settings.")
   .openapi("Role");
 
 const NO_ROLE = { 404: fails(404, "No role has this name.") };
-
-const ADMIN = { 403: fails(403, "Writing a role takes the stage's admin token.") };
 
 const roleParam = { params: z.object({ name: RoleName }) };
 
@@ -1414,9 +1354,8 @@ export const listRolesRoute = forClientReading({
   operationId: "ListRoles",
   summary: "List roles",
   description:
-    "Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, " +
-    "`conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written " +
-    "with `CreateRole` or `UpdateRole` is served as written.",
+    "Every role an agent can be made from, highest `priority` first: each skill in honed's `agent-roles/` group, read now, " +
+    "or as last read when honed does not answer. A role is changed in honed, never here.",
   responses: { 200: json(z.object({ roles: z.array(RoleSchema).describe("Every role, highest `priority` first.") }).openapi("RoleList"), "The roles."), ...FAILS },
 });
 
@@ -1425,69 +1364,9 @@ export const getRoleRoute = forClientReading({
   path: "/roles/{name}",
   operationId: "GetRole",
   summary: "Get a role",
-  description: "Get one role.",
+  description: "Get one role, as `ListRoles` gives it.",
   request: roleParam,
   responses: { 200: json(RoleSchema, "The role."), ...NO_ROLE, ...FAILS },
-});
-
-export const createRoleRoute = forClientActing({
-  method: "post",
-  path: "/roles",
-  operationId: "CreateRole",
-  summary: "Create a role",
-  description: "Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.",
-  request: {
-    body: json(
-      z
-        .strictObject({
-          name: RoleName,
-          ...RoleFields,
-          documents: RoleFields.documents.optional().describe("Absent, only `workplace/global`."),
-          credentials: RoleFields.credentials.optional().describe("Absent, null: the stage's defaults."),
-          whenDone: WhenDone.optional().describe("Absent, `keep`."),
-          priority: RoleFields.priority.optional().describe("Absent, 0."),
-          brief: RoleFields.brief.optional().describe("Absent, null."),
-          description: RoleFields.description.optional().describe("Absent, null."),
-        })
-        .openapi("NewRole"),
-      "The role.",
-    ),
-  },
-  responses: {
-    201: json(RoleSchema, "Created."),
-    ...ADMIN,
-    409: fails(409, "A role has this name already."),
-    ...FAILS,
-    400: fails(400, "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`."),
-  },
-});
-
-export const updateRoleRoute = forClientActing({
-  method: "patch",
-  path: "/roles/{name}",
-  operationId: "UpdateRole",
-  summary: "Update a role",
-  description:
-    "Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it " +
-    "before keep what they were given; those made after get what it names now.",
-  request: {
-    ...roleParam,
-    body: json(
-      z
-        .strictObject(Object.fromEntries(Object.entries(RoleFields).map(([k, v]) => [k, v.optional()])) as {
-          [K in keyof typeof RoleFields]: z.ZodOptional<(typeof RoleFields)[K]>;
-        })
-        .openapi("RoleChange"),
-      "What changes.",
-    ),
-  },
-  responses: {
-    200: json(RoleSchema, "Changed."),
-    ...ADMIN,
-    ...NO_ROLE,
-    ...FAILS,
-    400: fails(400, "The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`."),
-  },
 });
 
 // --- requests ---------------------------------------------------------------
@@ -1559,22 +1438,7 @@ export const createRequestRoute = forClientActing({
           subject: Subject.optional(),
           label: AgentLabel.optional().describe("Absent, the role's."),
           labels: Labels.optional().describe("What the host it is placed on must all carry. Absent, none."),
-          credentials: Credentials.optional().describe(
-            "In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it " +
-              "starts from now, and deleted if it is withdrawn.",
-          ),
-          tokens: z
-            .array(OwnToken)
-            .min(1)
-            .max(16)
-            .refine((given) => new Set(given.map((t) => t.name)).size === given.length, "Name each token once.")
-            .optional()
-            .describe(
-              "Tokens of the caller's, each given the agent in place of that service's shared secret, for services it " +
-                "is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with " +
-                "a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service " +
-                "the agent would not be given, or one `credentials` gives a token for.",
-            ),
+          credentials: Credentials.optional().describe("In place of the role's, as `CreateAgent` takes them."),
         })
         .openapi("NewAgentRequest"),
       "What kind of agent, and what it is for.",
@@ -1583,8 +1447,7 @@ export const createRequestRoute = forClientActing({
   responses: {
     201: json(RequestSchema, "Recorded, and `started` if it was admitted at once."),
     ...FAILS,
-    400: fails(400, "The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given."),
-    503: fails(503, "No API token is configured, or a token of its own could not be kept."),
+    400: fails(400, "The request failed validation, the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has."),
   },
 });
 
@@ -1666,29 +1529,3 @@ export type LineReport = z.infer<typeof LineReportSchema>;
 export type AgentReport = z.infer<typeof AgentReportSchema>;
 export type CommandReport = z.infer<typeof CommandReportSchema>;
 
-export const SkillSchema = z
-  .object({
-    key: z.string().describe("Whose skills these are: `agent-service`."),
-    version: z.number().int().describe("The deployed tree's commit count, 0 when deployed from outside git."),
-    commit: z.string().describe("The deployed commit, ending `-dirty` when deployed with uncommitted changes."),
-    files: z.array(
-      z.object({
-        path: z.string().describe("Under the agent's Claude Code folder: `skills/<name>/bin/…` or `skills/<name>/reference/…`."),
-        content: z.string().describe("The file's text."),
-        executable: z.boolean().describe("Whether it is written executable."),
-      }).describe("A file of a skill."),
-    ).describe("Every file, as each session is given them."),
-  })
-  .openapi("Skill");
-
-export const getSkillRoute = forClientReading({
-  method: "get",
-  path: "/skill",
-  operationId: "GetSkill",
-  summary: "Get the agents' clients",
-  description:
-    "The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. " +
-    "Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over " +
-    "`workplace/global`'s files at the same paths, so an agent calls the API that is deployed.",
-  responses: { 200: json(SkillSchema, "The skills' files."), 401: FAILS[401], 503: FAILS[503] },
-});

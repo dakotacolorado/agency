@@ -1,78 +1,144 @@
-import type { WhenDone } from "./domain.ts";
+import { z } from "zod";
+import { WHEN_DONE, type WhenDone } from "./domain.ts";
+
+/** The honed group whose skills are the roles. */
+export const ROLE_GROUP = "agent-roles";
+
+/** `agent-roles/planner` for the role `planner`. */
+export const roleSkill = (name: string) => `${ROLE_GROUP}/${name}`;
 
 /**
  * What a kind of agent is started with: a caller names the role and says
  * what is particular to this one (its brief, its item), and the role gives
- * the rest. Its priority orders admission: higher starts first.
+ * the rest. Its priority orders admission: higher starts first. Each is a
+ * honed skill, `agent-roles/<name>`: its `SKILL.md` is what the agent is
+ * told, and its `role.json` these settings.
  */
 export interface Role {
   name: string;
-  /** The honed skills each start reads after `workplace/global`, by name. */
-  documents: string[];
-  /** The services each session is given, by name; null for the stage's defaults. */
+  /** The honed skills each session is given: its own, first. */
+  skills: string[];
+  /** The services each session is given, by name; null for every one the stage has. */
   credentials: string[] | null;
   whenDone: WhenDone;
   label: string;
-  /** What it is for, who starts it, and whether a person would: markdown; null for none. */
+  /** What it is for and who starts it: markdown; null for none. */
   description: string | null;
   priority: number;
   /** The first message when the caller gives none; null when a caller must. */
   brief: string | null;
-  /** When it was last written; null for a role as seeded and never changed. */
-  updatedAt: string | null;
+  /** The honed version it was read at. */
+  version: number;
 }
 
-const PLANNER_BRIEF = [
-  "You are a planner, started from the Work page's New item button. Ask the person, in this chat, what they want done: use the page skill to say you are waiting on them for it, and end your turn. Their answer, in their own words, starts you again. Then plan it into one epic in the work tracker, its stories, and the dependencies between them, as the `planner` skill you started with says. Write the items; do not take them or do the work.",
-  "When the plan is written, report each item you made by short id and title, then use the page skill to say done, with a one-line result: your session then ends, and a message from the person in this chat starts it again, to revise the items you made rather than make new ones.",
-].join("\n\n");
+/** A role skill's `role.json`. */
+export const RoleSettingsSchema = z.object({
+  label: z.string().min(1).max(40),
+  priority: z.number().int().min(0).max(100),
+  whenDone: z.enum(WHEN_DONE),
+  services: z.array(z.string().min(1)).nullable().default(null),
+  brief: z.string().min(1).nullable().default(null),
+  summary: z.string().nullable().default(null),
+  /** Other honed skills each session is given beside the role's own. */
+  skills: z.array(z.string().min(1)).default([]),
+});
 
-const DESCRIPTIONS = {
-  planner:
-    "Turns what the person wants done into one epic in the work tracker, with its stories and the dependencies between them. It asks the person what they want, in its chat, and writes the items; it never takes them or does the work.\n\n" +
-    "**Started by** the person: the Work page's New item button, or the New agent form. Pick it when you have new work to plan.",
-  implementer:
-    "Does one ticket from the work tracker: an epic, story or task. It writes the change, runs the repo's checks, opens the PR and submits it to approval-service, then moves the item to review.\n\n" +
-    "**Started by** the work queue, for the next ticket in it, or by a person on a ticket of their choosing. A send-back from approval-service, or a message, starts it again. Pick it, with the ticket, when you want one done now.",
-  reviewer:
-    "Reviews one submitted change for approval-service: reads the PR, runs the repo's checks at that commit, and approves it or sends it back with the reason.\n\n" +
-    "**Started by** approval-service, once for each change submitted to it. A person does not start one by hand.",
-  conflict:
-    "Rebases one change that no longer applies onto `main`, for approval-service, resolving the conflict so the change can merge.\n\n" +
-    "**Started by** approval-service, when a change it is merging conflicts. A person does not start one by hand.",
-  investigator:
-    "Finds out why a batch of changes failed in approval-service's pipeline (a check, a deploy or a smoke test), and which change caused it, so that change alone is sent back.\n\n" +
-    "**Started by** approval-service, when a batch fails. A person does not start one by hand.",
-  onboarder:
-    "Drafts the release routine (`pipeline.toml` and `jobs.toml` in release-routines) for a repo approval-service has not released before, checks it and writes it, so approval-service can run its first stage and register it.\n\n" +
-    "**Started by** approval-service, when someone asks it to onboard a repo (`approval onboard <owner/repo>`). A person does not start one by hand.",
-};
+/** A role as honed has it, from its skill's files; or why it is not one. */
+export function roleOf(skill: { name: string; version: number; files?: { path: string; content: string }[] }): Role | string {
+  const name = skill.name.slice(ROLE_GROUP.length + 1);
+  const file = skill.files?.find((f) => f.path === "role.json");
+  if (!file) return `${skill.name} has no role.json`;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(file.content);
+  } catch (err) {
+    return `${skill.name}'s role.json is not JSON: ${(err as Error).message}`;
+  }
+  const settings = RoleSettingsSchema.safeParse(parsed);
+  if (!settings.success) return `${skill.name}'s role.json: ${settings.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
+  const { label, priority, whenDone, services, brief, summary, skills } = settings.data;
+  return { name, skills: [skill.name, ...skills], credentials: services, whenDone, label, description: summary, priority, brief, version: skill.version };
+}
 
-type Seed = Omit<Role, "updatedAt" | "brief" | "description"> & { name: keyof typeof DESCRIPTIONS; brief?: string };
+/** Highest priority first, then by name. */
+export const byPriority = (roles: Role[]) => [...roles].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name));
 
-const seed = (role: Seed): Role => ({ brief: null, updatedAt: null, description: DESCRIPTIONS[role.name], ...role });
+export interface RoleSource {
+  /** Every role, highest priority first. */
+  list(): Promise<Role[]>;
+}
+
+/** No roles: a stage without honed. */
+export const NO_ROLES: RoleSource = { list: async () => [] };
+
+/** Fixed roles, for tests. */
+export const fixedRoles = (roles: Role[]): RoleSource => ({ list: async () => byPriority(roles) });
+
+export interface Service {
+  url: string;
+  token: { value(): Promise<string | null> };
+}
+
+/** Where the last list read whole is kept. */
+export interface Copies {
+  keepCopy(name: string, version: number, copy: unknown): Promise<void>;
+  copyOf<T>(name: string): Promise<T | null>;
+}
+
+/** The copy's key: no skill can be named with two slashes. */
+const COPY = "agent-roles//list";
 
 /**
- * The roles a stage starts with, as approval-service, work-tracker and
- * workplace-ui made their workers, each naming the honed skills it reads.
- * Each is given every service the stage has. A role written with the same
- * name replaces its seed.
+ * The roles in honed's `agent-roles/` group, read at each call, so a role
+ * changed in honed is used at the next start. A list read whole is kept;
+ * when honed does not answer, the last one is used. A skill in the group
+ * that is not a role is left out, and logged.
  */
-export const SEEDED_ROLES: readonly Role[] = [
-  seed({ name: "planner", documents: ["workplace/planner"], credentials: null, whenDone: "stop", label: "plan: new work", priority: 40, brief: PLANNER_BRIEF }),
-  seed({ name: "reviewer", documents: ["workplace/reviewer"], credentials: null, whenDone: "retire", label: "review", priority: 30 }),
-  seed({ name: "conflict", documents: [], credentials: null, whenDone: "retire", label: "conflict", priority: 30 }),
-  seed({ name: "investigator", documents: [], credentials: null, whenDone: "retire", label: "investigate", priority: 30 }),
-  seed({ name: "onboarder", documents: [], credentials: null, whenDone: "retire", label: "onboard", priority: 30 }),
-  seed({ name: "implementer", documents: [], credentials: null, whenDone: "stop", label: "ticket", priority: 10 }),
-];
+export class HonedRoles implements RoleSource {
+  readonly #honed: Service;
+  readonly #copies: Copies;
+  readonly #fetch: typeof globalThis.fetch;
+  readonly #log: (line: string) => void;
 
-/**
- * The seeds with those written laid over them by name, highest priority first, then by name.
- * One written before roles had a description has none on record, and takes its seed's.
- */
-export function rolesOf(written: (Omit<Role, "description"> & { description?: string | null })[]): Role[] {
-  const byName = new Map(SEEDED_ROLES.map((role) => [role.name, role]));
-  for (const role of written) byName.set(role.name, { ...role, description: role.description === undefined ? (byName.get(role.name)?.description ?? null) : role.description });
-  return [...byName.values()].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name));
+  constructor(honed: Service, copies: Copies, fetchImpl: typeof globalThis.fetch = globalThis.fetch, log: (line: string) => void = console.error) {
+    this.#honed = honed;
+    this.#copies = copies;
+    this.#fetch = fetchImpl;
+    this.#log = log;
+  }
+
+  async list(): Promise<Role[]> {
+    try {
+      const roles = await this.#read();
+      await this.#copies.keepCopy(COPY, 0, roles);
+      return roles;
+    } catch (err) {
+      const kept = await this.#copies.copyOf<Role[]>(COPY);
+      this.#log(`roles could not be read from honed (${(err as Error).message}); ${kept ? "using the last good list" : "none are kept"}`);
+      return kept ?? [];
+    }
+  }
+
+  async #get(path: string): Promise<unknown> {
+    const token = await this.#honed.token.value();
+    if (!token) throw new Error("honed's token could not be read");
+    const res = await this.#fetch(`${this.#honed.url.replace(/\/$/, "")}${path}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`honed answered ${res.status} for ${path}`);
+    return res.json();
+  }
+
+  async #read(): Promise<Role[]> {
+    const listed = (await this.#get("/api/skills")) as { name: string }[] | { skills: { name: string }[] };
+    const names = (Array.isArray(listed) ? listed : listed.skills).map((s) => s.name).filter((name) => name.startsWith(`${ROLE_GROUP}/`));
+    const roles: Role[] = [];
+    for (const name of names) {
+      const role = roleOf((await this.#get(`/api/skills/${name}`)) as { name: string; version: number; files: { path: string; content: string }[] });
+      if (typeof role === "string") this.#log(role);
+      else roles.push(role);
+    }
+    return byPriority(roles);
+  }
 }

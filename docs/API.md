@@ -9,7 +9,9 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
 - **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at `socketUrl`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from `CreateSocketTicket`.
 
-**Auth:** `Authorization: Bearer <token>` with the stage's token, or the admin token, which also writes roles, on everything but `GetHealth` and the docs.
+**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.
+
+**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.
 
 **Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`.
 
@@ -17,15 +19,12 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 
 - [CreateAgent](#createagent): Create an agent
 - [CreateRequest](#createrequest): Create a request
-- [CreateRole](#createrole): Create a role
 - [CreateSocketTicket](#createsocketticket): Create a socket ticket
 - [DeleteHost](#deletehost): Delete a host
 - [GetAgent](#getagent): Get an agent
 - [GetHealth](#gethealth): Get health
 - [GetRequest](#getrequest): Get a request
 - [GetRole](#getrole): Get a role
-- [GetSessionContext](#getsessioncontext): Get a session's context
-- [GetSkill](#getskill): Get the agents' clients
 - [GetUsage](#getusage): Get usage
 - [ListAgents](#listagents): List agents
 - [ListCommands](#listcommands): List commands
@@ -42,7 +41,6 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [SendMessage](#sendmessage): Send a message
 - [StopAgent](#stopagent): Stop an agent
 - [UpdateAgent](#updateagent): Update an agent
-- [UpdateRole](#updaterole): Update a role
 - [WithdrawRequest](#withdrawrequest): Withdraw a request
 
 ## Data types
@@ -75,18 +73,14 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - [MessageCommand](#messagecommand)
 - [NewAgent](#newagent)
 - [NewAgentRequest](#newagentrequest)
-- [NewRole](#newrole)
 - [RetireCommand](#retirecommand)
 - [Role](#role)
-- [RoleChange](#rolechange)
 - [RoleList](#rolelist)
 - [SentCommand](#sentcommand)
 - [SentPush](#sentpush)
 - [Session](#session)
-- [SessionContext](#sessioncontext)
 - [SessionList](#sessionlist)
 - [SessionTokensReport](#sessiontokensreport)
-- [Skill](#skill)
 - [SocketError](#socketerror)
 - [SocketInbound](#socketinbound)
 - [SocketOutbound](#socketoutbound)
@@ -129,7 +123,7 @@ Content-type: application/json
    "item": "string",
    "whenDone": "keep | stop | retire",
    "credentials": [ "string" ],
-   "documents": [ "string" ]
+   "skills": [ "string" ]
 }
 ```
 
@@ -146,7 +140,7 @@ Unique among agents not retired. Names its home folder and tmux session on its h
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
 **role**  
-The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.  
+The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.  
 Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: No.
 
 **hostId**  
@@ -174,11 +168,11 @@ Absent, the role's, or without one `keep`.
 Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
 
 **credentials**  
-The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired.  
+The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
 Type: Array of strings. At most 16 items. Required: No.
 
-**documents**  
-Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`.  
+**skills**  
+Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none.  
 Type: Array of strings. At most 8 items. Required: No.
 
 ### Response syntax
@@ -202,7 +196,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | retire",
-   "documents": [ "string" ],
+   "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
    "state": "idle | working | waiting | interrupted | retired",
@@ -264,12 +258,12 @@ Type: String. Nullable: Yes.
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
 Type: String. Valid values: `keep` | `stop` | `retire`.
 
-**documents**  
-The honed skills each session is given after `workplace/global`, by name.  
+**skills**  
+The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+The services each session is given, by name; null for every one the stage has. Never a token.  
 Type: Array of strings. Nullable: Yes.
 
 **hostId**  
@@ -327,7 +321,7 @@ Type: String. Valid values: `connected` | `disconnected` | `lost`.
 ### Errors
 
 **ValidationException**  
-The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `documents`.  
+The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.  
 HTTP status: 400
 
 **UnauthorizedException**  
@@ -367,11 +361,7 @@ Content-type: application/json
    "subject": "string",
    "label": "string",
    "labels": [ "string" ],
-   "credentials": [ "string" ],
-   "tokens": [ {
-      "name": "string",
-      "token": "string"
-   } ]
+   "credentials": [ "string" ]
 }
 ```
 
@@ -408,12 +398,8 @@ What the host it is placed on must all carry. Absent, none.
 Type: Array of strings. At most 64 items. Required: No.
 
 **credentials**  
-In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn.  
+In place of the role's, as `CreateAgent` takes them.  
 Type: Array of strings. At most 16 items. Required: No.
-
-**tokens**  
-Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for.  
-Type: Array of Object. At most 16 items. Required: No.
 
 ### Response syntax
 
@@ -515,150 +501,12 @@ Type: String. Nullable: Yes.
 ### Errors
 
 **ValidationException**  
-The request failed validation, the stage has no such role, neither it nor its role has a brief, a credential is not one this stage has, or a token is for a service the agent would not be given.  
+The request failed validation, the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has.  
 HTTP status: 400
 
 **UnauthorizedException**  
 Missing or incorrect bearer token.  
 HTTP status: 401
-
-**ServiceUnavailableException**  
-No API token is configured, or a token of its own could not be kept.  
-HTTP status: 503
-
----
-
-## CreateRole
-
-Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.
-
-### Request syntax
-
-```http
-POST /roles HTTP/1.1
-Authorization: Bearer token
-Content-type: application/json
-
-{
-   "name": "string",
-   "documents": [ "string" ],
-   "credentials": [ "string" ],
-   "whenDone": "keep | stop | retire",
-   "label": "string",
-   "description": "string",
-   "priority": number,
-   "brief": "string"
-}
-```
-
-### Request body
-
-**name**  
-A role's name, such as `reviewer`: what kind of agent it makes.  
-Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
-
-**documents**  
-Absent, only `workplace/global`.  
-Type: Array of strings. At most 8 items. Required: No.
-
-**credentials**  
-Absent, null: the stage's defaults.  
-Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
-
-**whenDone**  
-Absent, `keep`.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
-
-**label**  
-A short tag shown beside the agent's name, so sessions can be told apart.  
-Type: String. Length: 1 to 40. Required: Yes.
-
-**description**  
-Absent, null.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
-
-**priority**  
-Absent, 0.  
-Type: Integer. Range: 0 to 1000. Required: No.
-
-**brief**  
-Absent, null.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
-
-### Response syntax
-
-```http
-HTTP/1.1 201
-Content-type: application/json
-
-{
-   "name": "string",
-   "documents": [ "string" ],
-   "credentials": [ "string" ],
-   "whenDone": "keep | stop | retire",
-   "label": "string",
-   "description": "string",
-   "priority": number,
-   "brief": "string",
-   "updatedAt": "string"
-}
-```
-
-### Response elements
-
-**name**  
-A role's name, such as `reviewer`: what kind of agent it makes.  
-Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
-
-**documents**  
-The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
-Type: Array of strings. At most 8 items.
-
-**credentials**  
-The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
-Type: Array of strings. At most 16 items. Nullable: Yes.
-
-**whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
-
-**label**  
-A short tag shown beside the agent's name, so sessions can be told apart.  
-Type: String. Length: 1 to 40.
-
-**description**  
-What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
-Type: String. Length: 1 to 16384. Nullable: Yes.
-
-**priority**  
-Of two requests waiting to start, the higher starts first.  
-Type: Integer. Range: 0 to 1000.
-
-**brief**  
-The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
-Type: String. Length: 1 to 16384. Nullable: Yes.
-
-**updatedAt**  
-When it was last written; null for a role as the stage was seeded with it.  
-Type: String. Nullable: Yes.
-
-### Errors
-
-**ValidationException**  
-The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**AccessDeniedException**  
-Writing a role takes the stage's admin token.  
-HTTP status: 403
-
-**ConflictException**  
-A role has this name already.  
-HTTP status: 409
 
 **ServiceUnavailableException**  
 No API token is configured.  
@@ -802,7 +650,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | retire",
-   "documents": [ "string" ],
+   "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
    "state": "idle | working | waiting | interrupted | retired",
@@ -864,12 +712,12 @@ Type: String. Nullable: Yes.
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
 Type: String. Valid values: `keep` | `stop` | `retire`.
 
-**documents**  
-The honed skills each session is given after `workplace/global`, by name.  
+**skills**  
+The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+The services each session is given, by name; null for every one the stage has. Never a token.  
 Type: Array of strings. Nullable: Yes.
 
 **hostId**  
@@ -1118,7 +966,7 @@ HTTP status: 503
 
 ## GetRole
 
-Get one role.
+Get one role, as `ListRoles` gives it.
 
 ### Request syntax
 
@@ -1141,14 +989,14 @@ Content-type: application/json
 
 {
    "name": "string",
-   "documents": [ "string" ],
+   "skills": [ "string" ],
    "credentials": [ "string" ],
    "whenDone": "keep | stop | retire",
    "label": "string",
    "description": "string",
    "priority": number,
    "brief": "string",
-   "updatedAt": "string"
+   "version": number
 }
 ```
 
@@ -1158,12 +1006,12 @@ Content-type: application/json
 A role's name, such as `reviewer`: what kind of agent it makes.  
 Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
 
-**documents**  
-The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
-Type: Array of strings. At most 8 items.
+**skills**  
+The honed skills each session of an agent made from it is given: the role's own, `agent-roles/<name>`, first.  
+Type: Array of strings.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+The services each session is given, by name; null for every one the stage has.  
 Type: Array of strings. At most 16 items. Nullable: Yes.
 
 **whenDone**  
@@ -1175,7 +1023,7 @@ A short tag shown beside the agent's name, so sessions can be told apart.
 Type: String. Length: 1 to 40.
 
 **description**  
-What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+What an agent in it is for and who starts one: markdown, a sentence or two. Null for none.  
 Type: String. Length: 1 to 16384. Nullable: Yes.
 
 **priority**  
@@ -1186,9 +1034,9 @@ Type: Integer. Range: 0 to 1000.
 The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
 Type: String. Length: 1 to 16384. Nullable: Yes.
 
-**updatedAt**  
-When it was last written; null for a role as the stage was seeded with it.  
-Type: String. Nullable: Yes.
+**version**  
+The version of its honed skill it was read at.  
+Type: Integer.
 
 ### Errors
 
@@ -1203,148 +1051,6 @@ HTTP status: 401
 **ResourceNotFoundException**  
 No role has this name.  
 HTTP status: 404
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
-## GetSessionContext
-
-Read at the moment it is asked, as a start's is, and recorded on the session in place of what its start carried, so the session's `contextNote` says what it was given.
-
-### Request syntax
-
-```http
-GET /agents/{id}/sessions/{sessionId}/context HTTP/1.1
-Authorization: Bearer token
-```
-
-### URI request parameters
-
-**id**  
-Assigned by the service when the agent is created.  
-Type: String. Required: Yes.
-
-**sessionId**  
-Assigned by the service when it queues the session's `start`.  
-Type: String. Required: Yes.
-
-### Response syntax
-
-```http
-HTTP/1.1 200
-Content-type: application/json
-
-{
-   "context": {
-      "key": "string",
-      "version": number,
-      "files": [ {
-         "path": "string",
-         "content": "string",
-         "executable": boolean
-      } ]
-   },
-   "documents": [ {
-      "key": "string",
-      "version": number,
-      "files": [ {
-         "path": "string",
-         "content": "string",
-         "executable": boolean
-      } ]
-   } ]
-}
-```
-
-### Response elements
-
-**context**  
-Written as a start's `context` is; null when there is none to give.  
-Type: Object. Nullable: Yes.
-
-**documents**  
-Written after it, as a start's `documents` are.  
-Type: Array of Object.
-
-### Errors
-
-**ValidationException**  
-The request failed validation.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**ResourceNotFoundException**  
-No agent has this id.  
-HTTP status: 404
-
-**ConflictException**  
-The session is not the agent's live one.  
-HTTP status: 409
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
-## GetSkill
-
-The `page` and `title` skills, `SKILL.md`, `bin/` and `reference/`, as this deployment was built with them. Every start lays them, and each other service's `GET /skill` (its `bin/` and `reference/` alone), over `workplace/global`'s files at the same paths, so an agent calls the API that is deployed.
-
-### Request syntax
-
-```http
-GET /skill HTTP/1.1
-Authorization: Bearer token
-```
-
-### Response syntax
-
-```http
-HTTP/1.1 200
-Content-type: application/json
-
-{
-   "key": "string",
-   "version": number,
-   "commit": "string",
-   "files": [ {
-      "path": "string",
-      "content": "string",
-      "executable": boolean
-   } ]
-}
-```
-
-### Response elements
-
-**key**  
-Whose skills these are: `agent-service`.  
-Type: String.
-
-**version**  
-The deployed tree's commit count, 0 when deployed from outside git.  
-Type: Integer.
-
-**commit**  
-The deployed commit, ending `-dirty` when deployed with uncommitted changes.  
-Type: String.
-
-**files**  
-Every file, as each session is given them.  
-Type: Array of Object.
-
-### Errors
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
 
 **ServiceUnavailableException**  
 No API token is configured.  
@@ -1462,7 +1168,7 @@ Content-type: application/json
       },
       "createdBy": "string",
       "whenDone": "keep | stop | retire",
-      "documents": [ "string" ],
+      "skills": [ "string" ],
       "credentials": [ "string" ],
       "hostId": "string",
       "state": "idle | working | waiting | interrupted | retired",
@@ -1705,7 +1411,7 @@ HTTP status: 503
 
 ## ListRoles
 
-Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `CreateRole` or `UpdateRole` is served as written.
+Every role an agent can be made from, highest `priority` first: each skill in honed's `agent-roles/` group, read now, or as last read when honed does not answer. A role is changed in honed, never here.
 
 ### Request syntax
 
@@ -1723,14 +1429,14 @@ Content-type: application/json
 {
    "roles": [ {
       "name": "string",
-      "documents": [ "string" ],
+      "skills": [ "string" ],
       "credentials": [ "string" ],
       "whenDone": "keep | stop | retire",
       "label": "string",
       "description": "string",
       "priority": number,
       "brief": "string",
-      "updatedAt": "string"
+      "version": number
    } ]
 }
 ```
@@ -1787,19 +1493,14 @@ Content-type: application/json
       "startedAt": "string",
       "endedAt": "string",
       "ended": "stopped | interrupted | ",
-      "context": {
-         "key": "string",
-         "version": number
-      },
-      "documents": [ {
-         "key": "string",
+      "skills": [ {
+         "name": "string",
          "version": number
       } ],
-      "skills": [ {
-         "key": "string",
+      "clients": {
          "version": number,
          "commit": "string"
-      } ],
+      },
       "contextNote": "string"
    } ]
 }
@@ -1965,7 +1666,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | retire",
-   "documents": [ "string" ],
+   "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
    "state": "idle | working | waiting | interrupted | retired",
@@ -2027,12 +1728,12 @@ Type: String. Nullable: Yes.
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
 Type: String. Valid values: `keep` | `stop` | `retire`.
 
-**documents**  
-The honed skills each session is given after `workplace/global`, by name.  
+**skills**  
+The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+The services each session is given, by name; null for every one the stage has. Never a token.  
 Type: Array of strings. Nullable: Yes.
 
 **hostId**  
@@ -2160,7 +1861,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | retire",
-   "documents": [ "string" ],
+   "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
    "state": "idle | working | waiting | interrupted | retired",
@@ -2222,12 +1923,12 @@ Type: String. Nullable: Yes.
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
 Type: String. Valid values: `keep` | `stop` | `retire`.
 
-**documents**  
-The honed skills each session is given after `workplace/global`, by name.  
+**skills**  
+The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+The services each session is given, by name; null for every one the stage has. Never a token.  
 Type: Array of strings. Nullable: Yes.
 
 **hostId**  
@@ -2699,7 +2400,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | retire",
-   "documents": [ "string" ],
+   "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
    "state": "idle | working | waiting | interrupted | retired",
@@ -2761,12 +2462,12 @@ Type: String. Nullable: Yes.
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
 Type: String. Valid values: `keep` | `stop` | `retire`.
 
-**documents**  
-The honed skills each session is given after `workplace/global`, by name.  
+**skills**  
+The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+The services each session is given, by name; null for every one the stage has. Never a token.  
 Type: Array of strings. Nullable: Yes.
 
 **hostId**  
@@ -2838,145 +2539,6 @@ HTTP status: 404
 **ConflictException**  
 Nothing was queued: the agent is retired, or an agent not retired already has `name`.  
 HTTP status: 409
-
-**ServiceUnavailableException**  
-No API token is configured.  
-HTTP status: 503
-
----
-
-## UpdateRole
-
-Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.
-
-### Request syntax
-
-```http
-PATCH /roles/{name} HTTP/1.1
-Authorization: Bearer token
-Content-type: application/json
-
-{
-   "documents": [ "string" ],
-   "credentials": [ "string" ],
-   "whenDone": "keep | stop | retire",
-   "label": "string",
-   "description": "string",
-   "priority": number,
-   "brief": "string"
-}
-```
-
-### URI request parameters
-
-**name**  
-A role's name, such as `reviewer`: what kind of agent it makes.  
-Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
-
-### Request body
-
-**documents**  
-The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
-Type: Array of strings. At most 8 items. Required: No.
-
-**credentials**  
-The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
-Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
-
-**whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
-
-**label**  
-A short tag shown beside the agent's name, so sessions can be told apart.  
-Type: String. Length: 1 to 40. Required: No.
-
-**description**  
-What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
-
-**priority**  
-Of two requests waiting to start, the higher starts first.  
-Type: Integer. Range: 0 to 1000. Required: No.
-
-**brief**  
-The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
-
-### Response syntax
-
-```http
-HTTP/1.1 200
-Content-type: application/json
-
-{
-   "name": "string",
-   "documents": [ "string" ],
-   "credentials": [ "string" ],
-   "whenDone": "keep | stop | retire",
-   "label": "string",
-   "description": "string",
-   "priority": number,
-   "brief": "string",
-   "updatedAt": "string"
-}
-```
-
-### Response elements
-
-**name**  
-A role's name, such as `reviewer`: what kind of agent it makes.  
-Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`.
-
-**documents**  
-The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
-Type: Array of strings. At most 8 items.
-
-**credentials**  
-The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
-Type: Array of strings. At most 16 items. Nullable: Yes.
-
-**whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`.
-
-**label**  
-A short tag shown beside the agent's name, so sessions can be told apart.  
-Type: String. Length: 1 to 40.
-
-**description**  
-What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
-Type: String. Length: 1 to 16384. Nullable: Yes.
-
-**priority**  
-Of two requests waiting to start, the higher starts first.  
-Type: Integer. Range: 0 to 1000.
-
-**brief**  
-The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
-Type: String. Length: 1 to 16384. Nullable: Yes.
-
-**updatedAt**  
-When it was last written; null for a role as the stage was seeded with it.  
-Type: String. Nullable: Yes.
-
-### Errors
-
-**ValidationException**  
-The request failed validation, a credential is not one this stage has, or honed has no skill named in `documents`.  
-HTTP status: 400
-
-**UnauthorizedException**  
-Missing or incorrect bearer token.  
-HTTP status: 401
-
-**AccessDeniedException**  
-Writing a role takes the stage's admin token.  
-HTTP status: 403
-
-**ResourceNotFoundException**  
-No role has this name.  
-HTTP status: 404
 
 **ServiceUnavailableException**  
 No API token is configured.  
@@ -3172,12 +2734,12 @@ Type: String. Nullable: Yes. Required: Yes.
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
 Type: String. Valid values: `keep` | `stop` | `retire`. Required: Yes.
 
-**documents**  
-The honed skills each session is given after `workplace/global`, by name.  
+**skills**  
+The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings. Required: Yes.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own.  
+The services each session is given, by name; null for every one the stage has. Never a token.  
 Type: Array of strings. Nullable: Yes. Required: Yes.
 
 **hostId**  
@@ -3666,7 +3228,7 @@ Unique among agents not retired. Names its home folder and tmux session on its h
 Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`. Required: Yes.
 
 **role**  
-The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.  
+The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused.  
 Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: No.
 
 **hostId**  
@@ -3694,11 +3256,11 @@ Absent, the role's, or without one `keep`.
 Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
 
 **credentials**  
-The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired.  
+The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
 Type: Array of strings. At most 16 items. Required: No.
 
-**documents**  
-Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`.  
+**skills**  
+Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none.  
 Type: Array of strings. At most 8 items. Required: No.
 
 ## NewAgentRequest
@@ -3730,48 +3292,8 @@ What the host it is placed on must all carry. Absent, none.
 Type: Array of strings. At most 64 items. Required: No.
 
 **credentials**  
-In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn.  
+In place of the role's, as `CreateAgent` takes them.  
 Type: Array of strings. At most 16 items. Required: No.
-
-**tokens**  
-Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for.  
-Type: Array of Object. At most 16 items. Required: No.
-
-## NewRole
-
-### Contents
-
-**name**  
-A role's name, such as `reviewer`: what kind of agent it makes.  
-Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
-
-**documents**  
-Absent, only `workplace/global`.  
-Type: Array of strings. At most 8 items. Required: No.
-
-**credentials**  
-Absent, null: the stage's defaults.  
-Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
-
-**whenDone**  
-Absent, `keep`.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
-
-**label**  
-A short tag shown beside the agent's name, so sessions can be told apart.  
-Type: String. Length: 1 to 40. Required: Yes.
-
-**description**  
-Absent, null.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
-
-**priority**  
-Absent, 0.  
-Type: Integer. Range: 0 to 1000. Required: No.
-
-**brief**  
-Absent, null.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
 
 ## RetireCommand
 
@@ -3793,18 +3315,20 @@ Type: String. Valid values: `retire`. Required: Yes.
 
 ## Role
 
+A role, as its honed skill `agent-roles/<name>` defines it: its `SKILL.md` is what an agent in it is told, and its `role.json` these settings.
+
 ### Contents
 
 **name**  
 A role's name, such as `reviewer`: what kind of agent it makes.  
 Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: Yes.
 
-**documents**  
-The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
-Type: Array of strings. At most 8 items. Required: Yes.
+**skills**  
+The honed skills each session of an agent made from it is given: the role's own, `agent-roles/<name>`, first.  
+Type: Array of strings. Required: Yes.
 
 **credentials**  
-The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
+The services each session is given, by name; null for every one the stage has.  
 Type: Array of strings. At most 16 items. Nullable: Yes. Required: Yes.
 
 **whenDone**  
@@ -3816,7 +3340,7 @@ A short tag shown beside the agent's name, so sessions can be told apart.
 Type: String. Length: 1 to 40. Required: Yes.
 
 **description**  
-What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
+What an agent in it is for and who starts one: markdown, a sentence or two. Null for none.  
 Type: String. Length: 1 to 16384. Nullable: Yes. Required: Yes.
 
 **priority**  
@@ -3827,41 +3351,9 @@ Type: Integer. Range: 0 to 1000. Required: Yes.
 The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
 Type: String. Length: 1 to 16384. Nullable: Yes. Required: Yes.
 
-**updatedAt**  
-When it was last written; null for a role as the stage was seeded with it.  
-Type: String. Nullable: Yes. Required: Yes.
-
-## RoleChange
-
-### Contents
-
-**documents**  
-The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order.  
-Type: Array of strings. At most 8 items. Required: No.
-
-**credentials**  
-The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`.  
-Type: Array of strings. At most 16 items. Nullable: Yes. Required: No.
-
-**whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again.  
-Type: String. Valid values: `keep` | `stop` | `retire`. Required: No.
-
-**label**  
-A short tag shown beside the agent's name, so sessions can be told apart.  
-Type: String. Length: 1 to 40. Required: No.
-
-**description**  
-What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
-
-**priority**  
-Of two requests waiting to start, the higher starts first.  
-Type: Integer. Range: 0 to 1000. Required: No.
-
-**brief**  
-The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
-Type: String. Length: 1 to 16384. Nullable: Yes. Required: No.
+**version**  
+The version of its honed skill it was read at.  
+Type: Integer. Required: Yes.
 
 ## RoleList
 
@@ -3935,33 +3427,17 @@ Type: String. Nullable: Yes. Required: Yes.
 `stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live.  
 Type: String. Valid values: `stopped` | `interrupted` | `null`. Nullable: Yes. Required: Yes.
 
-**context**  
-The `workplace/global` it started with, from honed; null when it was given none.  
-Type: Object. Nullable: Yes. Required: Yes.
-
-**documents**  
-The documents it started with beside `context`, in order.  
-Type: Array of Object. Required: Yes.
-
 **skills**  
-The clients it started with, each read from its service's `GET /skill` for this stage and written over `context`'s files at the same paths.  
+The honed skills it started with, in order.  
 Type: Array of Object. Required: Yes.
+
+**clients**  
+The `page` and `title` clients it started with; null on a session that started with none.  
+Type: Object. Nullable: Yes. Required: Yes.
 
 **contextNote**  
-Why it was given no context, or why a document it was made with, or a service's skill, was left out.  
+Why a skill it was made with was left out, or given from honed's last good copy; null when none was.  
 Type: String. Nullable: Yes. Required: Yes.
-
-## SessionContext
-
-### Contents
-
-**context**  
-Written as a start's `context` is; null when there is none to give.  
-Type: Object. Nullable: Yes. Required: Yes.
-
-**documents**  
-Written after it, as a start's `documents` are.  
-Type: Array of Object. Required: Yes.
 
 ## SessionList
 
@@ -4000,26 +3476,6 @@ Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 **cacheReadInputTokens**  
 Input tokens read from the prompt cache.  
 Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
-
-## Skill
-
-### Contents
-
-**key**  
-Whose skills these are: `agent-service`.  
-Type: String. Required: Yes.
-
-**version**  
-The deployed tree's commit count, 0 when deployed from outside git.  
-Type: Integer. Required: Yes.
-
-**commit**  
-The deployed commit, ending `-dirty` when deployed with uncommitted changes.  
-Type: String. Required: Yes.
-
-**files**  
-Every file, as each session is given them.  
-Type: Array of Object. Required: Yes.
 
 ## SocketError
 
@@ -4128,16 +3584,12 @@ The session's first message, when it has one.
 Type: String. Length: 1 to 16384. Required: No.
 
 **context**  
-Files to write into the agent's own Claude Code folder before it starts, replacing the last context's: `skills/...` as files, and a `CLAUDE.md` after the host's own rules. Absent, the last context and documents written stand.  
+agent-service's own clients, `page` and `title`, as files to write into the agent's Claude Code folder before it starts, under `skills/`, replacing the last start's.  
 Type: Object. Required: No.
 
 **documents**  
-Written after `context`, as it is, each with its own files and its `CLAUDE.md` after the one before; they replace the last start's. No two write the same file under `skills/`. Only with a `context`; absent with one, there are none.  
+The honed skills the session is given, each written after `context` under `skills/<its last segment>/`, replacing the last start's.  
 Type: Array of Object. Required: No.
-
-**contextUrl**  
-Present when the whole context is too large for a socket message: the path of `GetSessionContext` for this session. A host reads it, with the stage's token, and writes what it answers in place of `context` and `documents`, which then hold only what fitted. A host that cannot read it writes them.  
-Type: String. Required: No.
 
 **env**  
 Set in the session's environment: the addresses of the services it is given. Never a secret.  
@@ -4145,10 +3597,6 @@ Type: Object. Required: No.
 
 **credentials**  
 The services the session is given, by name, as kept on record. Their tokens are in `secrets`.  
-Type: Array of strings. At most 16 items. Required: No.
-
-**ownCredentials**  
-Of `credentials`, those the agent was given a token of its own for, read in place of the shared one.  
 Type: Array of strings. At most 16 items. Required: No.
 
 **secrets**  

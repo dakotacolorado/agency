@@ -40,7 +40,6 @@ What the server tells an agent when it connects:
 | --- | --- | --- |
 | [`create_agent`](#create_agent) | Create an agent |  |
 | [`create_request`](#create_request) | Create a request |  |
-| [`create_role`](#create_role) | Create a role |  |
 | [`delete_host`](#delete_host) | Delete a host |  |
 | [`get_agent`](#get_agent) | Get an agent | yes |
 | [`get_request`](#get_request) | Get a request | yes |
@@ -60,7 +59,6 @@ What the server tells an agent when it connects:
 | [`send_message`](#send_message) | Send a message |  |
 | [`stop_agent`](#stop_agent) | Stop an agent |  |
 | [`update_agent`](#update_agent) | Update an agent |  |
-| [`update_role`](#update_role) | Update a role |  |
 | [`withdraw_request`](#withdraw_request) | Withdraw a request |  |
 
 ### create_agent
@@ -70,15 +68,15 @@ Records the agent `idle` and queues `create` for its host, which makes its home.
 | Input | Type | Required | |
 | --- | --- | --- | --- |
 | `name` | string | yes | Unique among agents not retired. Names its home folder and tmux session on its host. |
-| `role` | string |  | The role it is made from (`ListRoles`): its `documents`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused. |
+| `role` | string |  | The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused. |
 | `hostId` | string |  | Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`. |
 | `labels` | string[] |  | Without `hostId`, what the host it is placed on must all carry. |
 | `brief` | string |  | The first session's first message. Absent, the role's, if it has one; otherwise no session starts. |
 | `label` | string |  | Absent, the role's, or without one none. |
 | `item` | string |  | The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none. |
 | `whenDone` | `keep`, `stop`, `retire` |  | Absent, the role's, or without one `keep`. |
-| `credentials` | string or object[] |  | The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. `{name, token}` gives this agent the caller's token in place of the name's shared one: kept apart from its record, never returned by any read, and deleted when the agent is retired. |
-| `documents` | string[] |  | Given after `workplace/global` at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one only `workplace/global`. |
+| `credentials` | string[] |  | The services each session is given an address and token for, by name: `agent-service` and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. |
+| `skills` | string[] |  | Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none. |
 
 ### create_request
 
@@ -92,23 +90,7 @@ Records the request `waiting`, then admits what it can at once. A request starts
 | `subject` | string |  | What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read. |
 | `label` | string |  | Absent, the role's. |
 | `labels` | string[] |  | What the host it is placed on must all carry. Absent, none. |
-| `credentials` | string or object[] |  | In place of the role's, as `CreateAgent` takes them; a `{name, token}` is kept for the agent it starts from now, and deleted if it is withdrawn. |
-| `tokens` | object[] |  | Tokens of the caller's, each given the agent in place of that service's shared secret, for services it is given anyway: its role's, or `credentials`. The agent keeps its role's services, so a caller with a token of its own for one need not name them all. Kept as `credentials`' are; refused for a service the agent would not be given, or one `credentials` gives a token for. |
-
-### create_role
-
-Takes the stage's admin token. An agent made from it afterwards gets what it names; one made before keeps what it was given.
-
-| Input | Type | Required | |
-| --- | --- | --- | --- |
-| `name` | string | yes | A role's name, such as `reviewer`: what kind of agent it makes. |
-| `documents` | string[] |  | Absent, only `workplace/global`. |
-| `credentials` | string[] or null |  | Absent, null: the stage's defaults. |
-| `whenDone` | `keep`, `stop`, `retire` |  | Absent, `keep`. |
-| `label` | string | yes | A short tag shown beside the agent's name, so sessions can be told apart. |
-| `description` | string or null |  | Absent, null. |
-| `priority` | integer |  | Absent, 0. |
-| `brief` | string or null |  | Absent, null. |
+| `credentials` | string[] |  | In place of the role's, as `CreateAgent` takes them. |
 
 ### delete_host
 
@@ -136,7 +118,7 @@ Get one request for an agent.
 
 ### get_role
 
-Get one role.
+Get one role, as `ListRoles` gives it.
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
@@ -187,7 +169,7 @@ Those `waiting`, in the order they would start, each with why it waits. With `al
 
 ### list_roles
 
-Every role an agent can be made from, highest `priority` first. A stage starts with `planner`, `reviewer`, `conflict`, `investigator`, `judge` and `implementer`, as their callers made them before roles; one written with `CreateRole` or `UpdateRole` is served as written.
+Every role an agent can be made from, highest `priority` first: each skill in honed's `agent-roles/` group, read now, or as last read when honed does not answer. A role is changed in honed, never here.
 
 No input.
 
@@ -274,21 +256,6 @@ A new `name` is taken and the old one freed at once. Only the record changes: it
 | `name` | string |  | Unique among agents not retired. Names its home folder and tmux session on its host. |
 | `title` | string or null |  | What the agent is there to do, in a few words. |
 | `label` | string or null |  | A short tag shown beside the agent's name, so sessions can be told apart. |
-
-### update_role
-
-Takes the stage's admin token. Each field given replaces the role's; one absent is kept. Agents made from it before keep what they were given; those made after get what it names now.
-
-| Input | Type | Required | |
-| --- | --- | --- | --- |
-| `name` | string | yes | A role's name, such as `reviewer`: what kind of agent it makes. |
-| `documents` | string[] |  | The honed skills each session of an agent made from it is given after `workplace/global`, by name, in this order. |
-| `credentials` | string[] or null |  | The services each session is given, by name; null for the stage's defaults. A caller can still give one of these a token of its own, by naming it in `credentials` as `{name, token}`. |
-| `whenDone` | `keep`, `stop`, `retire` |  | What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again. |
-| `label` | string |  | A short tag shown beside the agent's name, so sessions can be told apart. |
-| `description` | string or null |  | What an agent made from it is for, who starts one, and whether a person would: markdown, a few sentences. Null for none. |
-| `priority` | integer |  | Of two requests waiting to start, the higher starts first. |
-| `brief` | string or null |  | The first message of an agent made from it with no `brief` of its own; null when the caller must give one. |
 
 ### withdraw_request
 

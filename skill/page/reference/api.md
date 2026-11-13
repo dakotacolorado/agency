@@ -9,7 +9,9 @@ Runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
 - **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at `socketUrl`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from `CreateSocketTicket`.
 
-**Auth:** `Authorization: Bearer <token>` with the stage's token, or the admin token, which also writes roles, on everything but `GetHealth` and the docs.
+**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.
+
+**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.
 
 **Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`.
 
@@ -82,8 +84,8 @@ Body: `AgentTitle`. What the agent names itself.
 | `tokens` | `Tokens` |  |
 | `createdBy` | string or null | The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none. |
 | `whenDone` | `keep`, `stop`, `retire` | What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `retire`, it is stopped and retired, as by `RetireAgent`. On `review`, `stop` and `retire` both only stop its session, so a send-back can still start it again. |
-| `documents` | string[] | The honed skills each session is given after `workplace/global`, by name. |
-| `credentials` | array or null | The services each session is given, by name; null for the stage's defaults. Never a token, nor whether one was the caller's own. |
+| `skills` | string[] | The honed skills each session is given, by name: its role's own first. |
+| `credentials` | array or null | The services each session is given, by name; null for every one the stage has. Never a token. |
 | `hostId` | string | The host it lives on. |
 | `state` | `idle`, `working`, `waiting`, `interrupted`, `retired` | `idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `retired`: no longer on the team; its home folder is kept on the host. |
 | `session` | object or null | The live session, or null for none. |

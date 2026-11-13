@@ -28,16 +28,14 @@ import { NameTaken, Stale, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
 import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView } from "./fleet.ts";
 import { NO_SOCKET, Push, type Poster } from "./push.ts";
-import { CONTEXT_LIMIT, FETCH_LIMIT, NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
+import { NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
 import { Credentials, selfCredential, type Credential } from "./credentials.ts";
-import type { AgentSecrets } from "./agent-secrets.ts";
 import { ownSkill, type Skill } from "./skill.ts";
 import { readFileSync } from "node:fs";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { LOCAL_URL, mcpServer, type Call } from "./mcp.ts";
 import { buildOf, PACKAGE_VERSION, type Build } from "./build.ts";
-import { NO_SKILLS, type SkillSource } from "./skills.ts";
-import { rolesOf, type Role } from "./roles.ts";
+import { NO_ROLES, type Role, type RoleSource } from "./roles.ts";
 import { inStartOrder, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
 
 export const SPEC_PATH = "/openapi.json";
@@ -52,7 +50,9 @@ export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts
 - **Follow it**: its \`status\` is \`working\`, \`idle\`, \`waiting\` (on the person), \`review\` or \`done\`, which it says of itself with \`PutAgentStatus\`; \`ListTranscriptLines\` reads what it said, after a cursor.
 - **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at \`socketUrl\`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from \`CreateSocketTicket\`.
 
-**Auth:** \`Authorization: Bearer <token>\` with the stage's token, or the admin token, which also writes roles, on everything but \`GetHealth\` and the docs.
+**Auth:** \`Authorization: Bearer <token>\` with the stage's token, on everything but \`GetHealth\`, the page and the docs.
+
+**Roles** are honed skills, \`agent-roles/<name>\`, read here and changed in honed.
 
 **Errors:** \`{code, message}\`, where \`code\` is an AWS-style exception name such as \`ValidationException\` or \`ResourceNotFoundException\`.`;
 
@@ -66,7 +66,7 @@ export interface TokenSource {
   value(): Promise<string | null>;
 }
 
-/** No admin token: nothing that takes one can be done. */
+/** No token: every call but the open ones answers 503. */
 export const NO_TOKEN: TokenSource = { value: async () => null };
 
 /** A token fixed for the life of the process, as its environment gave it; null for none. */
@@ -82,18 +82,14 @@ export interface ApiOptions {
   socketUrl?: string | null;
   /** Where on this service's own address the socket is served, when `socketUrl` is not given. */
   socketPath?: string | null;
-  /** What every session starts with; without one, nothing is attached. */
+  /** Where each session's honed skills are read; without one, none can be given. */
   context?: ContextSource;
-  /** The services' clients laid over the context; without one, the context's own copies stay. */
-  skills?: SkillSource;
-  /** This deployment's own clients, as `GET /skill` serves them. */
+  /** The roles agents are made in; without one, there are none. */
+  roles?: RoleSource;
+  /** This deployment's own clients, `page` and `title`, which every session is given. */
   skill?: () => Skill;
   /** The services an agent may be given, by name; without them, only this one. */
   credentials?: Record<string, Credential>;
-  /** Where a token a caller gives one agent is kept; without it, none can be given. */
-  agentSecrets?: AgentSecrets;
-  /** A person's token: it does all the stage's token does, and may write roles. Without one, no role is written. */
-  admin?: TokenSource;
 }
 
 export class AgentServiceApi {
@@ -101,7 +97,6 @@ export class AgentServiceApi {
 
   private readonly store: Store;
   private readonly token: TokenSource;
-  private readonly admin: TokenSource;
   private readonly now: () => Date;
   private readonly fleet: Fleet;
   private readonly socketUrl: string | null;
@@ -109,26 +104,25 @@ export class AgentServiceApi {
   private readonly publicUrl: string | null;
 
   private readonly context: ContextSource;
-  private readonly skills: SkillSource;
+  private readonly roleSource: RoleSource;
   private readonly skill: () => Skill;
   private readonly build: Build = buildOf();
 
   constructor(store: Store, token: TokenSource, options: ApiOptions = {}) {
     this.store = store;
     this.token = token;
-    this.admin = options.admin ?? NO_TOKEN;
     this.now = options.now ?? (() => new Date());
     this.socketUrl = options.socketUrl ?? null;
     this.socketPath = options.socketPath ?? null;
     this.publicUrl = options.publicUrl?.replace(/\/$/, "") ?? null;
     this.context = options.context ?? NO_CONTEXT;
-    this.skills = options.skills ?? NO_SKILLS;
+    this.roleSource = options.roles ?? NO_ROLES;
     this.skill = options.skill ?? ownSkill;
     this.fleet = new Fleet(
       store,
       new Push(store, options.poster ?? NO_SOCKET),
       this.now,
-      new Credentials(options.credentials ?? { "agent-service": selfCredential(token) }, options.agentSecrets),
+      new Credentials(options.credentials ?? { "agent-service": selfCredential(token) }),
     );
     this.hono = new OpenAPIHono({
       defaultHook: (result, c) =>
@@ -209,38 +203,26 @@ export class AgentServiceApi {
       const token = await this.token.value();
       if (!token) return c.json(failure(503, "API token is not configured."), 503);
       const given = c.req.header("authorization") ?? "";
-      if (!same(given, `Bearer ${token}`) && !(await this.isAdmin(given))) {
+      if (!same(given, `Bearer ${token}`)) {
         return c.json(failure(401, "Unauthorized."), 401);
       }
       await next();
     });
   }
 
-  private async isAdmin(authorization: string): Promise<boolean> {
-    const admin = await this.admin.value();
-    return admin !== null && same(authorization, `Bearer ${admin}`);
-  }
-
-  /** The seeded roles with those written laid over them. */
+  /** The roles in honed's `agent-roles/`, as last read. */
   async roles(): Promise<Role[]> {
-    return rolesOf(await this.store.listRoles());
+    return this.roleSource.list();
   }
 
   async role(name: string): Promise<Role | null> {
     return (await this.roles()).find((role) => role.name === name) ?? null;
   }
 
-  /** Why a role naming these cannot be kept, or null. */
-  private async unfit(role: Pick<Role, "documents" | "credentials">): Promise<string | null> {
-    return (role.credentials && this.fleet.credentials.refuse(role.credentials)) || (await this.context.refuse(role.documents));
-  }
-
   private routes(): void {
     const app = this.hono;
 
     app.openapi(routes.healthRoute, (c) => c.json({ ok: true as const, version: PACKAGE_VERSION, commit: this.build.commit }, 200));
-
-    app.openapi(routes.getSkillRoute, (c) => c.json(this.skill(), 200));
 
     app.openapi(routes.heartbeatRoute, async (c) => {
       const answer = await this.heartbeat(c.req.valid("param").id, c.req.valid("json"), this.socketFor(c));
@@ -273,43 +255,6 @@ export class AgentServiceApi {
       return c.json(role, 200);
     });
 
-    app.openapi(routes.createRoleRoute, async (c) => {
-      if (!(await this.isAdmin(c.req.header("authorization") ?? ""))) {
-        return c.json(failure(403, "Writing a role takes the stage's admin token."), 403);
-      }
-      const body = c.req.valid("json");
-      if (await this.role(body.name)) return c.json(failure(409, `A role named ${body.name} exists already.`), 409);
-      const role: Role = {
-        name: body.name,
-        documents: body.documents ?? [],
-        credentials: body.credentials ?? null,
-        whenDone: body.whenDone ?? "keep",
-        label: body.label,
-        priority: body.priority ?? 0,
-        brief: body.brief ?? null,
-        description: body.description ?? null,
-        updatedAt: this.now().toISOString(),
-      };
-      const unfit = await this.unfit(role);
-      if (unfit) return c.json(failure(400, unfit), 400);
-      await this.store.putRole(role);
-      return c.json(role, 201);
-    });
-
-    app.openapi(routes.updateRoleRoute, async (c) => {
-      if (!(await this.isAdmin(c.req.header("authorization") ?? ""))) {
-        return c.json(failure(403, "Writing a role takes the stage's admin token."), 403);
-      }
-      const held = await this.role(c.req.valid("param").name);
-      if (!held) return c.json(failure(404, "No role has this name."), 404);
-      const changes = Object.fromEntries(Object.entries(c.req.valid("json")).filter(([, value]) => value !== undefined));
-      const role: Role = { ...held, ...changes, updatedAt: this.now().toISOString() };
-      const unfit = await this.unfit(role);
-      if (unfit) return c.json(failure(400, unfit), 400);
-      await this.store.putRole(role);
-      return c.json(role, 200);
-    });
-
     app.openapi(routes.createRequestRoute, async (c) => {
       const asked = c.req.valid("json");
       const role = await this.role(asked.role);
@@ -317,23 +262,10 @@ export class AgentServiceApi {
       if (asked.brief === undefined && role.brief === null) {
         return c.json(failure(400, `The ${role.name} role has no brief of its own, so a request for one needs \`brief\`.`), 400);
       }
-      const credentials = asked.credentials?.map((each) => (typeof each === "string" ? each : each.name)) ?? null;
+      const credentials = asked.credentials ?? null;
       const unknown = credentials && this.fleet.credentials.refuse(credentials);
       if (unknown) return c.json(failure(400, unknown), 400);
-      const given = credentials ?? role.credentials ?? this.fleet.credentials.defaults;
-      const tokens = asked.tokens ?? [];
-      const ungiven = tokens.filter((t) => !given.includes(t.name)).map((t) => t.name);
-      if (ungiven.length) return c.json(failure(400, `A token is only for a service the agent is given; ${ungiven.join(", ")} is not among ${given.join(", ") || "none"}.`), 400);
-      const own = [...(asked.credentials ?? []).flatMap((each) => (typeof each === "string" ? [] : [each])), ...tokens];
-      if (new Set(own.map((each) => each.name)).size !== own.length) return c.json(failure(400, "Give each service's token once, in `credentials` or `tokens`."), 400);
       const id = randomUUID();
-      try {
-        for (const each of own) await this.fleet.credentials.own.put(id, each.name, each.token);
-      } catch (err) {
-        await this.fleet.credentials.own.remove(id, own.map((each) => each.name)).catch(() => {});
-        console.error("Could not keep a request's own credential:", (err as Error).name);
-        return c.json(failure(503, `A credential of the agent's own could not be kept: ${(err as Error).message}`), 503);
-      }
       await this.store.putRequest({
         id,
         role: role.name,
@@ -343,7 +275,6 @@ export class AgentServiceApi {
         label: asked.label ?? null,
         labels: asked.labels ?? [],
         credentials,
-        ownCredentials: own.map((each) => each.name),
         requester: c.req.valid("header")["claimed-by"] ?? null,
         state: "waiting",
         why: null,
@@ -386,9 +317,6 @@ export class AgentServiceApi {
           if (err instanceof Stale) continue;
           throw err;
         }
-        await this.fleet.credentials.own.remove(id, request.ownCredentials).catch((err) => {
-          console.error(`Could not delete ${id}'s own credentials:`, (err as Error).name);
-        });
         return c.json((await this.requestViews()).find((r) => r.id === id)!, 200);
       }
     });
@@ -569,25 +497,6 @@ export class AgentServiceApi {
       return c.json({ sessions: await this.store.sessionsOf(id) }, 200);
     });
 
-    app.openapi(routes.getSessionContextRoute, async (c) => {
-      const { id, sessionId } = c.req.valid("param");
-      const agent = await this.store.getAgent(id);
-      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      const session = agent.session?.id === sessionId && (await this.store.sessionsOf(id)).find((s) => s.id === sessionId);
-      if (!session) return c.json(failure(409, "This session is not the agent's live one."), 409);
-      const read = await this.attach(this.origin(c), agent, FETCH_LIMIT);
-      await this.fleet.apply({
-        sessions: [{
-          ...session,
-          context: read.context && { key: read.context.key, version: read.context.version },
-          documents: read.documents.map(({ key, version }) => ({ key, version })),
-          skills: read.skills,
-          contextNote: read.note,
-        }],
-      });
-      return c.json({ context: read.context, documents: read.documents }, 200);
-    });
-
     app.openapi(routes.listAgentCommandsRoute, async (c) => {
       const { id } = c.req.valid("param");
       if (!(await this.store.getAgent(id))) return c.json(failure(404, "No agent has this id."), 404);
@@ -646,7 +555,7 @@ export class AgentServiceApi {
     const requests = await this.store.listRequests();
     const waiting = inStartOrder(requests.filter((r) => r.state === "waiting"), roles);
     const rest = requests.filter((r) => r.state !== "waiting").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return [...waiting, ...rest].map(({ rev: _, ownCredentials: __, ...request }) => ({
+    return [...waiting, ...rest].map(({ rev: _, ...request }) => ({
       ...request,
       priority: priority.get(request.role) ?? 0,
       position: request.state === "waiting" ? waiting.findIndex((w) => w.id === request.id) + 1 : null,
@@ -715,7 +624,6 @@ export class AgentServiceApi {
         ...(request.label !== null && { label: request.label }),
         ...(request.item !== null && { item: request.item }),
         ...(request.credentials !== null && { credentials: request.credentials }),
-        kept: request.ownCredentials,
         createdBy: request.requester,
       }).catch(async (err) => {
         await putBack(`Could not start: ${(err as Error).message}`);
@@ -737,12 +645,8 @@ export class AgentServiceApi {
     const brief = asked.brief ?? role?.brief ?? undefined;
     const label = asked.label ?? role?.label;
     const whenDone = asked.whenDone ?? role?.whenDone;
-    const documents = asked.documents ?? role?.documents ?? [];
-    const given = asked.credentials ?? role?.credentials ?? undefined;
-    const credentials = given?.map((each) => (typeof each === "string" ? each : each.name));
-    // A request's own tokens were kept under its id, which is the agent's, when it was made.
-    const own = asked.kept ? [] : (given ?? []).flatMap((each) => (typeof each === "string" ? [] : [each]));
-    const ownNames = asked.kept ?? own.map((each) => each.name);
+    const skills = asked.skills ?? role?.skills ?? [];
+    const credentials = asked.credentials ?? role?.credentials ?? undefined;
     const placed = asked.hostId ?? (await this.place(labels ?? []));
     if (typeof placed !== "string") return { refused: placed.none, status: 503 };
     const hostId = placed;
@@ -752,7 +656,7 @@ export class AgentServiceApi {
     const at = now.toISOString();
     const gone = unreachable(host, hostId, now);
     if (gone) return { refused: gone, status: 409 };
-    const unknown = (credentials && this.fleet.credentials.refuse(credentials)) || (await this.context.refuse(documents));
+    const unknown = (credentials && this.fleet.credentials.refuse(credentials)) || (await this.context.refuse(skills));
     if (unknown) return { refused: unknown, status: 400 };
     if (brief !== undefined) {
       const full = await this.full(host);
@@ -768,9 +672,8 @@ export class AgentServiceApi {
       role: role?.name ?? null,
       createdBy: asked.createdBy,
       whenDone: whenDone ?? "keep",
-      documents,
+      skills,
       ...(credentials && { credentials }),
-      ...(ownNames.length && { ownCredentials: ownNames }),
       state: "idle",
       session: null,
       createdAt: at,
@@ -781,18 +684,9 @@ export class AgentServiceApi {
     const sessions = [];
     if (brief !== undefined) {
       const started = await this.starting(self, agent, at, brief);
-      if ("refused" in started) return { refused: started.refused, status: 409 };
       agent = started.agent;
       sessions.push(started.session);
       commands.push(started.command);
-    }
-    // Kept before the agent is recorded, so its first start, pushed as it is, finds them.
-    try {
-      for (const each of own) await this.fleet.credentials.own.put(id, each.name, each.token);
-    } catch (err) {
-      await this.fleet.credentials.own.remove(id, own.map((each) => each.name)).catch(() => {});
-      console.error("Could not keep an agent's own credential:", (err as Error).name);
-      return { refused: `A credential of the agent's own could not be kept: ${(err as Error).message}`, status: 503 };
     }
     try {
       await this.fleet.apply({
@@ -802,7 +696,6 @@ export class AgentServiceApi {
         claim: { name, agentId: id },
       });
     } catch (err) {
-      await this.fleet.credentials.own.remove(id, own.map((each) => each.name)).catch(() => {});
       if (!(err instanceof NameTaken)) throw err;
       return { refused: `An agent not retired is already named ${name}.`, status: 409 };
     }
@@ -810,39 +703,21 @@ export class AgentServiceApi {
   }
 
   /**
-   * The context, and the addresses of the services the agent is given, `self`
-   * this service's.
+   * What a session starts with: its honed skills, this service's own clients,
+   * and the addresses of the services the agent is given, `self` this service's.
    */
-  private async attach(self: string, agent: Agent, limit?: number): Promise<Attached> {
+  private async attach(self: string, agent: Agent): Promise<Attached> {
     const credentials = agent.credentials ?? this.fleet.credentials.defaults;
-    const skills = await this.skills.forSession(credentials);
-    const read = await this.context.forSession(agent.documents ?? [], skills.skills, limit);
-    const notes = [...skills.notes, ...(read.note ? [read.note] : [])];
+    const read = await this.context.forSession(agent.skills ?? []);
     const env = this.fleet.credentials.addresses(credentials, self);
     const mcpServers = this.fleet.credentials.mcpServers(credentials);
-    return { ...read, note: notes.length ? notes.join("; ") : null, env, credentials, ownCredentials: agent.ownCredentials ?? [], mcpServers };
+    const own = this.skill();
+    return { ...read, clients: { key: own.key, version: own.version, commit: own.commit, files: own.files }, env, credentials, mcpServers };
   }
 
-  /**
-   * A new session, its context in its start when the whole fits a socket
-   * message. When it does not, the start carries what fits, for a host that
-   * cannot read more, and `contextUrl`, where a host that can reads the whole.
-   * Refused when not even the whole can be read whole.
-   */
-  private async starting(self: string, agent: Agent, at: string, text?: string): Promise<ReturnType<typeof begin> | { refused: string }> {
-    const whole = await this.attach(self, agent, FETCH_LIMIT);
-    if (whole.cut) return { refused: `Its context cannot be given whole, so no session was started: ${whole.note}` };
-    // Laid within FETCH_LIMIT and no larger than CONTEXT_LIMIT, it is what laying within CONTEXT_LIMIT gives.
-    const bytes = [whole.context, ...whole.documents].reduce((n, doc) => n + (doc ? Buffer.byteLength(JSON.stringify(doc)) : 0), 0);
-    if (bytes <= CONTEXT_LIMIT) return begin(agent, at, text, whole);
-    const inline = await this.attach(self, agent);
-    const started = begin(agent, at, text, {
-      ...inline,
-      note: `${inline.note}, in its start; its host is to read the whole from contextUrl, and this note stays only if it did not`,
-    });
-    if (started.command.kind !== "start") throw new Error("begin made no start");
-    const contextUrl = `/agents/${agent.id}/sessions/${started.session.id}/context`;
-    return { ...started, command: { ...started.command, contextUrl } };
+  /** A new session, with what it starts with. */
+  private async starting(self: string, agent: Agent, at: string, text?: string): Promise<ReturnType<typeof begin>> {
+    return begin(agent, at, text, await this.attach(self, agent));
   }
 
   /**
@@ -888,7 +763,6 @@ export class AgentServiceApi {
     if (full) return c.json(failure(409, full), 409);
     const now = this.now();
     const started = await this.starting(this.origin(c), agent, now.toISOString(), text);
-    if ("refused" in started) return c.json(failure(409, started.refused), 409);
     await this.fleet.apply({
       agents: [started.agent],
       sessions: [started.session],
@@ -951,11 +825,9 @@ interface NewAgent {
   label?: string;
   item?: string;
   whenDone?: WhenDone;
-  documents?: string[];
-  credentials?: (string | { name: string; token: string })[];
+  skills?: string[];
+  credentials?: string[];
   createdBy: string | null;
-  /** Names of the own credentials already kept under `id`. */
-  kept?: string[];
 }
 
 /**
