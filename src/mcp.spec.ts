@@ -57,7 +57,7 @@ describe("the MCP server at /mcp", () => {
     expect(made).toMatchObject({ error: false, value: { name: "ana", hostId: "laptop", createdBy: "a person" } });
     expect(await tool("list_agents", { createdBy: "a person" })).toMatchObject({ error: false, value: { agents: [{ name: "ana" }] } });
     expect(await tool("put_agent_title", { id: made.value.id, title: "Reads the backlog" })).toMatchObject({ value: { title: "Reads the backlog" } });
-    expect(await tool("get_agent", { id: "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10" })).toEqual({ error: true, value: { error: "No agent has this id." } });
+    expect(await tool("get_agent", { id: "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10" })).toEqual({ error: true, value: { code: "ResourceNotFoundException", message: "No agent has this id." } });
   });
 
   it("is refused without the token, as the API is", async () => {

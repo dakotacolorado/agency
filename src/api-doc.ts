@@ -21,6 +21,7 @@ interface Schema {
   maximum?: number;
   pattern?: string;
   anyOf?: Schema[];
+  allOf?: Schema[];
   nullable?: boolean;
   default?: unknown;
 }
@@ -40,8 +41,8 @@ interface Operation {
   tags?: string[];
   security?: unknown[];
   parameters?: Parameter[];
-  requestBody?: { content: { "application/json": { schema: Schema } } };
-  responses: Record<string, { description: string; content?: { "application/json": { schema: Schema } } }>;
+  requestBody?: { description?: string; content: Record<string, { schema: Schema }> };
+  responses: Record<string, { description: string; content?: Record<string, { schema: Schema }>; headers?: Record<string, { description?: string; schema: Schema }> }>;
 }
 
 export interface Document {
@@ -51,12 +52,34 @@ export interface Document {
 }
 
 /** Request bodies and response wrappers, which their operations already set out in full. */
-const hidden = (name: string) => /^(Create|Update)\w*Input$|Response$/.test(name);
+const hidden = (name: string) => /Input$|Response$/.test(name);
 
+/** A body's content type and schema: JSON's when it has one. */
+const content = (body: { content?: Record<string, { schema: Schema }> } | undefined) => {
+  const entry = body?.content && (Object.entries(body.content).find(([type]) => type === "application/json") ?? Object.entries(body.content)[0]);
+  return entry ? { type: entry[0], schema: entry[1].schema } : null;
+};
 
 const anchor = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
-export function renderApiReference(doc: Document): string {
+/**
+ * `doc` with each `allOf: [{$ref}, {description}]`, which zod writes for a
+ * described reference, as the `{$ref, description}` it means.
+ */
+export function folded<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(folded) as T;
+  if (!value || typeof value !== "object") return value;
+  const entries = Object.entries(value as Record<string, unknown>).map(([key, each]) => [key, folded(each)] as const);
+  const node = Object.fromEntries(entries) as Schema;
+  if (node.allOf?.length === 2 && node.allOf[0]!.$ref && Object.keys(node.allOf[1]!).every((key) => key === "description")) {
+    const { allOf, ...rest } = node;
+    return { ...rest, $ref: allOf[0]!.$ref, description: allOf[1]!.description } as T;
+  }
+  return node as T;
+}
+
+export function renderApiReference(given: Document): string {
+  const doc = folded(given);
   const schemas = doc.components.schemas;
   const named = (schema: Schema) => (schema.$ref ? schema.$ref.split("/").pop()! : null);
   const resolve = (schema: Schema): Schema => (schema.$ref ? schemas[named(schema)!]! : schema);
@@ -119,20 +142,26 @@ export function renderApiReference(doc: Document): string {
   };
 
   const lines = [`# ${doc.info.title} API reference`, "", `API version ${doc.info.version}`, "", doc.info.description, "", "## Operations", ""];
-  const operations = Object.entries(doc.paths).flatMap(([path, methods]) => Object.entries(methods).map(([method, op]) => ({ path, method, op })));
+  // Alphabetical, as AWS lists actions.
+  const operations = Object.entries(doc.paths)
+    .flatMap(([path, methods]) => Object.entries(methods).map(([method, op]) => ({ path, method, op })))
+    .sort((a, b) => a.op.operationId.localeCompare(b.op.operationId));
   for (const { op } of operations) lines.push(`- [${op.operationId}](#${anchor(op.operationId)}): ${op.summary}`);
-  lines.push("", "## Data types", "", ...Object.keys(schemas).filter((name) => !hidden(name)).map((name) => `- [${name}](#${anchor(name)})`), "");
+  lines.push("", "## Data types", "", ...Object.keys(schemas).filter((name) => !hidden(name)).sort().map((name) => `- [${name}](#${anchor(name)})`), "");
 
   for (const { path, method, op } of operations) {
     const success = Object.entries(op.responses).find(([status]) => status.startsWith("2"))!;
     const params = op.parameters ?? [];
     const query = params.filter((p) => p.in === "query").map((p) => `${p.name}=${p.name}`).join("&");
     const headers = params.filter((p) => p.in === "header").map((p) => `${p.name}: string`);
-    const body = op.requestBody?.content["application/json"].schema;
-    const response = success[1].content?.["application/json"].schema;
+    const sent = content(op.requestBody);
+    const got = content(success[1]);
+    const body = sent?.type === "application/json" ? sent.schema : undefined;
+    const response = got?.type === "application/json" ? got.schema : undefined;
     lines.push("---", "", `## ${op.operationId}`, "", op.description ?? `${op.summary}.`, "", "### Request syntax", "", "```http");
     lines.push(`${method.toUpperCase()} ${path}${query ? `?${query}` : ""} HTTP/1.1`, ...(op.security?.length ? ["Authorization: Bearer token"] : []), ...headers);
     if (body) lines.push("Content-type: application/json", "", skeleton(body, 0, []));
+    else if (sent) lines.push(`Content-type: ${sent.type}`, "", op.requestBody?.description ?? "bytes");
     lines.push("```", "");
     for (const [where, title] of [["path", "URI request parameters"], ["query", "Query parameters"], ["header", "Request headers"]] as const) {
       const these = params.filter((p) => p.in === where);
@@ -141,19 +170,31 @@ export function renderApiReference(doc: Document): string {
       for (const p of these) lines.push(...field(p.name, { ...p.schema, description: p.description ?? p.schema.description }, p.required === true));
     }
     if (body) lines.push("### Request body", "", ...fields(body, true));
-    lines.push("### Response syntax", "", "```http", `HTTP/1.1 ${success[0]}`);
+    else if (sent) lines.push("### Request body", "", `${op.requestBody?.description ?? "The body"}, as \`${sent.type}\`.`, "");
+    const answered = Object.entries(success[1].headers ?? {});
+    lines.push("### Response syntax", "", "```http", `HTTP/1.1 ${success[0]}`, ...answered.map(([name]) => `${name}: string`));
     if (response) lines.push("Content-type: application/json", "", skeleton(response, 0, []));
+    else if (got) lines.push(`Content-type: ${got.type}`, "", success[1].description);
     lines.push("```", "");
     if (response) lines.push("### Response elements", "", ...fields(response, false));
+    else if (got) lines.push("### Response elements", "", `${success[1].description} As \`${got.type}\`.`, "");
+    else lines.push(`${success[1].description}`, "");
+    if (answered.length) {
+      lines.push("### Response headers", "");
+      for (const [name, header] of answered) lines.push(...field(name, { ...header.schema, description: header.description ?? header.schema.description }, null));
+    }
     const errors = Object.entries(op.responses).filter(([status]) => !status.startsWith("2"));
     if (errors.length) {
       lines.push("### Errors", "");
-      for (const [status, { description }] of errors) lines.push(`**${status}**  `, `${description}  `, "");
+      for (const [status, { description }] of errors) {
+        const [code, ...cause] = description.split(": ");
+        lines.push(`**${code}**  `, `${cause.join(": ")}  `, `HTTP status: ${status}`, "");
+      }
     }
   }
 
   lines.push("---", "", "# Data types", "");
-  for (const [name, schema] of Object.entries(schemas)) {
+  for (const [name, schema] of Object.entries(schemas).sort(([a], [b]) => a.localeCompare(b))) {
     if (hidden(name)) continue;
     lines.push(`## ${name}`, "", ...(schema.description ? [schema.description, ""] : []), "### Contents", "", ...fields(schema, true));
   }
