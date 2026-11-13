@@ -27,9 +27,6 @@ Options:
   --db <path>         the SQLite file (default ~/.local/share/agency/agency.db, or AGENCY_DB)
   --public-url <url>  this service's address as agents and hosts reach it, such as its Tailscale
                       HTTPS one (or AGENCY_URL); without it, the address each request came to
-  --pick-up <role>    for each ready, unassigned task of the waypoint the services name, ask for an
-                      agent in <role> and assign the task to it (or AGENCY_PICK_UP); without it,
-                      no task is taken
   --services <file>   the other services a session may be given, as JSON (or AGENCY_SERVICES):
                       {"<name>": {"url", "urlVar", "tokenVar", "tokenEnv"}}, each token read from
                       this process's variable tokenEnv
@@ -51,7 +48,6 @@ const { values, positionals } = parseArgs({
     db: { type: "string" },
     services: { type: "string" },
     "public-url": { type: "string" },
-    "pick-up": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -110,10 +106,9 @@ if (servicesFile) {
 }
 
 const publicUrl = values["public-url"] ?? setting("URL") ?? null;
-const pickUp = values["pick-up"] ?? (setting("PICK_UP") || null);
 const starting = (): Running => {
   try {
-    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, pickUp });
+    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl });
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -124,7 +119,7 @@ const server = serve({ fetch: running.api.fetch, hostname: host, port }, (info) 
   const local = `http://${host.includes(":") ? `[${host}]` : host}:${info.port}`;
   const color = Boolean(process.stdout.isTTY) && !env.NO_COLOR;
   process.stdout.write(
-    banner({ version: PACKAGE_VERSION, url: local, publicUrl: (publicUrl ?? local).replace(/\/$/, ""), db: path, services: [SELF, ...Object.keys(services)], pickUp, missing, color }),
+    banner({ version: PACKAGE_VERSION, url: local, publicUrl: (publicUrl ?? local).replace(/\/$/, ""), db: path, services: [SELF, ...Object.keys(services)], missing, color }),
   );
 });
 

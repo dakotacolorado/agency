@@ -79,8 +79,8 @@ ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
 ### Its settings
 
 Each option can also be set in the environment, `AGENCY_<NAME>`: `AGENCY_HOST`,
-`AGENCY_PORT`, `AGENCY_DB`, `AGENCY_URL` (`--public-url`), `AGENCY_SERVICES` and
-`AGENCY_PICK_UP`. The names it had as agent-service, `AGENT_SERVICE_<NAME>`, are
+`AGENCY_PORT`, `AGENCY_DB`, `AGENCY_URL` (`--public-url`) and `AGENCY_SERVICES`.
+The names it had as agent-service, `AGENT_SERVICE_<NAME>`, are
 deprecated but still read when the new one is not set, and without `--db` or
 `AGENCY_DB` an existing `~/.local/share/agent-service/agent-service.db` is used,
 so an install from before the rename keeps working unchanged. Requests and
@@ -202,17 +202,6 @@ An agent is made, by a person or a program, with what its job needs:
   `ListAgents?item=<id>` lists every agent started on it, deleted ones
   included, so what they used is still there once they have gone.
 
-## Picking up waypoint's tasks
-
-waypoint has no queue, so agency finds work itself when started with
-`--pick-up <role>` (or `AGENCY_PICK_UP` in its environment): every 30 seconds it reads the services'
-`waypoint` for `ListTasks?ready=true&assignee=none`, oldest first, and for each,
-at most 5 a look, asks for an agent in that role (`CreateRequest`, its `item`
-the task's id) and sets the task's `assignee` to the agent's name. A task
-already asked for is never asked for again; one whose assignee cannot be set is
-let go and its request withdrawn; with waypoint down, nothing is taken and the
-next look tries again. Admission still decides when each agent starts. Without
-the option, no task is taken.
 
 ## Admission
 

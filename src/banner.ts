@@ -87,8 +87,6 @@ export interface BannerInfo {
   db: string;
   /** The services its sessions may be given, this one first. */
   services: string[];
-  /** The role it picks up waypoint's ready tasks in; null for none. */
-  pickUp: string | null;
   /** AUTH_TOKEN, when it is not set: what answers 503 until it is. */
   missing: string[];
   color: boolean;
@@ -111,7 +109,6 @@ export function banner(b: BannerInfo): string {
     "",
     ...(b.missing.length ? [c.bold(`${b.missing.join(" and ")} not set: every call but /health answers 503`), ""] : []),
     `  ${c.dim(`sessions may be given: ${b.services.join(", ")}`)}`,
-    ...(b.pickUp ? [`  ${c.dim(`picking up waypoint's ready tasks as ${b.pickUp}`)}`] : []),
     `  ${c.dim(`listening on ${b.url}, data in ${b.db}`)}`,
     `  ${c.dim("Ctrl+C to stop.")}`,
     "",

@@ -6,14 +6,10 @@ import { Store } from "./store.ts";
 import type { Server } from "node:http";
 import { SocketHandler } from "./socket.ts";
 import { startTimers } from "./sweep.ts";
-import { Pickup, PICKER, type Self } from "./pickup.ts";
 import { serveSockets, SOCKET_PATH, Sockets } from "./ws-server.ts";
 
 /** The service, of those the services file names, that each session's instructions are read from. */
 export const HONED = "honed";
-
-/** The service, of those the services file names, whose ready tasks are picked up. */
-export const WAYPOINT = "waypoint";
 
 export interface Config {
   /** The SQLite file; `:memory:` keeps nothing past the process. */
@@ -24,8 +20,6 @@ export interface Config {
   services: Services;
   /** This service's address as agents and hosts reach it, such as its Tailscale HTTPS one. */
   publicUrl?: string | null;
-  /** The role to start an agent in for each ready task of the waypoint the services name; null or absent, none is taken. */
-  pickUp?: string | null;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -59,21 +53,7 @@ export function start(config: Config): Running {
   });
   const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat));
   const stopTimers = startTimers(store);
-  const waypoint = credentials[WAYPOINT];
-  if (config.pickUp && !waypoint?.url) throw new Error(`picking up tasks needs the services to name ${WAYPOINT}`);
-  const self: Self = async (method, path, body) => {
-    const res = await api.fetch(
-      new Request(`http://local${path}`, {
-        method,
-        headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json", "claimed-by": PICKER },
-        ...(body !== undefined && { body: JSON.stringify(body) }),
-      }),
-    );
-    return { status: res.status, body: res.status === 204 ? null : await res.json() };
-  };
-  const stopPickUp = config.pickUp && waypoint?.url ? new Pickup({ url: waypoint.url, token: waypoint.token }, store, self, config.pickUp).start() : () => {};
   const stop = () => {
-    stopPickUp();
     stopTimers();
   };
   let unlisten = () => {};
