@@ -57,7 +57,7 @@ ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
 
 ```sh
 ops/deploy beta dakotajp-lenovo-laptop        # from a clean checkout at the commit to release
-ops/agent-host ~/agent-host dakotas-hp-laptop 2 linux,x86_64
+ops/agent-host ~/src/agent-host dakotas-hp-laptop 2 linux,x86_64   # a clean checkout of agent-host
 ops/check                                     # a real session: its context, and the skills it was given
 ```
 
@@ -68,7 +68,8 @@ the host's tokens once in `~/.config/agent-service/env` (its own, and one named
 honed alone (waypoint is not wired in yet), restarts `agent-service.service` and checks `/health` answers the
 commit, serves it at `https://<host>:8446` with `tailscale serve`, and installs
 the nightly backup to the other host. `ops/agent-host` installs an agent-host
-build beside worker-host and points it at this host's agent-service.
+checkout (Node 24, on the Claude Agent SDK, its sessions on this user's Claude
+login) beside worker-host and points it at this host's agent-service.
 
 ## Protocol
 

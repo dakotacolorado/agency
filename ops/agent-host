@@ -1,23 +1,42 @@
 #!/bin/sh
-# agent-host BINARY HOST_ID CAPACITY LABELS: run on a host after ops/deploy.
-# Installs BINARY (an agent-host build, from dakotacolorado/agent-host) as
-# ~/.local/bin/agent-host, writes ~/.config/agent-host/config.toml (mode 600)
-# pointing it at this host's agent-service with its AUTH_TOKEN, writes and
-# restarts agent-host.service, and waits for agent-service to list HOST_ID
-# as connected. LABELS is comma-separated, e.g. linux,x86_64. agent-host runs
-# beside worker-host, sharing none of its files.
+# agent-host SOURCE HOST_ID CAPACITY LABELS: run on a host after ops/deploy.
+# Installs SOURCE (a clean checkout of dakotacolorado/agent-host, which runs on
+# Node 24 and the Claude Agent SDK) as
+# ~/.local/share/routines/agent-host/versions/<version>+<commit>, points
+# current at it (the one it replaces is previous), writes
+# ~/.config/agent-host/config.toml (mode 600) pointing it at this host's
+# agent-service with its AUTH_TOKEN, writes and restarts agent-host.service,
+# and waits for agent-service to list HOST_ID as connected. LABELS is
+# comma-separated, e.g. linux,x86_64. agent-host runs beside worker-host,
+# sharing none of its files; its sessions use this user's Claude login.
 set -eu
-[ $# -eq 4 ] || { echo "usage: agent-host BINARY HOST_ID CAPACITY LABELS" >&2; exit 2; }
-binary=$1 host_id=$2 capacity=$3 labels=$4
+[ $# -eq 4 ] || { echo "usage: agent-host SOURCE HOST_ID CAPACITY LABELS" >&2; exit 2; }
+source=$(cd "$1" && pwd) host_id=$2 capacity=$3 labels=$4
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/common"
-[ -x "$binary" ] || { echo "agent-host: $binary is not executable" >&2; exit 1; }
-"$binary" --help >/dev/null 2>&1 || { echo "agent-host: $binary does not run here" >&2; exit 1; }
+[ -f "$source/package.json" ] && [ -f "$source/src/cli.ts" ] || { echo "agent-host: $source is not an agent-host checkout" >&2; exit 1; }
+[ -z "$(git -C "$source" status --porcelain)" ] || { echo "agent-host: $source has uncommitted changes" >&2; exit 1; }
+commit=$(git -C "$source" rev-parse HEAD)
+version=$("$node" -p "require('$source/package.json').version")+$(printf %.7s "$commit")
 
-mkdir -p "$HOME/.local/bin"
-cp "$binary" "$HOME/.local/bin/.agent-host.new"
-# A rename, so a host already running keeps the binary it started with.
-mv "$HOME/.local/bin/.agent-host.new" "$HOME/.local/bin/agent-host"
+apps=$routines/agent-host
+dest=$apps/versions/$version
+if [ ! -d "$dest" ]; then
+  mkdir -p "$dest.partial"
+  cp -R "$source/src" "$source/package.json" "$source/package-lock.json" "$dest.partial/"
+  (cd "$dest.partial" && npm ci --omit=dev --no-audit --no-fund) >&2
+  mv "$dest.partial" "$dest"
+fi
+was=$(readlink "$apps/current" 2>/dev/null || true)
+if [ "$was" != "versions/$version" ]; then
+  [ -n "$was" ] && echo "$was" >"$apps/previous"
+  ln -sfn "versions/$version" "$apps/current.new"
+  mv -T "$apps/current.new" "$apps/current"
+fi
+"$node" "$apps/current/src/cli.ts" --help >/dev/null 2>&1 || { echo "agent-host: $version does not run here" >&2; exit 1; }
+echo "agent-host: $apps/current is $version (was ${was:-nothing})"
+# The Rust build this replaces, if an earlier install left it.
+rm -f "$HOME/.local/bin/agent-host"
 
 host_conf=$HOME/.config/agent-host
 quoted=$(printf '%s' "$labels" | sed 's/[^,][^,]*/"&"/g; s/,/, /g')
@@ -41,7 +60,7 @@ After=network-online.target $app.service
 Wants=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/agent-host
+ExecStart=$node %h/.local/share/routines/agent-host/current/src/cli.ts
 Restart=always
 RestartSec=5
 Environment=PATH=%h/.local/bin:$(dirname "$node"):/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
