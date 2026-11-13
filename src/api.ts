@@ -4,7 +4,6 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import {
   DURABLE,
-  HEARTBEAT_INTERVAL,
   afterSession,
   available,
   cleared,
@@ -23,7 +22,7 @@ import {
 } from "./domain.ts";
 import * as routes from "./schema.ts";
 import { ERROR_CODES, type ErrorStatus } from "./schema.ts";
-import type { Command, Heartbeat, HeartbeatResponse, RequestView } from "./schema.ts";
+import type { Command, Heartbeat, RequestView } from "./schema.ts";
 import { NameTaken, Stale, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
 import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView } from "./fleet.ts";
@@ -48,7 +47,7 @@ export const OVERVIEW = `Runs lasting Claude Code **agents** on a fleet of hosts
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role \`priority\` first, then the oldest.
 - **Talk to it** with \`SendMessage\`, which starts a session when none is live; \`StopAgent\`, \`ResumeAgent\` and \`RetireAgent\` end, carry on and end it for good.
 - **Follow it**: its \`status\` is \`working\`, \`idle\`, \`waiting\` (on the person), \`review\` or \`done\`, which it says of itself with \`PutAgentStatus\`; \`ListTranscriptLines\` reads what it said, after a cursor.
-- **Hosts** run agent-host, which sends heartbeats and takes commands on a WebSocket at \`socketUrl\`, through the *Host protocol* calls. You don't call those. A page watches live with a ticket from \`CreateSocketTicket\`.
+- **Hosts** run agent-host, which keeps a WebSocket open at \`/socket\`: heartbeats and reports go up it, commands come down it (\`SocketInbound\`, \`SocketOutbound\`). You don't call it. A page watches live with a ticket from \`CreateSocketTicket\`.
 
 **Auth:** \`Authorization: Bearer <token>\` with the stage's token, on everything but \`GetHealth\`, the page and the docs.
 
@@ -223,12 +222,6 @@ export class AgentServiceApi {
     const app = this.hono;
 
     app.openapi(routes.healthRoute, (c) => c.json({ ok: true as const, version: PACKAGE_VERSION, commit: this.build.commit }, 200));
-
-    app.openapi(routes.heartbeatRoute, async (c) => {
-      const answer = await this.heartbeat(c.req.valid("param").id, c.req.valid("json"), this.socketFor(c));
-      await this.admitting(this.origin(c));
-      return c.json(answer, 200);
-    });
 
     app.openapi(routes.listHostsRoute, async (c) => {
       const statuses = c.req.valid("query").status?.split(",");
@@ -532,7 +525,12 @@ export class AgentServiceApi {
     });
   }
 
-  private async heartbeat(id: string, heartbeat: Heartbeat, socketUrl: string | null): Promise<HeartbeatResponse> {
+  /**
+   * A host's heartbeat, which comes up its socket: records the host as there and
+   * what it offers, tells the pages, and runs admission, as room may have opened.
+   * Admission gives agents this service at its public address.
+   */
+  async beat(id: string, heartbeat: Omit<Heartbeat, "type">): Promise<void> {
     const was = await this.store.getHost(id);
     const host: Host = {
       id,
@@ -545,7 +543,7 @@ export class AgentServiceApi {
     await this.fleet.push.toViewers([
       { type: "host", host: hostView(host, await this.store.listAgents(), this.now()) },
     ]);
-    return { heartbeatInterval: HEARTBEAT_INTERVAL, socketUrl };
+    await this.admitting(this.publicUrl ?? "http://local");
   }
 
   /** Every request as served: the waiting in start order, each with its place, then the rest newest first. */
@@ -805,7 +803,6 @@ export class AgentServiceApi {
         { name: routes.TAGS.hosts, description: "See the hosts agents run on." },
         { name: routes.TAGS.usage, description: "The Claude account's allowance used." },
         { name: routes.TAGS.pages, description: "What a page needs to watch agents live." },
-        { name: routes.TAGS.hostProtocol, description: "Called by agent-host on each host, not by you." },
         { name: routes.TAGS.platform, description: "Health, and the clients agents are given." },
       ],
     });

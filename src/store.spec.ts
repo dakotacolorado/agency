@@ -128,16 +128,14 @@ describe("a change", () => {
 });
 
 describe("a command", () => {
-  it("settled taken off its host's queue, and held as written until its host says it was taken", async () => {
+  it("settled is taken off its host's queue and kept on its agent's record", async () => {
     await store.commit({ queue: [{ hostId: "laptop", queued: queued("c") }] });
     const sent = { ...queued("c"), reportedAt: AT, ok: true, error: null, withdrawnAt: null };
-    await store.settle("laptop", { ...sent, taken: false });
+    await store.settle("laptop", sent);
     expect(await store.pending("laptop")).toEqual([]);
-    expect((await store.written("laptop")).map((s) => s.command.id)).toEqual(["c"]);
-    await store.settle("laptop", { ...sent, taken: null });
-    expect(await store.written("laptop")).toEqual([]);
-    expect(await store.sentTo("w")).toEqual([{ ...sent, taken: null }]);
+    expect(await store.sentTo("w")).toEqual([sent]);
   });
+
 });
 
 describe("a request", () => {

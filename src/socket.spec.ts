@@ -31,8 +31,8 @@ beforeEach(() => {
   store = new FakeStore();
   poster = new FakePoster();
   now = NOW;
-  socket = new SocketHandler(store, TOKEN, poster, () => now);
   api = new AgentServiceApi(store, TOKEN, { now: () => now, poster, socketUrl: "wss://socket.example/live" });
+  socket = new SocketHandler(store, TOKEN, poster, () => now, undefined, (hostId, heartbeat) => api.beat(hostId, heartbeat));
 });
 
 const connect = (connectionId: string, query: Record<string, string>, headers: Record<string, string> = {}) =>
@@ -57,7 +57,7 @@ const http = (method: string, path: string, body?: unknown) =>
     }),
   );
 
-const beat = () => http("POST", "/hosts/laptop/heartbeat", { version: "0.1.0", labels: [] });
+const beat = (hostId = "laptop") => api.beat(hostId, { version: "0.1.0", labels: [] });
 
 const asHost = (connectionId: string) => connect(connectionId, { hostId: "laptop" }, { Authorization: "Bearer secret" });
 
@@ -296,7 +296,7 @@ describe("replaying a host's queue to a socket that connects", () => {
     id = made.id;
     sessionId = made.session.id;
     await http("POST", `/agents/${id}/messages`, { text: "And this." });
-    await http("POST", "/hosts/desktop/heartbeat", { version: "0.1.0" });
+    await beat("desktop");
     await http("POST", "/agents", { name: "b", hostId: "desktop" });
     poster.posts = [];
   });
@@ -357,7 +357,7 @@ describe("replaying a host's queue to a socket that connects", () => {
   });
 });
 
-describe("a message written to a session and not yet taken", () => {
+describe("a message to a live session", () => {
   let id: string;
   let sessionId: string;
   let messageId: string;
@@ -404,49 +404,26 @@ describe("a message written to a session and not yet taken", () => {
     }
   });
 
-  it("reads written, is not offered again nor withdrawn, and is done once its host says it was taken", async () => {
-    await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: true, taken: false }] });
-    expect((await message()).delivery).toBe("written");
-    expect(store.commands.get("laptop")).toEqual([]);
-    expect(sentPushes().at(-1)).toMatchObject({ sent: { delivery: "written" } });
-
-    now = new Date(NOW.getTime() + (LOST_AFTER + 60) * 1000);
-    expect((await message()).delivery).toBe("written");
-    await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: true, taken: false }] });
-    expect(sentPushes()).toHaveLength(2);
-
+  it("is done once its host reports it delivered, and rejected when its host could not", async () => {
+    expect((await message()).delivery).toBe("queued");
     await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: true }] });
     expect(await message()).toMatchObject({ delivery: "done", error: null });
     expect(sentPushes().at(-1)).toMatchObject({ sent: { delivery: "done" } });
-    expect(await store.written("laptop")).toEqual([]);
+    const again = ((await (await http("POST", `/agents/${id}/messages`, { text: "and this" })).json()) as { commandId: string }).commandId;
+    await send("host", { type: "report", commandResults: [{ commandId: again, ok: false, error: "no live session" }] });
+    expect((await commands()).find((c) => c.command.id === again)).toMatchObject({ delivery: "rejected", error: "no live session" });
   });
+});
 
-  it("is rejected with the host's words when it says the session never took it", async () => {
-    await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: true, taken: false }] });
-    await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: false, error: "its session ended" }] });
-    expect(await message()).toMatchObject({ delivery: "rejected", error: "its session ended" });
-  });
-
-  it("is rejected when its session ends, even if its host cannot say so", async () => {
-    await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: true, taken: false }] });
-    await send("host", { type: "report", agents: [{ id, state: "interrupted", sessionId: null }] });
-    expect(await message()).toMatchObject({ delivery: "rejected", error: "Its session ended before it took the message." });
-    expect(sentPushes().at(-1)).toMatchObject({ sent: { delivery: "rejected" } });
-    expect(await store.written("laptop")).toEqual([]);
-  });
-
-  it("is settled at once by a host that does not say taken", async () => {
-    await send("host", { type: "report", commandResults: [{ commandId: messageId, ok: true }] });
-    expect((await message()).delivery).toBe("done");
-  });
-
-  it("names its command on the line its session took it as", async () => {
-    const line = { agentId: id, sessionId, seq: 0, at: NOW.toISOString(), from: "instruction", text: "use main", commandId: messageId };
-    await send("host", { type: "report", lines: [line] });
-    const { agentId: _, ...served } = line;
-    expect(poster.to("page").find((m) => m.type === "lines")).toEqual({ type: "lines", agentId: id, lines: [served] });
-    const transcript = (await (await http("GET", `/agents/${id}/transcript`)).json()) as { lines: unknown[] };
-    expect(transcript.lines).toEqual([served]);
+describe("a heartbeat up a host's socket", () => {
+  it("registers the host and keeps it connected, and is refused from a page", async () => {
+    await asHost("host");
+    await send("host", { type: "report", agents: [], commandResults: [], lines: [] });
+    expect((await send("host", { type: "heartbeat", version: "0.2.0", labels: ["linux"], capacity: 2 })).statusCode).toBe(200);
+    expect(store.hosts.get("laptop")).toMatchObject({ version: "0.2.0", labels: ["linux"], capacity: 2, heartbeatAt: NOW.toISOString() });
+    await connect("page", { ticket: await ticket() });
+    await send("page", { type: "heartbeat", version: "0.2.0" });
+    expect(poster.to("page").at(-1)).toEqual({ type: "error", error: "Only a host's socket reports." });
   });
 });
 
@@ -577,7 +554,7 @@ describe("the tokens an agent's sessions used, as its host reports them", () => 
   });
 
   it("ignores totals for an agent on another host", async () => {
-    await http("POST", "/hosts/desktop/heartbeat", { version: "0.1.0", labels: [] });
+    await beat("desktop");
     const other = (await (await http("POST", "/agents", { name: "b", hostId: "desktop" })).json()) as { id: string };
     await report(sessionId, totals(1, 1, 1, 1), other.id);
     expect(await tokensOf(other.id)).toEqual(totals(0, 0, 0, 0));

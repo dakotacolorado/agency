@@ -82,15 +82,14 @@ describe("the line between hosts and everyone else", async () => {
     expect(all.filter((op) => op.tags.length !== 1 || !groups.includes(op.tags[0]!)).map((op) => op.operationId)).toEqual([]);
   });
 
-  it("gives hosts their own call, apart from everyone else's", () => {
-    expect(tagged(TAGS.hostProtocol).map((op) => op.operationId)).toEqual(["SendHeartbeat"]);
+  it("has no operation for hosts: their heartbeats and reports go up the socket", () => {
+    expect(all.map((op) => op.path).filter((path) => path.startsWith("/hosts/") && path !== "/hosts/{id}")).toEqual([]);
   });
 
   it("reads without changing anything, and takes no host's report from anyone but a host", () => {
     expect(all.filter((op) => /^(Get|List)/.test(op.operationId) && (op.method !== "get" || op.requestBody)).map((op) => op.operationId)).toEqual([]);
     const hostState = /#\/components\/schemas\/(Heartbeat|AgentReport|LineReport)"/;
-    const others = all.filter((op) => !op.tags.includes(TAGS.hostProtocol));
-    expect(others.filter((op) => hostState.test(JSON.stringify(op.requestBody ?? {}))).map((op) => op.operationId)).toEqual([]);
+    expect(all.filter((op) => hostState.test(JSON.stringify(op.requestBody ?? {}))).map((op) => op.operationId)).toEqual([]);
   });
 });
 
@@ -173,9 +172,8 @@ describe("the shapes", async () => {
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
     expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
     expect(fields("AgentReport")).toEqual(["id", "sessionId", "state", "tasks", "told"]);
-    expect(fields("CommandReport")).toEqual(["commandId", "error", "ok", "taken"]);
-    expect(fields("Heartbeat")).toEqual(["capacity", "labels", "version"]);
-    expect(fields("HeartbeatResponse")).toEqual(["heartbeatInterval", "socketUrl"]);
+    expect(fields("CommandReport")).toEqual(["commandId", "error", "ok"]);
+    expect(fields("Heartbeat")).toEqual(["capacity", "labels", "type", "version"]);
     expect(fields("SocketReport")).toEqual(["agents", "commandResults", "lines", "tokens", "type", "usage"]);
     expect(fields("SessionTokensReport")).toEqual(
       ["cacheCreationInputTokens", "cacheReadInputTokens", "inputTokens", "outputTokens", "sessionId", "agentId"].sort(),

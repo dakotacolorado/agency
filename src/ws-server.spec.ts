@@ -53,15 +53,21 @@ const until = async (check: () => boolean, what: string) => {
   expect(check(), what).toBe(true);
 };
 
+/** Registers the host as its heartbeat would, and answers the socket's address. */
 const beat = async () => {
-  const res = await call("POST", "/hosts/laptop/heartbeat", { version: "test", labels: [], capacity: 2 });
-  expect(res.status).toBe(200);
-  return res.body.socketUrl as string;
+  await running.api.beat("laptop", { version: "test", labels: [], capacity: 2 });
+  return `${url.replace("http", "ws")}/socket`;
 };
 
 describe("the socket", () => {
-  it("is served on the API's own address, as the heartbeat says", async () => {
-    expect(await beat()).toBe(`${url.replace("http", "ws")}/socket`);
+  it("registers a host from the heartbeat it sends up its socket, after its first report", async () => {
+    const host = await connect(`${url.replace("http", "ws")}/socket?hostId=laptop`, { authorization: `Bearer ${TOKEN}` });
+    if (!("ws" in host)) throw new Error(`refused ${host.refused}`);
+    host.ws.send(JSON.stringify({ type: "report", agents: [], lines: [], commandResults: [] }));
+    host.ws.send(JSON.stringify({ type: "heartbeat", version: "0.2.0", labels: ["linux"], capacity: 3 }));
+    let hosts = await call("GET", "/hosts");
+    for (let i = 0; i < 50 && !hosts.body.hosts.length; i++) hosts = await call("GET", "/hosts");
+    expect(hosts.body.hosts).toMatchObject([{ id: "laptop", version: "0.2.0", labels: ["linux"], capacity: 3, status: "connected" }]);
   });
 
   it("refuses a host without the token, and a page without a ticket, before it opens", async () => {

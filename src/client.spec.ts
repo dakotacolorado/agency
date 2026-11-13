@@ -56,12 +56,9 @@ describe("a client generated from openapi.json", async () => {
       command: { kind: "create", id: "c", agentId: "w", name: "a" },
       queuedAt: "t", delivery: "done", reportedAt: null, error: null,
     };
-    const heartbeat: S["Heartbeat"] = { version: "0.1.0", labels: [], capacity: 2 };
-    // @ts-expect-error a heartbeat carries no report; that goes by the socket
-    const reporting: S["Heartbeat"] = { version: "0.1.0", agents: [] };
-    const replied: S["HeartbeatResponse"] = { heartbeatInterval: 30, socketUrl: null };
-    // @ts-expect-error a heartbeat's response carries no commands; they come down the socket
-    const commanding: S["HeartbeatResponse"] = { heartbeatInterval: 30, socketUrl: null, commands };
+    const heartbeat: S["Heartbeat"] = { type: "heartbeat", version: "0.1.0", labels: [], capacity: 2 };
+    // @ts-expect-error a heartbeat carries no report; that is its own message
+    const reporting: S["Heartbeat"] = { type: "heartbeat", version: "0.1.0", agents: [] };
     const accepted: S["Accepted"] = { commandId: null };
     const report: S["SocketInbound"] = {
       type: "report",
@@ -81,7 +78,7 @@ describe("a client generated from openapi.json", async () => {
     // @ts-expect-error interrupting is a flag, not text
     const flagged: S["Message"] = { interrupt: "yes" };
 
-    export { named, agent, live, failed, ticketed, session, line, host, created, commands, sent, heartbeat, reporting, replied, commanding, accepted, report, ping, pushed, ticket, flagged };
+    export { named, agent, live, failed, ticketed, session, line, host, created, commands, sent, heartbeat, reporting, accepted, report, ping, pushed, ticket, flagged };
   `;
 
   it("compiles a consumer that uses only generated types", async () => {

@@ -4,7 +4,7 @@ import { hash, same } from "./secret.ts";
 import { Credentials, selfCredential, type Credential } from "./credentials.ts";
 import { Fleet } from "./fleet.ts";
 import { Push, type Poster } from "./push.ts";
-import { SocketInboundSchema, type SocketInbound } from "./schema.ts";
+import { SocketInboundSchema, type Heartbeat, type SocketInbound } from "./schema.ts";
 import type { Connection, Store } from "./store.ts";
 
 /** A socket's connecting, closing or message, as `ws-server.ts` hands it over. */
@@ -37,6 +37,7 @@ export class SocketHandler {
   private readonly token: TokenSource;
   private readonly now: () => Date;
   private readonly fleet: Fleet;
+  private readonly onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void>;
 
   constructor(
     store: Store,
@@ -44,7 +45,9 @@ export class SocketHandler {
     poster: Poster,
     now: () => Date = () => new Date(),
     credentials: Record<string, Credential> = { "agent-service": selfCredential(token) },
+    onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void> = async () => {},
   ) {
+    this.onHeartbeat = onHeartbeat;
     this.store = store;
     this.token = token;
     this.now = now;
@@ -114,6 +117,11 @@ export class SocketHandler {
     if (connection.kind === "host") await this.replay(connection, message);
     if (message.type === "ping") return { statusCode: 200 };
     if (connection.kind !== "host") return refuse("Only a host's socket reports.");
+    if (message.type === "heartbeat") {
+      const { type: _, ...heartbeat } = message;
+      await this.onHeartbeat(connection.hostId!, heartbeat);
+      return { statusCode: 200 };
+    }
     const { agents = [], lines = [], commandResults = [], tokens = [], usage } = message;
     await this.fleet.report(connection.hostId!, { agents, lines, commandResults, tokens });
     if (usage) await this.fleet.reportUsage(connection.hostId!, usage);

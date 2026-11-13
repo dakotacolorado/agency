@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { WebSocket } from "ws";
 import { Store } from "./store.ts";
 
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
@@ -42,6 +43,20 @@ const stopped = (child: ChildProcess) => new Promise((done) => (child.once("exit
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json" });
 
+/** Registers host `laptop` as agent-host would: its first report, then a heartbeat, up its socket. */
+async function hostBeat(url: string, token: string) {
+  const ws = new WebSocket(`${url.replace("http", "ws")}/socket?hostId=laptop`, { headers: { authorization: `Bearer ${token}` } });
+  await new Promise((open, fail) => (ws.once("open", open), ws.once("error", fail)));
+  ws.send(JSON.stringify({ type: "report", agents: [], lines: [], commandResults: [] }));
+  ws.send(JSON.stringify({ type: "heartbeat", version: "t", labels: [], capacity: 1 }));
+  for (let i = 0; i < 100; i++) {
+    const { hosts } = (await (await fetch(`${url}/hosts`, { headers: auth(token) })).json()) as { hosts: unknown[] };
+    if (hosts.length) break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  ws.close();
+}
+
 describe("agent-service serve", () => {
   it("serves the API on the database it is given, with the token in its environment", async () => {
     const dir = temp();
@@ -61,8 +76,7 @@ describe("agent-service serve", () => {
   it("keeps hosts, agents and the commands pending for a host across a restart", async () => {
     const db = join(temp(), "as.db");
     const first = await serve(db, { AUTH_TOKEN: "a" });
-    const beat = await fetch(`${first.url}/hosts/laptop/heartbeat`, { method: "POST", headers: auth("a"), body: JSON.stringify({ version: "t", labels: [], capacity: 1 }) });
-    expect(beat.status).toBe(200);
+    await hostBeat(first.url, "a");
     const made = await fetch(`${first.url}/agents`, { method: "POST", headers: auth("a"), body: JSON.stringify({ name: "kept", hostId: "laptop", brief: "Go." }) });
     expect(made.status, await made.clone().text()).toBe(201);
     const { id } = (await made.json()) as { id: string };
@@ -83,7 +97,7 @@ describe("agent-service serve", () => {
     writeFileSync(file, JSON.stringify({ waypoint: { url: "https://waypoint.example/", urlVar: "WAYPOINT_URL", tokenVar: "WAYPOINT_TOKEN", tokenEnv: "WP_SECRET" } }));
     const { url, out } = await serve(join(dir, "as.db"), { AUTH_TOKEN: "a", WP_SECRET: "w" }, ["--services", file]);
     expect(out()).toContain("services: waypoint");
-    await fetch(`${url}/hosts/laptop/heartbeat`, { method: "POST", headers: auth("a"), body: JSON.stringify({ version: "t", labels: [], capacity: 1 }) });
+    await hostBeat(url, "a");
     const refused = await fetch(`${url}/agents`, { method: "POST", headers: auth("a"), body: JSON.stringify({ name: "x-1", hostId: "laptop", credentials: ["nothing"] }) });
     expect(await refused.text()).toContain("this stage has agent-service, waypoint.");
   });

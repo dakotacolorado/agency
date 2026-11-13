@@ -72,15 +72,21 @@ build beside worker-host and points it at this host's agent-service.
 
 ## Protocol
 
-The socket is a WebSocket at `/socket` on the API's own address and port
-(`wss://` behind Tailscale HTTPS), which the heartbeat and a socket ticket
-give as `socketUrl`. The server pings each socket every 30 seconds and closes
-one that misses a ping, so a host whose link dropped reconnects. Commands and reports go by the host's socket alone; the heartbeat only keeps
-the host `connected` and says what it offers. A command waits in its host's
-queue until a report names it: it is pushed to the host's socket when written,
-and every command still pending is replayed, oldest first, to a host socket
-once it opens. A report goes up on the socket when something changes, and in
-full on every (re)connect; it is pushed on to watching pages.
+A host speaks to agent-service over one WebSocket at `/socket` on the API's
+own address and port (`wss://` behind Tailscale HTTPS): it connects with
+`?hostId=<id>` and the stage's token as `Authorization: Bearer`, and nothing
+else of the API is for it. On every (re)connect it sends its full `report`,
+then a `heartbeat` (`version`, `labels`, `capacity`), and a heartbeat every 30
+seconds after: only heartbeats keep a host `connected`, and the first from an
+id registers it. A report goes up whenever something changes, and is pushed on
+to watching pages. The server pings each socket every 30 seconds and closes one
+that misses a ping, so a host whose link dropped reconnects.
+
+A command waits in its host's queue until a report names it: it is pushed to
+the host's socket when written, and every command still pending is replayed,
+oldest first, after the host's first message on a new socket, its full report,
+leaving out the commands that report names. A message is delivered to its
+agent's live session or not: `done` or `rejected`, with nothing between.
 
 ```mermaid
 sequenceDiagram
@@ -88,34 +94,32 @@ sequenceDiagram
     participant S as agent-service
     participant H as Host (agent-host)
 
+    H-->>S: wss /socket?hostId= with Authorization: Bearer
+    H-->>S: { type: report } (in full)
+    S-->>H: { type: command } for each still pending, oldest first
+    H-->>S: { type: heartbeat } version, labels, capacity
+    S-->>P: { type: host }
+
     P->>S: POST /socket-tickets
-    P-->>S: wss ?ticket= (one-time, 60s)
-    H-->>S: wss ?hostId= with Authorization: Bearer
-    H-->>S: socket: { type: report } (in full)
-    S-->>H: socket: { type: command } for each still pending, oldest first
+    P-->>S: wss /socket?ticket= (one-time, 60s)
 
     P->>S: POST /agents/{id}/messages, /stop, /resume
-    S-->>P: 202: queued
-    S-->>P: socket: { type: sent } (queued)
-    S-->>H: socket: { type: command }
+    S-->>P: 202: queued, and { type: sent } (queued)
+    S-->>H: { type: command }
+    H-->>S: { type: report, agents, lines, commandResults }
+    S-->>P: { type: agent } / { type: lines } / { type: sent } (done)
 
-    H-->>S: socket: { type: report, commandResults: taken false }
-    S-->>P: socket: { type: sent } (written)
-    H-->>S: socket: { type: report, agents, lines, commandResults }
-    S-->>P: socket: { type: agent } / { type: lines } / { type: sent } (done)
-
-    loop every heartbeatInterval (30s)
-        H->>S: POST /hosts/{id}/heartbeat<br/>version, labels, capacity
-        S-->>H: heartbeatInterval, socketUrl
-        S-->>P: socket: { type: host }
+    loop every 30s
+        H-->>S: { type: heartbeat }
+        S-->>P: { type: host }
     end
 ```
 
 The queue is the truth, so a dropped socket loses nothing: what it missed is
-replayed to the next. The replay follows the host's first message on the new
-socket, its full report, so the commands that report names are left out. A command not taken by the time its host
-would be `lost` is withdrawn (`create` and `retire` excepted). A host silent over 60s is `disconnected`, over 300s `lost`; a lost
-host is sent nothing new, and stopping one of its agents ends the session on record at once, as `force` does.
+replayed to the next. A command not reported by the time its host would be
+`lost` is withdrawn (`create` and `retire` excepted). A host silent over 60s is
+`disconnected`, over 300s `lost`; a lost host is sent nothing new, and stopping
+one of its agents ends the session on record at once, as `force` does.
 
 ### The account's usage
 

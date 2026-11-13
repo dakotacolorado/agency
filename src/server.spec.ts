@@ -68,7 +68,7 @@ const startOf = async (id: string) => {
 };
 
 const planner = async (name: string) => {
-  expect((await call("POST", "/hosts/laptop/heartbeat", { version: "t", labels: [], capacity: 4 })).status).toBe(200);
+  await running.api.beat("laptop", { version: "t", labels: [], capacity: 4 });
   const made = await call("POST", "/agents", { name, hostId: "laptop", role: "planner" });
   expect(made.status, JSON.stringify(made.body)).toBe(201);
   return made.body.id as string;
@@ -128,7 +128,7 @@ describe("a session started by the served process", () => {
   });
 
   it("refuses an agent naming a skill honed does not have", async () => {
-    await call("POST", "/hosts/laptop/heartbeat", { version: "t", labels: [], capacity: 4 });
+    await running.api.beat("laptop", { version: "t", labels: [], capacity: 4 });
     const made = await call("POST", "/agents", { name: "x-1", hostId: "laptop", skills: ["team/nothing"] });
     expect(made).toEqual({ status: 400, body: { code: "ValidationException", message: "honed has no skill named team/nothing" } });
   });

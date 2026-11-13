@@ -72,24 +72,8 @@ const read = async (path: string, bearer = "secret"): Promise<any> => (await cal
 
 const EMPTY = { version: "0.1.0", labels: [] };
 
-const heartbeat = async (id: string, body: object = {}, headers: Record<string, string> = {}): Promise<Res> =>
-  api.fetch(
-    new Request(`http://local/hosts/${id}/heartbeat`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer secret",
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      body: JSON.stringify({ ...EMPTY, ...body }),
-    }),
-  );
-
-const beat = async (id: string, body: object = {}) => {
-  const res = await heartbeat(id, body);
-  expect(res.status, await res.clone().text()).toBe(200);
-  return (await res.json()) as { heartbeatInterval: number; socketUrl: string | null };
-};
+/** A host's heartbeat, as its socket hands it over. */
+const beat = (id: string, body: { labels?: string[]; capacity?: number } = {}) => api.beat(id, { ...EMPTY, ...body });
 
 /** A host's report, on a socket of its own kept for reporting. */
 const report = async (hostId: string, body: object) => {
@@ -155,19 +139,11 @@ describe("auth", () => {
     expect(await res.json()).toMatchObject({ message: "API token is not configured." });
   });
 
-  it("refuses a heartbeat with the wrong token", async () => {
-    expect((await heartbeat("laptop", {}, { Authorization: "Bearer wrong" })).status).toBe(401);
-  });
 });
 
 describe("heartbeat", () => {
-  it("registers a host, and says when to come back and where its socket is", async () => {
-    const res = await heartbeat("laptop");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      heartbeatInterval: HEARTBEAT_INTERVAL,
-      socketUrl: SOCKET,
-    });
+  it("registers a host", async () => {
+    await beat("laptop");
     expect(await host("laptop")).toEqual({
       id: "laptop",
       heartbeatAt: NOW.toISOString(),
@@ -180,26 +156,11 @@ describe("heartbeat", () => {
   });
 
   it("keeps a host's last labels when a heartbeat leaves them out, and none for a new host", async () => {
-    expect((await heartbeat("bare", { labels: undefined })).status).toBe(200);
+    await beat("bare", { labels: undefined });
     expect((await host("bare")).labels).toEqual([]);
     await beat("laptop", { labels: ["macos", "gpu"] });
     await beat("laptop", { labels: undefined });
     expect((await host("laptop")).labels).toEqual(["macos", "gpu"]);
-  });
-
-  it("gives a null socketUrl where there is no socket", async () => {
-    api = new AgentServiceApi(store, TOKEN, { now: () => now });
-    expect((await beat("laptop")).socketUrl).toBeNull();
-  });
-
-  it("refuses a report, which goes by the socket alone, rather than dropping it", async () => {
-    await beat("laptop");
-    await create({ brief: "Go." });
-    const [home] = queued();
-    const res = await heartbeat("laptop", { commandResults: ack([home!]) });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { message: string }).message).toMatch(/commandResults/);
-    expect(queued()).toHaveLength(2);
   });
 
   it("goes disconnected after two missed heartbeats and lost after ten", async () => {
