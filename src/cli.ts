@@ -36,8 +36,6 @@ Environment:
   AUTH_TOKEN      the bearer token every caller and host presents
 
 Without AUTH_TOKEN, every call but /health and /openapi.json answers 503.
-agency was called agent-service: each AGENT_SERVICE_<NAME> is still read when AGENCY_<NAME> is not set,
-and without --db or AGENCY_DB an existing ~/.local/share/agent-service/agent-service.db is used.
 `;
 
 const { values, positionals } = parseArgs({
