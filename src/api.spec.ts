@@ -1062,6 +1062,37 @@ describe("deleting an agent", () => {
   });
 });
 
+describe("stopping an agent", () => {
+  it("ends its session at once, queues a stop, keeps the agent, and a message starts it again", async () => {
+    await beat("laptop");
+    const made = await create({ brief: "Go." });
+    const res = await call("POST", `/agents/${made.id}/stop`);
+    expect(res.status).toBe(202);
+    const { commandId } = await res.json();
+    expect(queued().map((c) => c.kind)).toEqual(["create", "start", "stop"]);
+    expect(queued().at(-1)!.id).toBe(commandId);
+    expect(await agent(made.id)).toMatchObject({ state: "idle", session: null, name: made.name });
+    expect((await sessionsOf(made.id)).sessions[0]!.ended).toBe("stopped");
+    expect((await call("POST", `/agents/${made.id}/stop`)).status).toBe(409);
+
+    // Should its host still run the session, it stays stopped, and is told to stop once.
+    await report("laptop", { agents: [{ id: made.id, state: "working", sessionId: made.session!.id }] });
+    expect((await agent(made.id)).state).toBe("idle");
+
+    expect((await call("POST", `/agents/${made.id}/messages`, { text: "Carry on." })).status).toBe(202);
+    expect(queued().at(-1)!.kind).toBe("start");
+    expect((await agent(made.id)).state).toBe("working");
+  });
+
+  it("refuses an unknown or deleted agent", async () => {
+    await beat("laptop");
+    const made = await create();
+    expect((await call("POST", `/agents/${crypto.randomUUID()}/stop`)).status).toBe(404);
+    await call("DELETE", `/agents/${made.id}`);
+    expect((await call("POST", `/agents/${made.id}/stop`)).status).toBe(409);
+  });
+});
+
 describe("a write racing a report or a delete", () => {
   let id: string;
   let sessionId: string;

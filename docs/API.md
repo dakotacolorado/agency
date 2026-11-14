@@ -5,7 +5,7 @@ API version 2026-11-12
 agency: Agents at your command, across all your computers. People, their Claude Code and agents themselves use this API to start agents on your computers, talk to them and follow what they do. It runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.
-- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
+- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `StopAgent` ends its session and keeps it, for a message to start it again; `DeleteAgent` ends it for good. Its session also ends when it says it is done and its role says so.
 - **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.
 - **Hosts** run agency-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.
 
@@ -35,6 +35,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [PutAgentStatus](#putagentstatus): Put an agent's status
 - [PutAgentTitle](#putagenttitle): Put an agent's title
 - [SendMessage](#sendmessage): Send a message
+- [StopAgent](#stopagent): Stop an agent
 - [UpdateAgent](#updateagent): Update an agent
 - [WithdrawRequest](#withdrawrequest): Withdraw a request
 
@@ -2018,6 +2019,64 @@ HTTP status: 404
 
 **ConflictException**  
 Nothing was queued: the agent is deleted, has no session to interrupt, or its host is `lost` or full.  
+HTTP status: 409
+
+**ServiceUnavailableException**  
+No API token is configured.  
+HTTP status: 503
+
+---
+
+## StopAgent
+
+Ends the agent's live session and keeps the agent: it is recorded `idle` at once, its session ended `stopped`, and a `stop` is queued to its host. What it said in `review` or `done` is kept, as when any session ends. `SendMessage` starts it again, carrying on its conversation.
+
+### Request syntax
+
+```http
+POST /agents/{id}/stop HTTP/1.1
+Authorization: Bearer token
+```
+
+### URI request parameters
+
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+### Response syntax
+
+```http
+HTTP/1.1 202
+Content-type: application/json
+
+{
+   "commandId": "string"
+}
+```
+
+### Response elements
+
+**commandId**  
+Follow it in `ListCommands`. Null when nothing was sent to the host.  
+Type: String. Nullable: Yes.
+
+### Errors
+
+**ValidationException**  
+The request failed validation.  
+HTTP status: 400
+
+**UnauthorizedException**  
+Missing or incorrect bearer token.  
+HTTP status: 401
+
+**ResourceNotFoundException**  
+No agent has this id.  
+HTTP status: 404
+
+**ConflictException**  
+Nothing was queued: the agent is deleted, or has no live session to stop.  
 HTTP status: 409
 
 **ServiceUnavailableException**  

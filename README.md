@@ -9,7 +9,7 @@
 ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║██║       ╚██╔╝      ██  ██  ██  ██
 ██║  ██║╚██████╔╝███████╗██║ ╚████║╚██████╗   ██║       ██  ██  ██  ██
 ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝   ╚═╝     ▄████████████████▄
-v0.4.0
+v0.5.0
 
 Agents at your command, across all your computers.
 Agents, their sessions, the requests that start them and the hosts they run on.
@@ -33,7 +33,7 @@ its agent `interrupted`, and it can be resumed.
 
 One Node 24 process serves it over HTTP, with its data in one SQLite file,
 and a page at `/` that lists agents, requests, hosts, roles and usage, follows
-an agent's transcript, and makes, messages and deletes agents,
+an agent's transcript, and makes, messages, stops and deletes agents,
 under the token it asks for. Errors answer `{code, message}`, `code` an
 AWS-style exception name such as `ValidationException`.
 The contract is [`openapi.json`](./openapi.json), its operations named as
@@ -129,7 +129,7 @@ sequenceDiagram
     P->>S: POST /socket-tickets
     P-->>S: wss /socket?ticket= (one-time, 60s)
 
-    P->>S: POST /agents/{id}/messages, DELETE /agents/{id}
+    P->>S: POST /agents/{id}/messages, POST /agents/{id}/stop, DELETE /agents/{id}
     S-->>P: 202: queued, and { type: sent } (queued)
     S-->>H: { type: command }
     H-->>S: { type: report, agents, lines, commandResults }

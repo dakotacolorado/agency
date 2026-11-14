@@ -116,6 +116,24 @@ export class Fleet {
   }
 
   /**
+   * Ends the agent's live session and keeps the agent, `idle`, for a message to start it again; the id of
+   * the `stop` its host is sent. Recorded at once, as a delete is: should its host still run the session,
+   * its next report is told to stop it.
+   * Guarded: `conflicted` when the agent was written since it was read, for the caller to read it again.
+   */
+  async stopAgent(agent: Agent & { session: NonNullable<Agent["session"]> }): Promise<string> {
+    const now = this.now();
+    const stop: Command = { kind: "stop", id: randomUUID(), agentId: agent.id };
+    await this.apply({
+      agents: [{ ...agent, state: "idle", session: null, ...afterSession(agent) }],
+      sessions: [{ ...agent.session, agentId: agent.id, endedAt: now.toISOString(), ended: "stopped" }],
+      queue: inOrder(agent.hostId, [stop], now),
+      guarded: true,
+    });
+    return stop.id;
+  }
+
+  /**
    * Stops the agent's session and deletes it, releasing its name; the id of the `delete` its host is sent.
    * Guarded: `conflicted` when the agent was written since it was read, for the caller to read it again.
    */
