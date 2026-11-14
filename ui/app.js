@@ -7,6 +7,17 @@ const TOKEN_KEY = "agency.token";
 /** Where the token was kept before agency was renamed from agent-service: moved over once, so no one signs in again. */
 const OLD_TOKEN_KEY = "agent-service.token";
 if (!localStorage.getItem(TOKEN_KEY) && localStorage.getItem(OLD_TOKEN_KEY)) localStorage.setItem(TOKEN_KEY, localStorage.getItem(OLD_TOKEN_KEY));
+
+// Signed in from the workplace UI: a link whose address ends #signin=<token> (after any route,
+// as #/x&signin=<token>) stores the token, as signing in here would, and drops it from the address.
+{
+  const given = /(?:^#|&)signin=([^&]+)/.exec(location.hash);
+  if (given) {
+    localStorage.setItem(TOKEN_KEY, decodeURIComponent(given[1]));
+    const rest = location.hash.replace(/(?:^#|&)signin=[^&]+/, "").replace(/^#?&/, "#");
+    history.replaceState(null, "", location.pathname + location.search + (rest.length > 1 ? rest : ""));
+  }
+}
 localStorage.removeItem(OLD_TOKEN_KEY);
 const CLAIMED_BY = "agency page";
 /** How often an agent's page asks for more of its transcript, and lists for changes. */
