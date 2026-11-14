@@ -8,7 +8,7 @@ export const INSTRUCTIONS = `agency: ${TAGLINE} It runs lasting Claude Code agen
 
 - An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.
 - A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).
-- send_message talks to an agent: it starts a session carrying on its conversation when none is live. delete_agent ends the agent for good. There is no stopping one: an agent is running or it is not.
+- send_message talks to an agent: it starts a session carrying on its conversation when none is live. stop_agent ends its live session and keeps it, for send_message to start again. delete_agent ends the agent for good.
 - An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.
 - list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.
 - Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.`;

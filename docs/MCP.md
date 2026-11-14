@@ -31,7 +31,7 @@ What the server tells an agent when it connects:
 >
 > - An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.
 > - A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).
-> - send_message talks to an agent: it starts a session carrying on its conversation when none is live. delete_agent ends the agent for good. There is no stopping one: an agent is running or it is not.
+> - send_message talks to an agent: it starts a session carrying on its conversation when none is live. stop_agent ends its live session and keeps it, for send_message to start again. delete_agent ends the agent for good.
 > - An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.
 > - list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.
 > - Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.
@@ -56,6 +56,7 @@ What the server tells an agent when it connects:
 | [`put_agent_status`](#put_agent_status) | Put an agent's status |  |
 | [`put_agent_title`](#put_agent_title) | Put an agent's title |  |
 | [`send_message`](#send_message) | Send a message |  |
+| [`stop_agent`](#stop_agent) | Stop an agent |  |
 | [`update_agent`](#update_agent) | Update an agent |  |
 | [`withdraw_request`](#withdraw_request) | Withdraw a request |  |
 
@@ -210,6 +211,14 @@ To an agent with a live session, `text` is a `message`, delivered at its next tu
 | `id` | string | yes | Assigned by the service when the agent is created. |
 | `text` | string |  | Required unless `interrupt` is true. |
 | `interrupt` | boolean |  | `true` stops the current turn before `text` is sent. |
+
+### stop_agent
+
+Ends the agent's live session and keeps the agent: it is recorded `idle` at once, its session ended `stopped`, and a `stop` is queued to its host. What it said in `review` or `done` is kept, as when any session ends. `SendMessage` starts it again, carrying on its conversation.
+
+| Input | Type | Required | |
+| --- | --- | --- | --- |
+| `id` | string | yes | Assigned by the service when the agent is created. |
 
 ### update_agent
 

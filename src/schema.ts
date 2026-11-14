@@ -1107,6 +1107,24 @@ export const deleteAgentRoute = forClientActing({
   },
 });
 
+export const stopAgentRoute = forClientActing({
+  method: "post",
+  path: "/agents/{id}/stop",
+  operationId: "StopAgent",
+  summary: "Stop an agent",
+  description:
+    "Ends the agent's live session and keeps the agent: it is recorded `idle` at once, its session " +
+    "ended `stopped`, and a `stop` is queued to its host. What it said in `review` or `done` is kept, " +
+    "as when any session ends. `SendMessage` starts it again, carrying on its conversation.",
+  request: agentParam,
+  responses: {
+    202: json(AcceptedSchema, "Stopped; `commandId` is the `stop`'s."),
+    ...NO_AGENT,
+    ...REFUSED("the agent is deleted, or has no live session to stop."),
+    ...FAILS,
+  },
+});
+
 export const transcriptRoute = forClientReading({
   method: "get",
   path: "/agents/{id}/transcript",

@@ -315,6 +315,13 @@ async function agentPage(id) {
         "div",
         { class: "row" },
         !deleted &&
+          agent.session &&
+          act("Stop", "", async () => {
+            if (!confirm(`Stop ${agent.name}? Its session ends; it is kept, and a message starts it again.`)) return undefined;
+            await api("POST", `/agents/${agent.id}/stop`);
+            return "Stopped.";
+          }),
+        !deleted &&
           act("Delete", "danger", async () => {
             if (!confirm(`Delete ${agent.name}? Its session ends and its name is freed; this cannot be undone.`)) return undefined;
             await api("DELETE", `/agents/${agent.id}`);

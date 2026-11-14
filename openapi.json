@@ -3,7 +3,7 @@
   "info": {
     "version": "2026-11-12",
     "title": "agency",
-    "description": "agency: Agents at your command, across all your computers. People, their Claude Code and agents themselves use this API to start agents on your computers, talk to them and follow what they do. It runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `DeleteAgent` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agency-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
+    "description": "agency: Agents at your command, across all your computers. People, their Claude Code and agents themselves use this API to start agents on your computers, talk to them and follow what they do. It runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.\n\n- **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role `priority` first, then the oldest.\n- **Talk to it** with `SendMessage`, which starts a session carrying on its conversation when none is live; `StopAgent` ends its session and keeps it, for a message to start it again; `DeleteAgent` ends it for good. Its session also ends when it says it is done and its role says so.\n- **Follow it**: its `status` is `working`, `idle`, `waiting` (on the person), `review` or `done`, which it says of itself with `PutAgentStatus`; `ListTranscriptLines` reads what it said, after a cursor.\n- **Hosts** run agency-host, which keeps a WebSocket open at `/socket`: heartbeats and reports go up it, commands come down it (`SocketInbound`, `SocketOutbound`). You don't call it. A page watches live with a ticket from `CreateSocketTicket`.\n\n**Auth:** `Authorization: Bearer <token>` with the stage's token, on everything but `GetHealth`, the page and the docs.\n\n**Roles** are honed skills, `agent-roles/<name>`, read here and changed in honed.\n\n**Errors:** `{code, message}`, where `code` is an AWS-style exception name such as `ValidationException` or `ResourceNotFoundException`."
   },
   "tags": [
     {
@@ -3438,6 +3438,97 @@
           },
           "409": {
             "description": "ConflictException: Nothing was queued: the agent is deleted, has no session to interrupt, or its host is `lost` or full.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableException: No API token is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/stop": {
+      "post": {
+        "operationId": "StopAgent",
+        "summary": "Stop an agent",
+        "description": "Ends the agent's live session and keeps the agent: it is recorded `idle` at once, its session ended `stopped`, and a `stop` is queued to its host. What it said in `review` or `done` is kept, as when any session ends. `SendMessage` starts it again, carrying on its conversation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Assigned by the service when the agent is created.",
+              "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
+            },
+            "required": true,
+            "description": "Assigned by the service when the agent is created.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Stopped; `commandId` is the `stop`'s.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ValidationException: The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ResourceNotFoundException: No agent has this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictException: Nothing was queued: the agent is deleted, or has no live session to stop.",
             "content": {
               "application/json": {
                 "schema": {

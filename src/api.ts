@@ -47,7 +47,7 @@ export const API_VERSION = "2026-11-12";
 export const OVERVIEW = `agency: ${TAGLINE} People, their Claude Code and agents themselves use this API to start agents on your computers, talk to them and follow what they do. It runs lasting Claude Code **agents** on a fleet of hosts. Each agent lives on one host and runs in **sessions**; a **role** says what it starts with.
 
 - **Create** an agent on a host, or **request** one in a role, started once Claude usage and a host's room allow. Admission starts the highest role \`priority\` first, then the oldest.
-- **Talk to it** with \`SendMessage\`, which starts a session carrying on its conversation when none is live; \`DeleteAgent\` ends it for good. An agent is running or it is not: its session ends when it says it is done and its role says so.
+- **Talk to it** with \`SendMessage\`, which starts a session carrying on its conversation when none is live; \`StopAgent\` ends its session and keeps it, for a message to start it again; \`DeleteAgent\` ends it for good. Its session also ends when it says it is done and its role says so.
 - **Follow it**: its \`status\` is \`working\`, \`idle\`, \`waiting\` (on the person), \`review\` or \`done\`, which it says of itself with \`PutAgentStatus\`; \`ListTranscriptLines\` reads what it said, after a cursor.
 - **Hosts** run agency-host, which keeps a WebSocket open at \`/socket\`: heartbeats and reports go up it, commands come down it (\`SocketInbound\`, \`SocketOutbound\`). You don't call it. A page watches live with a ticket from \`CreateSocketTicket\`.
 
@@ -415,6 +415,15 @@ export class AgencyApi {
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
       if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted already.`), 409);
       return c.json({ commandId: await this.deleteAgent(agent) }, 202);
+    }));
+
+    app.openapi(routes.stopAgentRoute, async (c) => afresh(async () => {
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
+      const { session } = agent;
+      if (!session) return c.json(failure(409, `${agent.name} is ${agent.state}, with no live session to stop.`), 409);
+      return c.json({ commandId: await this.fleet.stopAgent({ ...agent, session }) }, 202);
     }));
 
     // Every write of an agent read here is guarded and read again on a conflict, so it and a host's report
