@@ -9,7 +9,7 @@
 ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║██║       ╚██╔╝      ██  ██  ██  ██
 ██║  ██║╚██████╔╝███████╗██║ ╚████║╚██████╗   ██║       ██  ██  ██  ██
 ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝   ╚═╝     ▄████████████████▄
-v0.2.0
+v0.4.0
 
 Agents at your command, across all your computers.
 Agents, their sessions, the requests that start them and the hosts they run on.
@@ -80,6 +80,10 @@ ticket) is pruned hourly, `KEPT_FOR` (7 days) after it was queued or ended.
 
 Each option can also be set in the environment, `AGENCY_<NAME>`: `AGENCY_HOST`,
 `AGENCY_PORT`, `AGENCY_DB`, `AGENCY_URL` (`--public-url`) and `AGENCY_SERVICES`.
+With `AGENCY_NUDGE_URL` and `AGENCY_NUDGE_TOKEN` (a producer token of
+[nudge](https://github.com/dakotacolorado/nudge)), the person is told when an
+agent says it is waiting on them (urgent), in review or done, one notification
+per agent linking to its page, taken back once it works again.
 The names it had as agent-service, `AGENT_SERVICE_<NAME>`, are
 deprecated but still read when the new one is not set, and without `--db` or
 `AGENCY_DB` an existing `~/.local/share/agent-service/agent-service.db` is used,

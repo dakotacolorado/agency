@@ -1,6 +1,6 @@
 {
   "name": "@dakotajp/agency",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Agents at your command, across all your computers: agents, their sessions, the requests that start them and the hosts they run on.",
   "type": "module",

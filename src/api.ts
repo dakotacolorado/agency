@@ -37,6 +37,7 @@ import { LOCAL_URL, mcpServer, type Call } from "./mcp.ts";
 import { buildOf, PACKAGE_VERSION, type Build } from "./build.ts";
 import { NO_ROLES, type Role, type RoleSource } from "./roles.ts";
 import { inStartOrder, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
+import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
 
 export const SPEC_PATH = "/openapi.json";
 
@@ -90,6 +91,8 @@ export interface ApiOptions {
   skill?: () => Skill;
   /** The services an agent may be given, by name; without them, only this one. */
   credentials?: Record<string, Credential>;
+  /** Tells the person, through nudge, when an agent waits on them, is in review or is done. */
+  notifier?: AgentNotifier;
 }
 
 export class AgencyApi {
@@ -106,6 +109,7 @@ export class AgencyApi {
   private readonly context: ContextSource;
   private readonly roleSource: RoleSource;
   private readonly skill: () => Skill;
+  private readonly notifier: AgentNotifier;
   private readonly build: Build = buildOf();
 
   constructor(store: Store, token: TokenSource, options: ApiOptions = {}) {
@@ -118,6 +122,7 @@ export class AgencyApi {
     this.context = options.context ?? NO_CONTEXT;
     this.roleSource = options.roles ?? NO_ROLES;
     this.skill = options.skill ?? ownSkill;
+    this.notifier = options.notifier ?? NO_NOTIFIER;
     this.fleet = new Fleet(
       store,
       new Push(store, options.poster ?? NO_SOCKET),
@@ -431,6 +436,7 @@ export class AgencyApi {
       }
       const stop: Command[] = then === "stop" && said.session ? [{ kind: "stop", id: randomUUID(), agentId: agent.id }] : [];
       await this.fleet.apply({ agents: [said], queue: inOrder(agent.hostId, stop, this.now()), guarded: true });
+      if (status !== agent.status || summary !== agent.summary) this.notifier.said(said, agent.status);
       return c.json(agentView(said, await this.store.getHost(agent.hostId), this.now()), 200);
     }));
 
