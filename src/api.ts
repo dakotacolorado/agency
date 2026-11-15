@@ -686,7 +686,7 @@ export class AgencyApi {
     const credentials = agent.credentials ?? this.fleet.credentials.defaults;
     const read = await this.context.forSession(agent.skills ?? []);
     const env = this.fleet.credentials.addresses(credentials, self);
-    const mcpServers = this.fleet.credentials.mcpServers(credentials);
+    const mcpServers = this.fleet.credentials.mcpServers(credentials, agent.name);
     const own = this.skill();
     return { ...read, clients: { key: own.key, version: own.version, commit: own.commit, files: own.files }, env, credentials, mcpServers };
   }

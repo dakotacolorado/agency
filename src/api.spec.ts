@@ -1377,6 +1377,26 @@ describe("an agent's credentials", () => {
     expect(pushed().at(-1)).toMatchObject({ secrets: { WT_TOKEN: "wt-2" } });
   });
 
+  it("names the agent as `x-actor` to every MCP server of every start, new or resumed, beside the token's reference and never the token", async () => {
+    api = new AgencyApi(store, TOKEN, {
+      now: () => now,
+      poster,
+      socketUrl: SOCKET,
+      credentials: { ...credentials(), "work-tracker": { ...known("work-tracker", "https://wt", "WT"), mcp: "/mcp" }, agency: { ...known("agency", null, "AG"), mcp: "/mcp" } },
+    });
+    const made = await create({ name: "planner-7", brief: "Plan it.", credentials: ["work-tracker", "agency", "document-service"] });
+    const servers = {
+      "work-tracker": { type: "http", url: "${WT_URL}/mcp", headers: { Authorization: "Bearer ${WT_TOKEN}", "x-actor": "planner-7" } },
+      agency: { type: "http", url: "${AG_URL}/mcp", headers: { Authorization: "Bearer ${AG_TOKEN}", "x-actor": "planner-7" } },
+    };
+    expect(pushed()[0]).toMatchObject({ resume: false, mcpServers: servers });
+    await endSession(made.id);
+    await call("POST", `/agents/${made.id}/messages`, { text: "Again." });
+    expect(pushed().at(-1)).toMatchObject({ resume: true, mcpServers: servers });
+    const configs = JSON.stringify(pushed().map((c) => c.mcpServers));
+    for (const token of ["wt-1", "secret", "ds-1"]) expect(configs).not.toContain(token);
+  });
+
   it("starts without a token it cannot read", async () => {
     tokens["work-tracker"] = null;
     await create({ brief: "Go.", credentials: ["work-tracker", "agency"] });

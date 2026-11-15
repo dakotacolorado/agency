@@ -119,7 +119,7 @@ describe("a session started by the served process", () => {
     const id = await planner("planner-1");
     const begin = await startOf(id);
     expect(begin.mcpServers).toEqual({
-      waypoint: { type: "http", url: "${WAYPOINT_URL}/mcp", headers: { Authorization: "Bearer ${WAYPOINT_TOKEN}" } },
+      waypoint: { type: "http", url: "${WAYPOINT_URL}/mcp", headers: { Authorization: "Bearer ${WAYPOINT_TOKEN}", "x-actor": "planner-1" } },
     });
     expect(JSON.stringify(begin)).not.toContain("waypoint-token");
     const narrow = await call("POST", "/agents", { name: "plain-1", hostId: "laptop", brief: "Go.", credentials: ["honed"] });

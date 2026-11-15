@@ -71,13 +71,15 @@ export class Credentials {
   /**
    * The MCP servers of `names` that serve one, by name, their address and
    * token as references to the session's own variables, so no token is in them.
+   * Each sends `x-actor` with `actor`, the agent's name, so a service that
+   * records who wrote what (waypoint's history and comments) names the agent.
    */
-  mcpServers(names: string[]): Record<string, McpServer> {
+  mcpServers(names: string[], actor: string): Record<string, McpServer> {
     return Object.fromEntries(
       names.flatMap((name) => {
         const known = this.#get(name);
         if (!known?.mcp) return [];
-        const server: McpServer = { type: "http", url: `\${${known.urlVar}}${known.mcp}`, headers: { Authorization: `Bearer \${${known.tokenVar}}` } };
+        const server: McpServer = { type: "http", url: `\${${known.urlVar}}${known.mcp}`, headers: { Authorization: `Bearer \${${known.tokenVar}}`, "x-actor": actor } };
         return [[name, server]];
       }),
     );

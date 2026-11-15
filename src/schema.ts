@@ -398,7 +398,8 @@ export const CommandSchema = z
           .describe(
             "The MCP servers the session may call, by service, as Claude Code's `mcpServers` takes them: each " +
               "given service that serves one, its address and token written as `${URL_VAR}` and `${TOKEN_VAR}`, " +
-              "which the session's own environment fills, so the command holds no token. The host passes them " +
+              "which the session's own environment fills, so the command holds no token, and an `x-actor` header " +
+              "with the agent's name, so a service that records who wrote what names the agent. The host passes them " +
               "to Claude Code with `--mcp-config`.",
           ),
       })
