@@ -26,6 +26,7 @@ import {
   type Agent,
   unreported,
 } from "./domain.ts";
+import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
 import type { Push } from "./push.ts";
 import {
   USAGE_WINDOWS,
@@ -64,12 +65,14 @@ export class Fleet {
   readonly push: Push;
   readonly now: () => Date;
   readonly credentials: Credentials;
+  readonly notifier: AgentNotifier;
 
-  constructor(store: Store, push: Push, now: () => Date, credentials: Credentials) {
+  constructor(store: Store, push: Push, now: () => Date, credentials: Credentials, notifier: AgentNotifier = NO_NOTIFIER) {
     this.store = store;
     this.push = push;
     this.now = now;
     this.credentials = credentials;
+    this.notifier = notifier;
   }
 
   /**
@@ -79,6 +82,8 @@ export class Fleet {
    */
   async apply(change: Change): Promise<void> {
     await this.store.commit(change);
+    // Every write of an agent passes here, so whatever moves it out of waiting or review takes its nudge back.
+    this.notifier.wrote(change.agents ?? []);
     const byHost = new Map<string, SocketOutbound[]>();
     for (const { hostId, queued } of change.queue ?? []) {
       const command = await this.credentials.seal(queued.command);
