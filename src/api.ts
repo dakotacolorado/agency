@@ -101,7 +101,7 @@ export class AgencyApi {
   private readonly store: Store;
   private readonly token: TokenSource;
   private readonly now: () => Date;
-  private readonly fleet: Fleet;
+  readonly fleet: Fleet;
   private readonly socketUrl: string | null;
   private readonly socketPath: string | null;
   private readonly publicUrl: string | null;

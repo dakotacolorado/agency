@@ -6,7 +6,7 @@ import { Store } from "./store.ts";
 import { agentPage, Nudge } from "./nudge.ts";
 import type { Server } from "node:http";
 import { SocketHandler } from "./socket.ts";
-import { startTimers } from "./sweep.ts";
+import { retireClosed, RETIRE_CLOSED_AFTER, startTimers } from "./sweep.ts";
 import { serveSockets, SOCKET_PATH, Sockets } from "./ws-server.ts";
 
 /** The service, of those the services file names, that each session's instructions are read from. */
@@ -25,6 +25,8 @@ export interface Config {
   nudge?: { url: string; token: string } | null;
   /** Where nudge's notifications link, as a base `/workers/<agent id>` is appended to; without it, agency's own page. */
   workerPageUrl?: string | null;
+  /** Days an agent stays `done` and closed before the sweep deletes it; `0` never. Absent, `RETIRE_CLOSED_AFTER`. */
+  retireClosedAfter?: number;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -58,7 +60,8 @@ export function start(config: Config): Running {
     notifier: config.nudge ? new Nudge(config.nudge.url, config.nudge.token, agentPage(config.publicUrl, config.workerPageUrl)) : undefined,
   });
   const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat));
-  const stopTimers = startTimers(store);
+  const retireAfter = config.retireClosedAfter ?? RETIRE_CLOSED_AFTER;
+  const stopTimers = startTimers(store, { retire: () => retireClosed(api.fleet, retireAfter) });
   const stop = () => {
     stopTimers();
   };

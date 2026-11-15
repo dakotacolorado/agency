@@ -94,7 +94,8 @@ const WhenDone = z
   .describe(
     "What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; " +
       "`stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, " +
-      "`stop` and `delete` both only stop its session, so a send-back can still start it again.",
+      "`stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, " +
+      "an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.",
   );
 
 const ItemId = z
@@ -1098,7 +1099,8 @@ export const deleteAgentRoute = forClientActing({
   description:
     "Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had " +
     "a live session and then `delete`, which is offered until its host takes it. Its transcript, " +
-    "sessions and home folder are kept.",
+    "sessions and home folder are kept. agency's hourly sweep does the same to an agent `done` with no session " +
+    "for longer than its `--retire-closed-after` days (3 unless set).",
   request: agentParam,
   responses: {
     202: json(AcceptedSchema, "Deleted; `commandId` is the `delete`'s."),

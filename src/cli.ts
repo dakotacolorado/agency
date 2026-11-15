@@ -11,6 +11,7 @@ import { SELF } from "./credentials.ts";
 import { start, type Running } from "./server.ts";
 import { readServices, type Services } from "./services.ts";
 import { Store } from "./store.ts";
+import { RETIRE_CLOSED_AFTER } from "./sweep.ts";
 
 const USAGE = `${WORDMARK}
 
@@ -30,6 +31,9 @@ Options:
   --services <file>   the other services a session may be given, as JSON (or AGENCY_SERVICES):
                       {"<name>": {"url", "urlVar", "tokenVar", "tokenEnv"}}, each token read from
                       this process's variable tokenEnv
+  --retire-closed-after <days>
+                      delete agents done and closed for longer than this, on the hourly sweep;
+                      0 never (default 3, or AGENCY_RETIRE_CLOSED_AFTER)
   -h, --help          this
 
 Environment:
@@ -46,6 +50,7 @@ const { values, positionals } = parseArgs({
     db: { type: "string" },
     services: { type: "string" },
     "public-url": { type: "string" },
+    "retire-closed-after": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -107,10 +112,13 @@ const publicUrl = values["public-url"] ?? setting("URL") ?? null;
 // nudge, which tells the person when an agent waits on them: both settings, or neither.
 const nudgeUrl = setting("NUDGE_URL")?.trim(), nudgeToken = setting("NUDGE_TOKEN")?.trim();
 if (Boolean(nudgeUrl) !== Boolean(nudgeToken)) fail("AGENCY_NUDGE_URL and AGENCY_NUDGE_TOKEN go together: set both, or neither");
+const retireSetting = values["retire-closed-after"] ?? setting("RETIRE_CLOSED_AFTER");
+const retireClosedAfter = retireSetting === undefined || retireSetting.trim() === "" ? RETIRE_CLOSED_AFTER : Number(retireSetting);
+if (!Number.isFinite(retireClosedAfter) || retireClosedAfter < 0) fail(`--retire-closed-after must be a number of days, 0 or more, not ${retireSetting}`);
 const workerPageUrl = setting("WORKER_PAGE_URL")?.trim() || null;
 const starting = (): Running => {
   try {
-    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl });
+    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl, retireClosedAfter });
   } catch (err) {
     return fail((err as Error).message);
   }

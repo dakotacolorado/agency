@@ -4,8 +4,8 @@ Agents at your command, across all your computers. agency was called agent-servi
 
 The agents' API: agents, their sessions, the requests that start them, roles,
 usage and the hosts they run on. One Node 24 process (`src/cli.ts`) serving
-HTTP, its data in one SQLite file (`src/store.ts`), what ages out pruned by an
-in-process timer (`src/sweep.ts`). agency-host, on each host, follows its
+HTTP, its data in one SQLite file (`src/store.ts`), what ages out pruned, and
+agents long closed retired, by an in-process timer (`src/sweep.ts`). agency-host, on each host, follows its
 shapes; change them with it.
 
 Keep a comment only when it explains what the code cannot say: a constraint, a

@@ -252,7 +252,7 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
@@ -567,7 +567,7 @@ HTTP status: 503
 
 ## DeleteAgent
 
-Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
+Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept. agency's hourly sweep does the same to an agent `done` with no session for longer than its `--retire-closed-after` days (3 unless set).
 
 ### Request syntax
 
@@ -769,7 +769,7 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
@@ -1075,7 +1075,7 @@ The services each session is given, by name; null for every one the stage has.
 Type: Array of strings. At most 16 items. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **label**  
@@ -1666,7 +1666,7 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
@@ -1866,7 +1866,7 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
@@ -2208,7 +2208,7 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
 
 **skills**  
@@ -2480,7 +2480,7 @@ The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null
 Type: String. Nullable: Yes. Required: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`. Required: Yes.
 
 **skills**  
@@ -3075,7 +3075,7 @@ The services each session is given, by name; null for every one the stage has.
 Type: Array of strings. At most 16 items. Nullable: Yes. Required: Yes.
 
 **whenDone**  
-What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again.  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`. Required: Yes.
 
 **label**  

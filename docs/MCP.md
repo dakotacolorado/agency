@@ -93,7 +93,7 @@ Records the request `waiting`, then admits what it can at once. A request starts
 
 ### delete_agent
 
-Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept.
+Records it `deleted` at once, ends any session, frees its name, and queues a `stop` if it had a live session and then `delete`, which is offered until its host takes it. Its transcript, sessions and home folder are kept. agency's hourly sweep does the same to an agent `done` with no session for longer than its `--retire-closed-after` days (3 unless set).
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
