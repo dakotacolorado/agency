@@ -18,7 +18,7 @@ Run `"$CLAUDE_CONFIG_DIR/skills/page/bin/page"` (called `page` below):
 page working 'Waiting on 3 review subagents for PR #41' 'Reviewing PR #41'
 page waiting 'Which schema should the status field use?' 'Asks: status schema'
 page waiting 'The criteria on #41 conflict on the retry limit: 3 or 5?' 'Asks: retry limit'
-page review 'PR #41 is submitted to the release service; the ticket is in review' 'In review: PR #41'
+page review 'PR #41 is open with its checks passing; the ticket is in review' 'In review: PR #41'
 page done 'Answered: the queue holds 3 PRs, none failing' 'Answered: queue'
 ```
 
@@ -48,15 +48,14 @@ page without one leaves you with none.
   your next tool call, and carry on. The console shows your latest activity
   over the page line once you act again, so the person may see only your
   reply: a question in the page line alone can go unseen.
-- **In review**, once your change is submitted to the release service and its
-  item moved to `review`: page `review`, saying what you submitted. You are
-  waiting on the reviewer, not the person, and it does not notify them. A
-  agent in review is kept, not deleted, so a send-back still reaches you;
-  page it last.
+- **In review**, once your PR is open with its checks passing and its item
+  moved to `review`: page `review`, naming the PR. The person reviews, merges
+  and deploys it; this does not notify them. An agent in review is kept, not
+  deleted, so a send-back still reaches you; page it last.
 - **An epic ready for sign-off**: the person closes an epic, never you, from
   its review panel. Ask for it only once every story and task under it reads
   `done` or is closed (finish what is open, or close it `not_planned` with the
-  reason on its work log); while any of its PRs is still with the release service,
+  reason on its work log); while any of its PRs is not yet merged and deployed,
   page `review`. Then page `waiting` with one line naming the epic by its short
   id, which links the person to the panel:
   `page waiting '00019346 is ready for sign-off: all 3 stories done and in prod' 'Ready: 00019346'`.
