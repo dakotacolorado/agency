@@ -6,7 +6,7 @@ import type { Store } from "./store.ts";
 export const PRUNE_SECONDS = 3600;
 
 /** Days an agent stays closed before the sweep retires it, unless `--retire-closed-after` says otherwise. */
-export const RETIRE_CLOSED_AFTER = 3;
+export const RETIRE_CLOSED_AFTER = 14;
 
 const DAY_MS = 24 * 3600 * 1000;
 

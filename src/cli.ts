@@ -33,7 +33,7 @@ Options:
                       this process's variable tokenEnv
   --retire-closed-after <days>
                       delete agents done and closed for longer than this, on the hourly sweep;
-                      0 never (default 3, or AGENCY_RETIRE_CLOSED_AFTER)
+                      0 never (default 14, or AGENCY_RETIRE_CLOSED_AFTER)
   -h, --help          this
 
 Environment:
