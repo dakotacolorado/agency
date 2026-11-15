@@ -14,13 +14,9 @@ v0.5.0
 Agents at your command, across all your computers.
 Agents, their sessions, the requests that start them and the hosts they run on.
 
-  ▸ Page      http://127.0.0.1:4600/
-  ▸ API       http://127.0.0.1:4600/agents   docs http://127.0.0.1:4600/docs/api
-  ▸ MCP       http://127.0.0.1:4600/mcp      docs http://127.0.0.1:4600/docs/mcp
-
-  sessions may be given: agency
-  listening on http://127.0.0.1:4600, data in ~/.local/share/agency/agency.db
-  Ctrl+C to stop.
+  ▸ Page      https://agency.example.com/
+  ▸ API       https://agency.example.com/agents   docs https://agency.example.com/docs/api
+  ▸ MCP       https://agency.example.com/mcp      docs https://agency.example.com/docs/mcp
 ```
 
 agency runs Claude agents on your machines and keeps track of them. You ask it
@@ -37,8 +33,8 @@ npm ci
 AUTH_TOKEN=<a secret> node src/cli.ts --services services.json
 ```
 
-Open http://127.0.0.1:4600/ and sign in with the token. Point each host's
-agency-host at this address and the same token.
+Open the page it prints and sign in with the token. Point each host's
+agency-host at its address and the same token.
 
 `node src/cli.ts backup <file>` writes a consistent copy of the database while
 it serves.
@@ -79,7 +75,7 @@ from.
 Ask for an agent:
 
 ```sh
-curl -X POST http://127.0.0.1:4600/requests \
+curl -X POST "$AGENCY_URL/requests" \
   -H "Authorization: Bearer $AUTH_TOKEN" -H 'content-type: application/json' \
   -d '{"role": "implementer", "brief": "Fix the login bug."}'
 ```
