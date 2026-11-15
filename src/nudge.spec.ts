@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { notice, Nudge } from "./nudge.ts";
+import { agentPage, notice, Nudge } from "./nudge.ts";
 import type { Agent } from "./domain.ts";
 
 const agent = (status: string, extra: Partial<Agent> = {}) => ({ id: "a1", name: "implementer-a1", title: null, status, summary: "PR #3 is up", ...extra }) as Agent;
@@ -17,6 +17,17 @@ describe("what the person is told of an agent", () => {
     expect(notice(agent("working"), "waiting")).toEqual({ resolve: "it is working again" });
     expect(notice(agent("working"), null)).toBeNull();
     expect(notice(agent("idle"), null)).toBeNull();
+  });
+});
+
+describe("the page a notification links to", () => {
+  it("is the worker page when its address is set", () => {
+    expect(agentPage("https://agency.test", "https://ui.test:8449/")(agent("waiting"))).toBe("https://ui.test:8449/workers/a1");
+  });
+
+  it("is agency's own page without it", () => {
+    expect(agentPage("https://agency.test/", null)(agent("waiting"))).toBe("https://agency.test/#/agents/a1");
+    expect(agentPage("https://agency.test", "")(agent("waiting"))).toBe("https://agency.test/#/agents/a1");
   });
 });
 
