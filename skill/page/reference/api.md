@@ -83,7 +83,7 @@ Body: `AgentTitle`. What the agent names itself.
 | `role` | string or null | The role it was made from, as given when it was made; null for one made without. |
 | `tokens` | `Tokens` |  |
 | `createdBy` | string or null | The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none. |
-| `whenDone` | `keep`, `stop`, `delete` | What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. |
+| `whenDone` | `keep`, `stop`, `delete` | What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (3 unless set) is deleted by its hourly sweep. |
 | `skills` | string[] | The honed skills each session is given, by name: its role's own first. |
 | `credentials` | array or null | The services each session is given, by name; null for every one the stage has. Never a token. |
 | `hostId` | string | The host it lives on. |

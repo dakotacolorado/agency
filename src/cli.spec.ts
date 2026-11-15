@@ -120,6 +120,28 @@ describe("agency serve on a port already taken", () => {
   });
 });
 
+describe("agency --retire-closed-after", () => {
+  it("is in --help with its default and variable", () => {
+    const done = spawnSync(process.execPath, [CLI, "--help"], { env: clean(), encoding: "utf8" });
+    expect(done.status).toBe(0);
+    expect(done.stdout).toContain("--retire-closed-after <days>");
+    expect(done.stdout).toContain("0 never (default 3, or AGENCY_RETIRE_CLOSED_AFTER)");
+  });
+
+  it("refuses a value that is not 0 or more days", () => {
+    for (const env of [{ AGENCY_RETIRE_CLOSED_AFTER: "-1" }, { AGENCY_RETIRE_CLOSED_AFTER: "soon" }]) {
+      const done = spawnSync(process.execPath, [CLI, "--db", ":memory:", "--port", "0"], { env: { ...clean(), ...env }, encoding: "utf8" });
+      expect(done.status).toBe(1);
+      expect(done.stderr).toContain("--retire-closed-after must be a number of days");
+    }
+  });
+
+  it("serves with it off", async () => {
+    const { url } = await serve(join(temp(), "as.db"), { AUTH_TOKEN: "a" }, ["--retire-closed-after", "0"]);
+    expect((await fetch(`${url}/health`)).status).toBe(200);
+  });
+});
+
 describe("agency backup", () => {
   it("copies the database to the file it names", async () => {
     const dir = temp();

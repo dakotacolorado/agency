@@ -48,6 +48,7 @@ it serves.
 | `--db` | `AGENCY_DB` | `~/.local/share/agency/agency.db` | The SQLite file. |
 | `--public-url` | `AGENCY_URL` | the address each request came to | The address agents and hosts reach agency at. |
 | `--services` | `AGENCY_SERVICES` | none | JSON file of the other services a session may be given. |
+| `--retire-closed-after` | `AGENCY_RETIRE_CLOSED_AFTER` | `3` | Days an agent stays `done` with no session before the hourly sweep deletes it, as `DeleteAgent` does. `0` never deletes one. |
 | | `AUTH_TOKEN` | none | The token every caller and host presents. Without it, every call but `/health` and `/openapi.json` answers 503. |
 | | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you when an agent is waiting on you, in review or done. Set both or neither. |
 | | `AGENCY_WORKER_PAGE_URL` | agency's own page | The base address a notification links to, with `/workers/<agent id>` appended, such as a workplace-ui. |
