@@ -213,6 +213,7 @@ Content-type: application/json
    },
    "tasks": number,
    "told": boolean,
+   "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost"
 }
 ```
@@ -310,6 +311,10 @@ Type: Integer. Range: 0 to any.
 **told**  
 Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
 Type: Boolean. Nullable: Yes.
+
+**limitedUntil**  
+When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too.  
+Type: String. Nullable: Yes.
 
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
@@ -730,6 +735,7 @@ Content-type: application/json
    },
    "tasks": number,
    "told": boolean,
+   "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost"
 }
 ```
@@ -827,6 +833,10 @@ Type: Integer. Range: 0 to any.
 **told**  
 Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
 Type: Boolean. Nullable: Yes.
+
+**limitedUntil**  
+When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too.  
+Type: String. Nullable: Yes.
 
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
@@ -1253,6 +1263,7 @@ Content-type: application/json
       },
       "tasks": number,
       "told": boolean,
+      "limitedUntil": "string",
       "hostStatus": "connected | disconnected | lost"
    } ]
 }
@@ -1627,6 +1638,7 @@ Content-type: application/json
    },
    "tasks": number,
    "told": boolean,
+   "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost"
 }
 ```
@@ -1724,6 +1736,10 @@ Type: Integer. Range: 0 to any.
 **told**  
 Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
 Type: Boolean. Nullable: Yes.
+
+**limitedUntil**  
+When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too.  
+Type: String. Nullable: Yes.
 
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
@@ -1827,6 +1843,7 @@ Content-type: application/json
    },
    "tasks": number,
    "told": boolean,
+   "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost"
 }
 ```
@@ -1924,6 +1941,10 @@ Type: Integer. Range: 0 to any.
 **told**  
 Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
 Type: Boolean. Nullable: Yes.
+
+**limitedUntil**  
+When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too.  
+Type: String. Nullable: Yes.
 
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
@@ -2169,6 +2190,7 @@ Content-type: application/json
    },
    "tasks": number,
    "told": boolean,
+   "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost"
 }
 ```
@@ -2266,6 +2288,10 @@ Type: Integer. Range: 0 to any.
 **told**  
 Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
 Type: Boolean. Nullable: Yes.
+
+**limitedUntil**  
+When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too.  
+Type: String. Nullable: Yes.
 
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
@@ -2539,6 +2565,10 @@ Type: Integer. Range: 0 to any. Required: Yes.
 Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
 Type: Boolean. Nullable: Yes. Required: Yes.
 
+**limitedUntil**  
+When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too.  
+Type: String. Nullable: Yes. Required: Yes.
+
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`. Required: Yes.
@@ -2603,6 +2633,10 @@ Type: Integer. Range: 0 to 1000. Required: No.
 **told**  
 Whether the turn running, or the last one, began with a message the host delivered (its echo came back in that turn), rather than by itself, as a turn a background task's end begins does. Absent from a host that does not say, read as unknown.  
 Type: Boolean. Required: No.
+
+**limitedUntil**  
+When the usage limit that ended its session's last turn resets; null or absent once a turn has begun since, or when no limit stopped it. Absent from a host that does not say, read as null.  
+Type: String. Nullable: Yes. Required: No.
 
 ## AgentRequest
 

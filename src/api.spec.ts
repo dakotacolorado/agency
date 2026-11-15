@@ -16,7 +16,7 @@ import { hash } from "./secret.ts";
 import { FakeStore } from "./fake-store.ts";
 import { sentView } from "./fleet.ts";
 import type { Poster } from "./push.ts";
-import type { Command, SocketOutbound } from "./schema.ts";
+import { RESUME_TEXT, type Command, type SocketOutbound } from "./schema.ts";
 import { SocketHandler } from "./socket.ts";
 import type { ContextSource, Read } from "./context.ts";
 import type { Credential } from "./credentials.ts";
@@ -251,6 +251,7 @@ describe("creating an agent", () => {
       activity: null,
       tasks: 0,
       told: null,
+      limitedUntil: null,
       hostStatus: "connected",
     });
     const [command] = queued();
@@ -1551,5 +1552,103 @@ describe("roles", () => {
     await create({ name: "plain-1" });
     expect((await read("/agents?role=reviewer")).agents.map((w: { name: string }) => w.name)).toEqual(["reviewer-1"]);
     expect((await read("/agents")).agents.map((w: { role: string | null }) => w.role)).toEqual(["reviewer", "onboarder", null]);
+  });
+});
+
+describe("an agent a usage limit stopped", () => {
+  let id: string;
+  let sessionId: string;
+  const resets = () => new Date(now.getTime() + 60 * 1000).toISOString();
+  let logged: string[];
+  const resume = () => api.resume((l) => logged.push(l));
+  const resumes = () => queued().filter((c) => "text" in c && c.text === RESUME_TEXT);
+
+  beforeEach(async () => {
+    logged = [];
+    await beat("laptop", { capacity: 2 });
+    const made = await create({ brief: "Go." });
+    id = made.id;
+    sessionId = made.session!.id;
+    await report("laptop", { commandResults: ack(queued()) });
+  });
+
+  it("keeps when its limit resets as its host reports, serves it, and clears it on a report without it", async () => {
+    const until = resets();
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: until }] });
+    expect((await agent(id)).limitedUntil).toBe(until);
+    expect((await read("/agents")).agents[0].limitedUntil).toBe(until);
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId }] });
+    expect((await agent(id)).limitedUntil).toBeNull();
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: until }] });
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: null }] });
+    expect((await agent(id)).limitedUntil).toBeNull();
+  });
+
+  it("sends a live session one message once its limit is over a minute past, and clears it", async () => {
+    const until = resets();
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: until }] });
+    later(60);
+    expect(await resume()).toEqual([]);
+    later(61);
+    expect(await resume()).toEqual(["frontend-1"]);
+    expect(resumes()).toEqual([{ kind: "message", id: expect.any(String), agentId: id, text: RESUME_TEXT }]);
+    expect(await agent(id)).toMatchObject({ limitedUntil: null, state: "working" });
+    expect(logged.map((l) => JSON.parse(l))).toEqual([{ resumed: "frontend-1", limitedUntil: until }]);
+    later(60);
+    expect(await resume()).toEqual([]);
+    expect(resumes()).toHaveLength(1);
+  });
+
+  it("does not take back a limit it resumed from that a report sent before the resume carries", async () => {
+    const until = resets();
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: until }] });
+    later(121);
+    await resume();
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: until }] });
+    expect((await agent(id)).limitedUntil).toBeNull();
+    const next = resets();
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: next }] });
+    expect((await agent(id)).limitedUntil).toBe(next);
+  });
+
+  it("starts one with no live session resuming its last conversation with the message", async () => {
+    const until = resets();
+    await report("laptop", { agents: [{ id, state: "idle", sessionId, limitedUntil: until }] });
+    expect(await agent(id)).toMatchObject({ state: "idle", session: null, limitedUntil: until });
+    later(121);
+    expect(await resume()).toEqual(["frontend-1"]);
+    const [start] = resumes();
+    const live = await agent(id);
+    expect(start).toMatchObject({ kind: "start", agentId: id, sessionId: live.session.id, resume: true, text: RESUME_TEXT });
+    expect(live).toMatchObject({ state: "working", limitedUntil: null });
+  });
+
+  it("sends nothing before its limit resets, nor to one deleted", async () => {
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: resets() }] });
+    later(30);
+    expect(await resume()).toEqual([]);
+    expect((await agent(id)).limitedUntil).not.toBeNull();
+    expect((await call("DELETE", `/agents/${id}`)).status).toBe(202);
+    later(600);
+    expect(await resume()).toEqual([]);
+    expect(resumes()).toEqual([]);
+    expect(logged).toEqual([]);
+  });
+
+  it("keeps the limit, and logs why, when its host cannot be reached, to try again on the next look", async () => {
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: resets() }] });
+    later(3600);
+    expect(await resume()).toEqual([]);
+    expect(resumes()).toEqual([]);
+    expect((await agent(id)).limitedUntil).not.toBeNull();
+    expect(JSON.parse(logged[0]!)).toMatchObject({ resumed: "failed", agent: "frontend-1" });
+    await beat("laptop", { capacity: 2 });
+    expect(await resume()).toEqual(["frontend-1"]);
+  });
+
+  it("clears the limit when the person messages it first", async () => {
+    await report("laptop", { agents: [{ id, state: "waiting", sessionId, limitedUntil: resets() }] });
+    expect((await call("POST", `/agents/${id}/messages`, { text: "resume" })).status).toBe(202);
+    expect((await agent(id)).limitedUntil).toBeNull();
   });
 });

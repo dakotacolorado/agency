@@ -30,7 +30,7 @@ describe("a client generated from openapi.json", async () => {
       id: "w", name: "frontend-1", hostId: "h",
       state: "idle", session: null, createdAt: "t", reportedAt: null, hostStatus: "lost", title: null, label: null, item: null, role: null,
       tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, createdBy: null, whenDone: "keep", skills: [], credentials: null,
-      status: null, summary: null, headline: null, saidAt: null, activity: null, tasks: 0, told: null,
+      status: null, summary: null, headline: null, saidAt: null, activity: null, tasks: 0, told: null, limitedUntil: null,
     };
     const live: S["Agent"] = { ...agent, state: "working", session: { id: "s", startedAt: "t" } };
     // @ts-expect-error there is no failed state; a session that dies leaves the agent interrupted

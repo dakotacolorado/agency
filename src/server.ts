@@ -65,6 +65,7 @@ export function start(config: Config): Running {
   const stopTimers = startTimers(store, {
     retire: () => retireClosed(api.fleet, retireAfter),
     reconcile: () => notifier.reconcile(() => store.listAgents()),
+    resume: () => api.resume(),
   });
   const stop = () => {
     stopTimers();

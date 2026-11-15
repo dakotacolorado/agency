@@ -5,6 +5,7 @@ import {
   activityOf,
   afterSession,
   available,
+  cleared,
   cut,
   delivery,
   hostStatus,
@@ -24,6 +25,7 @@ import {
   type Session,
   type SessionEnding,
   type Agent,
+  unreachable,
   unreported,
 } from "./domain.ts";
 import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
@@ -118,6 +120,61 @@ export class Fleet {
     await this.push.toViewers(
       agents.map((w) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now) })),
     );
+  }
+
+  /** The agent's host, or why nothing can be sent to it. */
+  async reachable(agent: Agent): Promise<Host | string> {
+    const host = await this.store.getHost(agent.hostId);
+    return unreachable(host, agent.hostId, this.now()) ?? host!;
+  }
+
+  /** Why the host has no room for another session, or null when it has. */
+  async full(host: Host): Promise<string | null> {
+    return available(host, await this.store.listAgents()) === 0
+      ? `${host.id} is running all ${host.capacity} sessions it will.`
+      : null;
+  }
+
+  /**
+   * What `SendMessage` does: to a live session a `message`, or an `interrupt`; to one without, a `start`
+   * made by `starting` with `text` as its first message. `fields` are written on the agent with it, and
+   * any `limitedUntil` cleared, since a turn begins. Answers the command's id, or why nothing was sent.
+   * Guarded: `conflicted` when the agent was written since it was read, for the caller to read it again.
+   */
+  async message(
+    agent: Agent,
+    { text, interrupt }: { text?: string; interrupt?: boolean },
+    starting: Starting,
+    fields: Partial<Agent> = {},
+  ): Promise<{ commandId: string } | { refused: string }> {
+    if (agent.state === "deleted") return { refused: `${agent.name} is deleted.` };
+    const host = await this.reachable(agent);
+    if (typeof host === "string") return { refused: host };
+    const now = this.now();
+    const written = { limitedUntil: null, ...fields };
+    if (agent.session) {
+      const id = randomUUID();
+      const command: Command = interrupt
+        ? { kind: "interrupt", id, agentId: agent.id, ...(text !== undefined && { text }) }
+        : // Without interrupt, the schema requires text, which its type does not say.
+          { kind: "message", id, agentId: agent.id, text: text! };
+      // Told something, an agent waiting on the person, in review or done, is at work again.
+      // At work from the moment it is told, as from a start: its host reports the turn once it begins.
+      const answered: Agent[] = [{ ...agent, ...cleared, state: "working", ...written }];
+      await this.apply({ agents: answered, queue: inOrder(agent.hostId, [command], now), guarded: true });
+      return { commandId: id };
+    }
+    if (text === undefined) return { refused: `${agent.name} is ${agent.state}, with no session to interrupt.` };
+    const full = await this.full(host);
+    if (full) return { refused: full };
+    const started = await starting(agent, now.toISOString(), text);
+    await this.apply({
+      agents: [{ ...started.agent, ...written }],
+      sessions: [started.session],
+      queue: inOrder(agent.hostId, [started.command], now),
+      guarded: true,
+    });
+    return { commandId: started.command.id };
   }
 
   /**
@@ -304,6 +361,15 @@ export class Fleet {
       end(agent, "interrupted");
     }
 
+    // A limit already resumed from, reported before the resume reached the host, is not set again.
+    for (const { id, limitedUntil } of report.agents) {
+      const agent = agents.get(id);
+      if (!agent || agent.state === "deleted") continue;
+      const reported = limitedUntil ? new Date(limitedUntil).toISOString() : null;
+      const limited = reported !== null && reported === agent.resumed ? null : reported;
+      if (limited !== (agent.limitedUntil ?? null)) update(agent, { limitedUntil: limited });
+    }
+
     const lines = new Map<string, TranscriptLine[]>();
     for (const { agentId, ...line } of report.lines) {
       if (!agents.has(agentId)) continue;
@@ -366,7 +432,7 @@ const starting = (offered: Queued[], sessionId: string) =>
 
 /** An agent as it is served, which `hadSession` and `begun` are not. */
 export const agentView = (agent: Agent, host: Host | null, now: Date) => {
-  const { hadSession: _, begun: __, rev: ________, sessionTokens, item, role, title, label, createdBy, whenDone, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
+  const { hadSession: _, begun: __, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
   const { turn: ______, paged: _______, ...rest } = served as typeof served & { turn?: unknown; paged?: unknown };
@@ -389,6 +455,7 @@ export const agentView = (agent: Agent, host: Host | null, now: Date) => {
     activity: activity ?? null,
     tasks: tasks ?? 0,
     told: agent.told ?? null,
+    limitedUntil: limitedUntil ?? null,
     hostStatus: host ? hostStatus(host.heartbeatAt, now) : ("lost" as const),
   };
 };
@@ -398,6 +465,9 @@ export const hostView = (host: Host, agents: Agent[], now: Date) => ({
   status: hostStatus(host.heartbeatAt, now),
   available: available(host, agents),
 });
+
+/** Makes the start of a new session, with what it is given, as `begin` does. */
+export type Starting = (agent: Agent, at: string, text?: string) => Promise<ReturnType<typeof begin>>;
 
 /** The start of a new session, and the agent with it live, given what is attached to it. */
 export function begin(
