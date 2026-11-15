@@ -18,7 +18,7 @@ Run `"$CLAUDE_CONFIG_DIR/skills/page/bin/page"` (called `page` below):
 page working 'Waiting on 3 review subagents for PR #41' 'Reviewing PR #41'
 page waiting 'Which schema should the status field use?' 'Asks: status schema'
 page waiting 'The criteria on #41 conflict on the retry limit: 3 or 5?' 'Asks: retry limit'
-page review 'PR #41 is submitted to the release service; the ticket is in review' 'In review: PR #41'
+page review 'PR #41 is open for the reviewer the person asked for' 'In review: PR #41'
 page done 'Answered: the queue holds 3 PRs, none failing' 'Answered: queue'
 ```
 
@@ -48,21 +48,22 @@ page without one leaves you with none.
   your next tool call, and carry on. The console shows your latest activity
   over the page line once you act again, so the person may see only your
   reply: a question in the page line alone can go unseen.
-- **In review**, once your change is submitted to the release service and its
-  item moved to `review`: page `review`, saying what you submitted. You are
-  waiting on the reviewer, not the person, and it does not notify them. A
-  agent in review is kept, not deleted, so a send-back still reaches you;
-  page it last.
+- **Shipping your own change**: while you wait out another agent's deploy, or
+  follow your own deploy run, page `working`, naming the PR and the run.
+- **In review**, only when the person has asked for a review of your PR before
+  you merge it: page `review`, naming the PR. This does not notify them. An
+  agent in review is kept, not deleted, so a send-back still reaches you; page
+  it last.
 - **An epic ready for sign-off**: the person closes an epic, never you, from
   its review panel. Ask for it only once every story and task under it reads
   `done` or is closed (finish what is open, or close it `not_planned` with the
-  reason on its work log); while any of its PRs is still with the release service,
-  page `review`. Then page `waiting` with one line naming the epic by its short
+  reason on its work log); while any of its PRs is not yet merged and deployed,
+  ship it first. Then page `waiting` with one line naming the epic by its short
   id, which links the person to the panel:
   `page waiting '00019346 is ready for sign-off: all 3 stories done and in prod' 'Ready: 00019346'`.
 - **Done**, when you have finished what was asked, need no review, and have
   nothing left to do or running: page `done`, with the result in one line. Work
-  that changes a repo is never `done` from you: it is `review` until merged. A
+  that changes a repo is `done` only once merged and its deploy succeeded. A
   agent made to stop or delete once done is stopped then, so page it last,
   with nothing left to do. Done does not notify the person; if you need them, page `waiting`
   instead.
