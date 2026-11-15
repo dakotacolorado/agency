@@ -91,7 +91,7 @@ export interface ApiOptions {
   skill?: () => Skill;
   /** The services an agent may be given, by name; without them, only this one. */
   credentials?: Record<string, Credential>;
-  /** Tells the person, through nudge, when an agent waits on them, is in review or is done. */
+  /** Tells the person, through nudge, while an agent waits on them or is in review. */
   notifier?: AgentNotifier;
 }
 
@@ -109,7 +109,6 @@ export class AgencyApi {
   private readonly context: ContextSource;
   private readonly roleSource: RoleSource;
   private readonly skill: () => Skill;
-  private readonly notifier: AgentNotifier;
   private readonly build: Build = buildOf();
 
   constructor(store: Store, token: TokenSource, options: ApiOptions = {}) {
@@ -122,12 +121,12 @@ export class AgencyApi {
     this.context = options.context ?? NO_CONTEXT;
     this.roleSource = options.roles ?? NO_ROLES;
     this.skill = options.skill ?? ownSkill;
-    this.notifier = options.notifier ?? NO_NOTIFIER;
     this.fleet = new Fleet(
       store,
       new Push(store, options.poster ?? NO_SOCKET),
       this.now,
       new Credentials(options.credentials ?? { [SELF]: selfCredential(token) }),
+      options.notifier ?? NO_NOTIFIER,
     );
     this.hono = new OpenAPIHono({
       defaultHook: (result, c) =>
@@ -445,7 +444,6 @@ export class AgencyApi {
       }
       const stop: Command[] = then === "stop" && said.session ? [{ kind: "stop", id: randomUUID(), agentId: agent.id }] : [];
       await this.fleet.apply({ agents: [said], queue: inOrder(agent.hostId, stop, this.now()), guarded: true });
-      if (status !== agent.status || summary !== agent.summary) this.notifier.said(said, agent.status);
       return c.json(agentView(said, await this.store.getHost(agent.hostId), this.now()), 200);
     }));
 

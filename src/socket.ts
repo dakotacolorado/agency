@@ -3,6 +3,7 @@ import { withdrawn } from "./domain.ts";
 import { hash, same } from "./secret.ts";
 import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { Fleet } from "./fleet.ts";
+import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
 import { Push, type Poster } from "./push.ts";
 import { SocketInboundSchema, type Heartbeat, type SocketInbound } from "./schema.ts";
 import type { Connection, Store } from "./store.ts";
@@ -46,12 +47,13 @@ export class SocketHandler {
     now: () => Date = () => new Date(),
     credentials: Record<string, Credential> = { [SELF]: selfCredential(token) },
     onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void> = async () => {},
+    notifier: AgentNotifier = NO_NOTIFIER,
   ) {
     this.onHeartbeat = onHeartbeat;
     this.store = store;
     this.token = token;
     this.now = now;
-    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials));
+    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials), notifier);
   }
 
   async handle(event: SocketEvent): Promise<SocketResult> {

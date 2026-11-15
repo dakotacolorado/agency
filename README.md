@@ -50,7 +50,7 @@ it serves.
 | `--services` | `AGENCY_SERVICES` | none | JSON file of the other services a session may be given. |
 | `--retire-closed-after` | `AGENCY_RETIRE_CLOSED_AFTER` | `14` | Days an agent stays `done` with no session before the hourly sweep deletes it, as `DeleteAgent` does. `0` never deletes one. |
 | | `AUTH_TOKEN` | none | The token every caller and host presents. Without it, every call but `/health` and `/openapi.json` answers 503. |
-| | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you when an agent is waiting on you, in review or done. Set both or neither. |
+| | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you while an agent is waiting on you or in review (see [How it works](#how-it-works)). Set both or neither. |
 | | `AGENCY_WORKER_PAGE_URL` | agency's own page | The base address a notification links to, with `/workers/<agent id>` appended, such as a workplace-ui. |
 
 The services file names each service and where its token comes from. No token
@@ -93,6 +93,12 @@ curl -X POST "$AGENCY_URL/requests" \
 - **An agent's status** is what it says through its `page` skill: `working`,
   `waiting` (on you) or `done`. A turn that ends without one reads `waiting`.
   A message to a waiting agent makes it `working`.
+- **A notification**, with nudge set, is open while an agent is `waiting`
+  (urgent) or in `review` (normal), and updated when its summary changes.
+  `done`, `working` and `idle` notify you of nothing, since they ask nothing
+  of you. It is taken back as soon as the agent leaves `waiting` or `review`,
+  is sent a message or an interrupt, or is deleted or retired. On start and
+  every hour, agency takes back any it left open and posts any missing.
 - **A session** is one run of an agent. One that dies leaves its agent
   `interrupted`, and it can be resumed.
 - **A host** silent for 60 seconds is `disconnected`, and after 300 seconds

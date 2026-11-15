@@ -3,7 +3,7 @@ import { HonedContext, NO_CONTEXT } from "./context.ts";
 import { credentialsOf, type Services } from "./services.ts";
 import { HonedRoles, NO_ROLES } from "./roles.ts";
 import { Store } from "./store.ts";
-import { agentPage, Nudge } from "./nudge.ts";
+import { agentPage, NO_NOTIFIER, Nudge } from "./nudge.ts";
 import type { Server } from "node:http";
 import { SocketHandler } from "./socket.ts";
 import { retireClosed, RETIRE_CLOSED_AFTER, startTimers } from "./sweep.ts";
@@ -21,7 +21,7 @@ export interface Config {
   services: Services;
   /** This service's address as agents and hosts reach it, such as its Tailscale HTTPS one. */
   publicUrl?: string | null;
-  /** nudge, which tells the person when an agent waits on them, is in review or is done; without it, nobody is told. */
+  /** nudge, which tells the person while an agent waits on them or is in review; without it, nobody is told. */
   nudge?: { url: string; token: string } | null;
   /** Where nudge's notifications link, as a base `/workers/<agent id>` is appended to; without it, agency's own page. */
   workerPageUrl?: string | null;
@@ -50,6 +50,7 @@ export function start(config: Config): Running {
   const context = honed?.url ? new HonedContext({ url: honed.url, token: honed.token }, store) : NO_CONTEXT;
   const roles = honed?.url ? new HonedRoles({ url: honed.url, token: honed.token }, store) : NO_ROLES;
   const sockets = new Sockets();
+  const notifier = config.nudge ? new Nudge(config.nudge.url, config.nudge.token, agentPage(config.publicUrl, config.workerPageUrl)) : NO_NOTIFIER;
   const api = new AgencyApi(store, token, {
     poster: sockets,
     socketPath: SOCKET_PATH,
@@ -57,11 +58,14 @@ export function start(config: Config): Running {
     credentials,
     context,
     roles,
-    notifier: config.nudge ? new Nudge(config.nudge.url, config.nudge.token, agentPage(config.publicUrl, config.workerPageUrl)) : undefined,
+    notifier,
   });
-  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat));
+  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier);
   const retireAfter = config.retireClosedAfter ?? RETIRE_CLOSED_AFTER;
-  const stopTimers = startTimers(store, { retire: () => retireClosed(api.fleet, retireAfter) });
+  const stopTimers = startTimers(store, {
+    retire: () => retireClosed(api.fleet, retireAfter),
+    reconcile: () => notifier.reconcile(() => store.listAgents()),
+  });
   const stop = () => {
     stopTimers();
   };

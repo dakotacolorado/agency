@@ -2,7 +2,7 @@ import { isLive, quiet, type Agent, type Session } from "./domain.ts";
 import { conflicted, type Fleet } from "./fleet.ts";
 import type { Store } from "./store.ts";
 
-/** Seconds between sweeps: prunes of what has aged out (`Store.prune`), and retirements (`retireClosed`). */
+/** Seconds between sweeps: prunes of what has aged out (`Store.prune`), retirements (`retireClosed`), and nudge's reconcile. */
 export const PRUNE_SECONDS = 3600;
 
 /** Days an agent stays closed before the sweep retires it, unless `--retire-closed-after` says otherwise. */
@@ -50,10 +50,12 @@ export interface Timers {
   now?: () => Date;
   /** Run on each sweep after the prune, such as `retireClosed`. */
   retire?: () => Promise<unknown>;
+  /** Run on each sweep after `retire`, such as `AgentNotifier.reconcile`. */
+  reconcile?: () => Promise<unknown>;
 }
 
 /** Sweeps every `PRUNE_SECONDS` until the answer is called; a failed tick is logged and the next tried. */
-export function startTimers(store: Store, { log = console.log, now = () => new Date(), retire }: Timers = {}): () => void {
+export function startTimers(store: Store, { log = console.log, now = () => new Date(), retire, reconcile }: Timers = {}): () => void {
   const sweep = () => {
     try {
       const n = store.prune(now());
@@ -61,7 +63,10 @@ export function startTimers(store: Store, { log = console.log, now = () => new D
     } catch (err) {
       log(JSON.stringify({ pruned: "failed", error: (err as Error).message }));
     }
-    retire?.().catch((err) => log(JSON.stringify({ retired: "failed", error: (err as Error).message })));
+    void (async () => {
+      await retire?.().catch((err) => log(JSON.stringify({ retired: "failed", error: (err as Error).message })));
+      await reconcile?.().catch((err) => log(JSON.stringify({ reconciled: "failed", error: (err as Error).message })));
+    })();
   };
   sweep();
   const sweeping = setInterval(sweep, PRUNE_SECONDS * 1000);

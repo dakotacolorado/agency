@@ -114,4 +114,23 @@ describe("startTimers", () => {
     stop();
     expect(state("old")).toBe("deleted");
   });
+
+  it("reconciles on its first sweep, once the retire has run", async () => {
+    await agent("old", {}, 15);
+    const seen: string[] = [];
+    let done!: () => void;
+    const swept = new Promise<void>((r) => (done = r));
+    const stop = startTimers(store, {
+      log: () => {},
+      now: () => NOW,
+      retire: () => retire().then(() => seen.push("retired")),
+      reconcile: async () => {
+        seen.push(`reconciled with old ${state("old")}`);
+        done();
+      },
+    });
+    await swept;
+    stop();
+    expect(seen).toEqual(["retired", "reconciled with old deleted"]);
+  });
 });
