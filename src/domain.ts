@@ -223,6 +223,10 @@ export interface Agent {
   saidAt?: string | null;
   /** What its latest transcript line says it was doing; see `activityOf`. Records written before it lack it. */
   activity?: Activity | null;
+  /** When the usage limit that stopped its last turn resets, as its host reported; null once resumed or when none did. */
+  limitedUntil?: string | null;
+  /** The `limitedUntil` it was last resumed from, so a report sent before the resume reached its host does not set it again; never served. */
+  resumed?: string | null;
   /** Each session's running total, by session id, the highest of each count its host reported; served summed as `tokens`. */
   sessionTokens?: Record<string, Tokens>;
   /** Replaced on every write, so a write made on condition of what it read fails once another lands; never served. */

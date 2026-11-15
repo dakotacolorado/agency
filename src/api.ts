@@ -6,7 +6,6 @@ import {
   DURABLE,
   afterSession,
   available,
-  cleared,
   delivery,
   expired,
   hostStatus,
@@ -25,7 +24,8 @@ import { ERROR_CODES, type ErrorStatus } from "./schema.ts";
 import type { Command, Heartbeat, RequestView } from "./schema.ts";
 import { NameTaken, Stale, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
-import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView } from "./fleet.ts";
+import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView, type Starting } from "./fleet.ts";
+import { resumeLimited } from "./sweep.ts";
 import { NO_SOCKET, Push, type Poster } from "./push.ts";
 import { NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
 import { LETTERS_ONLY, MARK_ICON, MARK_PIXELS, SUMMARY, TAGLINE } from "./banner.ts";
@@ -356,29 +356,11 @@ export class AgencyApi {
     });
 
     app.openapi(routes.messageAgentRoute, async (c) => afresh(async () => {
-      const { text, interrupt } = c.req.valid("json");
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
-      const ready = await this.reachable(agent);
-      if (typeof ready === "string") return c.json(failure(409, ready), 409);
-      const now = this.now();
-      if (agent.session) {
-        const id = randomUUID();
-        const command: Command = interrupt
-          ? { kind: "interrupt", id, agentId: agent.id, ...(text !== undefined && { text }) }
-          : // Without interrupt, the schema requires text, which its type does not say.
-            { kind: "message", id, agentId: agent.id, text: text! };
-        // Told something, an agent waiting on the person, in review or done, is at work again.
-        // At work from the moment it is told, as from a start: its host reports the turn once it begins.
-        const answered: Agent[] = [{ ...agent, ...cleared, state: "working" }];
-        await this.fleet.apply({ agents: answered, queue: inOrder(agent.hostId, [command], now), guarded: true });
-        return c.json({ commandId: id }, 202);
-      }
-      if (text === undefined) {
-        return c.json(failure(409, `${agent.name} is ${agent.state}, with no session to interrupt.`), 409);
-      }
-      return this.start(c, agent, ready, text);
+      const sent = await this.fleet.message(agent, c.req.valid("json"), this.starter(this.origin(c)));
+      if ("refused" in sent) return c.json(failure(409, sent.refused), 409);
+      return c.json(sent, 202);
     }));
 
     app.openapi(routes.renameAgentRoute, async (c) => afresh(async () => {
@@ -633,7 +615,7 @@ export class AgencyApi {
     const unknown = (credentials && this.fleet.credentials.refuse(credentials)) || (await this.context.refuse(skills));
     if (unknown) return { refused: unknown, status: 400 };
     if (brief !== undefined) {
-      const full = await this.full(host);
+      const full = await this.fleet.full(host);
       if (full) return { refused: full, status: 409 };
     }
     const id = asked.id ?? randomUUID();
@@ -689,6 +671,16 @@ export class AgencyApi {
     return { ...read, clients: { key: own.key, version: own.version, commit: own.commit, files: own.files }, env, credentials, mcpServers };
   }
 
+  /** Starts sessions as a call that reached this service at `self` would. */
+  private starter(self: string): Starting {
+    return (agent, at, text) => this.starting(self, agent, at, text);
+  }
+
+  /** Resumes each agent whose usage limit has reset; see `resumeLimited`. Run every `RESUME_SECONDS`. */
+  resume(log?: (line: string) => void): Promise<string[]> {
+    return resumeLimited(this.fleet, this.starter(this.publicUrl ?? "http://local"), log);
+  }
+
   /** A new session, with what it starts with. */
   private async starting(self: string, agent: Agent, at: string, text?: string): Promise<ReturnType<typeof begin>> {
     return begin(agent, at, text, await this.attach(self, agent));
@@ -700,12 +692,6 @@ export class AgencyApi {
    */
   private deleteAgent(agent: Agent): Promise<string> {
     return this.fleet.deleteAgent(agent);
-  }
-
-  /** The agent's host, or why nothing can be sent to it. */
-  private async reachable(agent: Agent): Promise<Host | string> {
-    const host = await this.store.getHost(agent.hostId);
-    return unreachable(host, agent.hostId, this.now()) ?? host!;
   }
 
   /**
@@ -723,27 +709,6 @@ export class AgencyApi {
     if (best) return best.id;
     const carrying = labels.length ? `, carrying ${labels.join(", ")},` : "";
     return { none: `No connected host${carrying} has room for an agent; nothing was made.` };
-  }
-
-  /** Why the host has no room for another session, or null when it has. */
-  private async full(host: Host): Promise<string | null> {
-    return available(host, await this.store.listAgents()) === 0
-      ? `${host.id} is running all ${host.capacity} sessions it will.`
-      : null;
-  }
-
-  private async start(c: Context, agent: Agent, host: Host, text?: string) {
-    const full = await this.full(host);
-    if (full) return c.json(failure(409, full), 409);
-    const now = this.now();
-    const started = await this.starting(this.origin(c), agent, now.toISOString(), text);
-    await this.fleet.apply({
-      agents: [started.agent],
-      sessions: [started.session],
-      queue: inOrder(agent.hostId, [started.command], now),
-      guarded: true,
-    });
-    return c.json({ commandId: started.command.id }, 202);
   }
 
   private spec(): void {

@@ -152,6 +152,9 @@ const Cursor = z
   .describe("Opaque. A position after the last item read; new items do not shift it.")
   .openapi("Cursor", { example: "c3E9MTI4" });
 
+/** What an agent a usage limit stopped is told once the limit resets. */
+export const RESUME_TEXT = "Your usage limit has reset. Carry on from where you were stopped.";
+
 const Instant = z.iso.datetime().openapi({ example: "2026-10-27T12:00:00.000Z" });
 
 const Label = z
@@ -250,6 +253,12 @@ export const AgentReportSchema = z
         "Whether the turn running, or the last one, began with a message the host delivered " +
           "(its echo came back in that turn), rather than by itself, as a turn a background task's " +
           "end begins does. Absent from a host that does not say, read as unknown.",
+      ),
+    limitedUntil: Instant.nullable()
+      .optional()
+      .describe(
+        "When the usage limit that ended its session's last turn resets; null or absent once a turn " +
+          "has begun since, or when no limit stopped it. Absent from a host that does not say, read as null.",
       ),
   })
   .openapi("AgentReport");
@@ -549,6 +558,12 @@ export const AgentSchema = z
           "or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a " +
           "turn that was told is a reply. Null without a live session, or when its host has not said.",
       ),
+    limitedUntil: Instant.nullable().describe(
+      "When the usage limit that stopped its last turn resets, as its host reported; null when no limit " +
+        "stopped it. About a minute after that time, agency sends it `" + RESUME_TEXT + "` as `SendMessage` " +
+        "would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, " +
+        "so each limit resumes it once. A message sent to it, or a report without it, clears it too.",
+    ),
     hostStatus: HostStatus.describe(
       "Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.",
     ),

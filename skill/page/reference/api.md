@@ -98,6 +98,7 @@ Body: `AgentTitle`. What the agent names itself.
 | `activity` | object or null | What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something. |
 | `tasks` | integer (≥ 0) | Background tasks and subagents its live session has open, as its host last reported; 0 without one. |
 | `told` | boolean or null | Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said. |
+| `limitedUntil` | string or null (date-time) | When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too. |
 | `hostStatus` | `connected`, `disconnected`, `lost` | Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date. |
 
 ## Tokens

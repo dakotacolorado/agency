@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgencyApi } from "./api.ts";
 import type { Agent } from "./domain.ts";
 import { FakeStore } from "./fake-store.ts";
-import { closedSince, retireClosed, RETIRE_CLOSED_AFTER, startTimers } from "./sweep.ts";
+import { closedSince, RESUME_SECONDS, retireClosed, RETIRE_CLOSED_AFTER, startTimers } from "./sweep.ts";
 
 const NOW = new Date("2026-11-14T12:00:00.000Z");
 const daysAgo = (days: number) => new Date(NOW.getTime() - days * 24 * 3600 * 1000).toISOString();
@@ -132,5 +132,37 @@ describe("startTimers", () => {
     await swept;
     stop();
     expect(seen).toEqual(["retired", "reconciled with old deleted"]);
+  });
+
+  it("resumes every minute, apart from the hourly sweep, one look at a time, until stopped", async () => {
+    vi.useFakeTimers();
+    try {
+      let looks = 0;
+      let finish!: () => void;
+      const stop = startTimers(store, {
+        log: () => {},
+        now: () => NOW,
+        resume: () => {
+          looks++;
+          return new Promise<void>((r) => (finish = r));
+        },
+      });
+      expect(RESUME_SECONDS).toBe(60);
+      expect(looks).toBe(0);
+      await vi.advanceTimersByTimeAsync(RESUME_SECONDS * 1000);
+      expect(looks).toBe(1);
+      // Still running: the next tick does not start another.
+      await vi.advanceTimersByTimeAsync(RESUME_SECONDS * 1000);
+      expect(looks).toBe(1);
+      finish();
+      await vi.advanceTimersByTimeAsync(RESUME_SECONDS * 1000);
+      expect(looks).toBe(2);
+      finish();
+      stop();
+      await vi.advanceTimersByTimeAsync(10 * RESUME_SECONDS * 1000);
+      expect(looks).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

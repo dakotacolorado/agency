@@ -180,6 +180,15 @@
           "told": {
             "type": "boolean",
             "description": "Whether the turn running, or the last one, began with a message the host delivered (its echo came back in that turn), rather than by itself, as a turn a background task's end begins does. Absent from a host that does not say, read as unknown."
+          },
+          "limitedUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When the usage limit that ended its session's last turn resets; null or absent once a turn has begun since, or when no limit stopped it. Absent from a host that does not say, read as null."
           }
         },
         "required": [
@@ -1134,6 +1143,15 @@
             ],
             "description": "Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said."
           },
+          "limitedUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too."
+          },
           "hostStatus": {
             "type": "string",
             "enum": [
@@ -1168,6 +1186,7 @@
           "activity",
           "tasks",
           "told",
+          "limitedUntil",
           "hostStatus"
         ]
       },

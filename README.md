@@ -101,6 +101,11 @@ curl -X POST "$AGENCY_URL/requests" \
   every hour, agency takes back any it left open and posts any missing.
 - **A session** is one run of an agent. One that dies leaves its agent
   `interrupted`, and it can be resumed.
+- **A usage limit** that stops an agent's turn is reported by its host as
+  `limitedUntil`, when the limit resets. About a minute after that, agency
+  tells the agent its limit has reset and to carry on, starting its session
+  again if it has none. A limit still in force stops it again, and it waits
+  for the next reset.
 - **A host** silent for 60 seconds is `disconnected`, and after 300 seconds
   `lost`. Commands to a host wait in its queue and are replayed when it
   reconnects.

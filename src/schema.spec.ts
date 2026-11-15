@@ -165,12 +165,12 @@ describe("the shapes", async () => {
     expect(fields("Agent")).toEqual(
       [
         "createdAt", "hostId", "hostStatus", "id", "name", "reportedAt", "session", "state", "title",
-        "label", "item", "role", "tokens", "createdBy", "whenDone", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told",
+        "label", "item", "role", "tokens", "createdBy", "whenDone", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil",
       ].sort(),
     );
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
     expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
-    expect(fields("AgentReport")).toEqual(["id", "sessionId", "state", "tasks", "told"]);
+    expect(fields("AgentReport")).toEqual(["id", "limitedUntil", "sessionId", "state", "tasks", "told"]);
     expect(fields("CommandReport")).toEqual(["commandId", "error", "ok"]);
     expect(fields("Heartbeat")).toEqual(["capacity", "labels", "type", "version"]);
     expect(fields("SocketReport")).toEqual(["agents", "commandResults", "lines", "tokens", "type", "usage"]);
