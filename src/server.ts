@@ -3,7 +3,7 @@ import { HonedContext, NO_CONTEXT } from "./context.ts";
 import { credentialsOf, type Services } from "./services.ts";
 import { HonedRoles, NO_ROLES } from "./roles.ts";
 import { Store } from "./store.ts";
-import { Nudge } from "./nudge.ts";
+import { agentPage, Nudge } from "./nudge.ts";
 import type { Server } from "node:http";
 import { SocketHandler } from "./socket.ts";
 import { startTimers } from "./sweep.ts";
@@ -23,6 +23,8 @@ export interface Config {
   publicUrl?: string | null;
   /** nudge, which tells the person when an agent waits on them, is in review or is done; without it, nobody is told. */
   nudge?: { url: string; token: string } | null;
+  /** Where nudge's notifications link, as a base `/workers/<agent id>` is appended to; without it, agency's own page. */
+  workerPageUrl?: string | null;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -53,7 +55,7 @@ export function start(config: Config): Running {
     credentials,
     context,
     roles,
-    notifier: config.nudge ? new Nudge(config.nudge.url, config.nudge.token, (agent) => `${(config.publicUrl ?? "").replace(/\/$/, "")}/#/agents/${agent.id}`) : undefined,
+    notifier: config.nudge ? new Nudge(config.nudge.url, config.nudge.token, agentPage(config.publicUrl, config.workerPageUrl)) : undefined,
   });
   const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat));
   const stopTimers = startTimers(store);

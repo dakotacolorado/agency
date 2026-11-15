@@ -50,6 +50,7 @@ it serves.
 | `--services` | `AGENCY_SERVICES` | none | JSON file of the other services a session may be given. |
 | | `AUTH_TOKEN` | none | The token every caller and host presents. Without it, every call but `/health` and `/openapi.json` answers 503. |
 | | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you when an agent is waiting on you, in review or done. Set both or neither. |
+| | `AGENCY_WORKER_PAGE_URL` | agency's own page | The base address a notification links to, with `/workers/<agent id>` appended, such as a workplace-ui. |
 
 The services file names each service and where its token comes from. No token
 goes in the file:

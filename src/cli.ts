@@ -107,9 +107,10 @@ const publicUrl = values["public-url"] ?? setting("URL") ?? null;
 // nudge, which tells the person when an agent waits on them: both settings, or neither.
 const nudgeUrl = setting("NUDGE_URL")?.trim(), nudgeToken = setting("NUDGE_TOKEN")?.trim();
 if (Boolean(nudgeUrl) !== Boolean(nudgeToken)) fail("AGENCY_NUDGE_URL and AGENCY_NUDGE_TOKEN go together: set both, or neither");
+const workerPageUrl = setting("WORKER_PAGE_URL")?.trim() || null;
 const starting = (): Running => {
   try {
-    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null });
+    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl });
   } catch (err) {
     return fail((err as Error).message);
   }

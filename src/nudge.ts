@@ -11,6 +11,12 @@ export interface AgentNotifier {
 
 export const NO_NOTIFIER: AgentNotifier = { said: () => {} };
 
+/** The page a notification links to: `<workerPageUrl>/workers/<id>` when that is set, else agency's own page of the agent. */
+export function agentPage(publicUrl: string | null | undefined, workerPageUrl?: string | null): (agent: Agent) => string {
+  const trim = (url: string) => url.replace(/\/+$/, "");
+  return workerPageUrl ? (agent) => `${trim(workerPageUrl)}/workers/${agent.id}` : (agent) => `${trim(publicUrl ?? "")}/#/agents/${agent.id}`;
+}
+
 /** One notification per agent, keyed by its id: posted, updated, or resolved as its status moves. */
 export function notice(agent: Agent, before: Said): { post: { title: string; body: string | null; priority: "urgent" | "normal" } } | { resolve: string } | null {
   const name = agent.title ? `${agent.name} (${agent.title})` : agent.name;
