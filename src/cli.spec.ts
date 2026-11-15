@@ -125,7 +125,7 @@ describe("agency --retire-closed-after", () => {
     const done = spawnSync(process.execPath, [CLI, "--help"], { env: clean(), encoding: "utf8" });
     expect(done.status).toBe(0);
     expect(done.stdout).toContain("--retire-closed-after <days>");
-    expect(done.stdout).toContain("0 never (default 3, or AGENCY_RETIRE_CLOSED_AFTER)");
+    expect(done.stdout).toContain("0 never (default 14, or AGENCY_RETIRE_CLOSED_AFTER)");
   });
 
   it("refuses a value that is not 0 or more days", () => {

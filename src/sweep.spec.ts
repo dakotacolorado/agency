@@ -50,43 +50,43 @@ const state = (name: string) => store.agents.get(`id-${name}`)!.state;
 const retire = (days = RETIRE_CLOSED_AFTER) => retireClosed(api.fleet, days, (l) => lines.push(l));
 
 describe("retireClosed", () => {
-  it("defaults to 3 days", () => {
-    expect(RETIRE_CLOSED_AFTER).toBe(3);
+  it("defaults to 14 days", () => {
+    expect(RETIRE_CLOSED_AFTER).toBe(14);
   });
 
-  it("deletes a done agent closed 4 days ago as DeleteAgent does, keeping its sessions and transcript", async () => {
-    await agent("old", {}, 4);
+  it("deletes a done agent closed 15 days ago as DeleteAgent does, keeping its sessions and transcript", async () => {
+    await agent("old", {}, 15);
     expect(await retire()).toEqual(["old"]);
     expect(state("old")).toBe("deleted");
     expect(store.commands.get("laptop")!.map((q) => q.command.kind)).toEqual(["delete"]);
     expect(await store.sessionsOf("id-old")).toHaveLength(1);
     expect(await store.readLines("id-old", 0, 10)).toHaveLength(1);
-    expect(lines.map((l) => JSON.parse(l))).toEqual([{ retired: "old", closedSince: daysAgo(4) }]);
+    expect(lines.map((l) => JSON.parse(l))).toEqual([{ retired: "old", closedSince: daysAgo(15) }]);
     // Its name is free again, as after DeleteAgent.
     await expect(store.commit({ claim: { name: "old", agentId: "another" } })).resolves.toBeUndefined();
   });
 
-  it("keeps one closed 2 days ago", async () => {
-    await agent("recent", {}, 2);
+  it("keeps one closed 13 days ago", async () => {
+    await agent("recent", {}, 13);
     expect(await retire()).toEqual([]);
     expect(state("recent")).toBe("idle");
   });
 
   it("counts from the later of saying done and its session ending", async () => {
-    await agent("said-late", {}, 5, 1);
-    await agent("ended-late", {}, 1, 5);
+    await agent("said-late", {}, 20, 1);
+    await agent("ended-late", {}, 1, 20);
     expect(await retire()).toEqual([]);
     expect(closedSince(store.agents.get("id-said-late")!, await store.sessionsOf("id-said-late"))).toBe(daysAgo(1));
   });
 
   it("never retires one in review, waiting or working, or with a live session or a running task, whatever its age", async () => {
-    await agent("review", { status: "review" }, 30);
-    await agent("waiting", { status: "waiting" }, 30);
-    await agent("working", { status: "working" }, 30);
-    await agent("unsaid", { status: null }, 30);
-    await agent("live", { state: "working", session: { id: "s-live-now", startedAt: daysAgo(30) } }, 30);
-    await agent("live-idle", { state: "waiting", session: { id: "s-live-idle", startedAt: daysAgo(30) } }, 30);
-    await agent("tasks", { tasks: 2 }, 30);
+    await agent("review", { status: "review" }, 365);
+    await agent("waiting", { status: "waiting" }, 365);
+    await agent("working", { status: "working" }, 365);
+    await agent("unsaid", { status: null }, 365);
+    await agent("live", { state: "working", session: { id: "s-live-now", startedAt: daysAgo(30) } }, 365);
+    await agent("live-idle", { state: "waiting", session: { id: "s-live-idle", startedAt: daysAgo(30) } }, 365);
+    await agent("tasks", { tasks: 2 }, 365);
     expect(await retire()).toEqual([]);
     for (const name of ["review", "waiting", "working", "unsaid", "live", "live-idle", "tasks"]) expect(state(name)).not.toBe("deleted");
   });
@@ -106,7 +106,7 @@ describe("retireClosed", () => {
 
 describe("startTimers", () => {
   it("retires on its first sweep", async () => {
-    await agent("old", {}, 4);
+    await agent("old", {}, 15);
     let done!: () => void;
     const swept = new Promise<void>((r) => (done = r));
     const stop = startTimers(store, { log: () => {}, now: () => NOW, retire: () => retire().then(done) });
