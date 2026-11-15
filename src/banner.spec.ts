@@ -51,11 +51,12 @@ describe("banner", () => {
     expect(MARK_ICON).toContain("prefers-color-scheme:dark");
   });
 
-  it("is in the README as agency prints it, starting locally", () => {
+  it("opens the README as agency prints it, up to where its parts are", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-    const local = "http://127.0.0.1:4600";
-    const printed = banner({ ...info, url: local, publicUrl: local, db: "~/.local/share/agency/agency.db", services: ["agency"], version: PACKAGE_VERSION });
+    const printed = banner({ ...info, publicUrl: "https://agency.example.com", version: PACKAGE_VERSION });
+    const opening = printed.slice(0, printed.indexOf("\n\n", printed.indexOf("▸ MCP"))).replace(/^\n+/, "");
     expect(readme).toContain(`**${TAGLINE}**`);
-    expect(readme).toContain(`\`\`\`\n${printed.replace(/^\n+|\n+$/g, "")}\n\`\`\``);
+    expect(readme).toContain(`\`\`\`\n${opening}\n\`\`\``);
+    expect(readme).not.toMatch(/https?:\/\/(127\.0\.0\.1|localhost)/);
   });
 });
