@@ -1332,6 +1332,41 @@ describe("an agent's credentials", () => {
     expect(queued().find((c) => c.kind === "start")).not.toHaveProperty("secrets");
   });
 
+  describe("of a service with an instance on some hosts", () => {
+    const starts = (hostId: string) => queued(hostId).filter((c): c is Extract<Command, { kind: "start" }> => c.kind === "start");
+
+    beforeEach(async () => {
+      api = new AgencyApi(store, TOKEN, {
+        now: () => now,
+        poster,
+        socketUrl: SOCKET,
+        credentials: { ...credentials(), "work-tracker": { ...known("work-tracker", "https://wt", "WT"), urlByHost: { desktop: "https://wt-desktop" }, mcp: "/mcp" } },
+      });
+      await beat("desktop", { capacity: 4 });
+    });
+
+    it("gives a session on a host it names that host's address, and one on any other host its url", async () => {
+      await create({ name: "on-desktop", hostId: "desktop", brief: "Go.", credentials: ["work-tracker", "document-service"] });
+      await create({ name: "on-laptop", hostId: "laptop", brief: "Go.", credentials: ["work-tracker", "document-service"] });
+      expect(starts("desktop")[0]!.env).toEqual({ WT_URL: "https://wt-desktop", DS_URL: "https://ds" });
+      expect(starts("laptop")[0]!.env).toEqual({ WT_URL: "https://wt", DS_URL: "https://ds" });
+      expect(starts("desktop")[0]!.mcpServers).toMatchObject({ "work-tracker": { url: "${WT_URL}/mcp" } });
+    });
+
+    it("gives a resumed session, messaged or past its usage limit, the same address as a new one", async () => {
+      const made = await create({ name: "on-desktop", hostId: "desktop", brief: "Go.", credentials: ["work-tracker"] });
+      await endSession(made.id, "desktop");
+      await call("POST", `/agents/${made.id}/messages`, { text: "Again." });
+      expect(starts("desktop").at(-1)).toMatchObject({ resume: true, env: { WT_URL: "https://wt-desktop" } });
+      const live = (await agent(made.id)).session.id;
+      await report("desktop", { agents: [{ id: made.id, state: "idle", sessionId: live, limitedUntil: new Date(now.getTime() + 60_000).toISOString() }] });
+      later(121);
+      expect(await api.resume(() => {})).toEqual(["on-desktop"]);
+      expect(starts("desktop").at(-1)).toMatchObject({ resume: true, text: RESUME_TEXT, env: { WT_URL: "https://wt-desktop" } });
+      expect(starts("desktop")).toHaveLength(3);
+    });
+  });
+
   it("gives an agent this service at the public address it was given, not the one the request came to, by its former name too", async () => {
     api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: credentials(), publicUrl: "https://beta.example.ts.net:8445/" });
     await create({ name: "reviewer-1", brief: "Review PR #18.", credentials: ["agent-service"] });

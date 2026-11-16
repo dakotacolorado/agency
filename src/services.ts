@@ -4,7 +4,10 @@ import { fixedToken, type TokenSource } from "./api.ts";
 import { SELF, selfCredential, type Credential } from "./credentials.ts";
 
 const ServiceSchema = z.strictObject({
+  /** Where a session reaches it, on a host `urlByHost` does not name. */
   url: z.url(),
+  /** Where a session on each of these hosts, by agency host id, reaches it instead: its instance on that host. */
+  urlByHost: z.record(z.string().min(1), z.url()).optional(),
   urlVar: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
   tokenVar: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
   /** The variable of this process's environment its token is read from. */
@@ -25,11 +28,20 @@ export type Services = z.infer<typeof ServicesSchema>;
  */
 export function credentialsOf(services: Services, token: TokenSource, env: NodeJS.ProcessEnv = process.env): Record<string, Credential> {
   const known: Record<string, Credential> = { [SELF]: selfCredential(token) };
-  for (const [name, { url, urlVar, tokenVar, tokenEnv, mcp }] of Object.entries(services)) {
-    known[name] = { url: url.replace(/\/$/, ""), urlVar, tokenVar, token: fixedToken(env[tokenEnv]), mcp: mcp ?? null };
+  for (const [name, { url, urlByHost, urlVar, tokenVar, tokenEnv, mcp }] of Object.entries(services)) {
+    known[name] = {
+      url: trim(url),
+      ...(urlByHost && { urlByHost: Object.fromEntries(Object.entries(urlByHost).map(([host, at]) => [host, trim(at)])) }),
+      urlVar,
+      tokenVar,
+      token: fixedToken(env[tokenEnv]),
+      mcp: mcp ?? null,
+    };
   }
   return known;
 }
+
+const trim = (url: string) => url.replace(/\/$/, "");
 
 /** The services file at `path`, or why it cannot be read. */
 export function readServices(path: string): Services {

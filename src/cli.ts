@@ -30,7 +30,8 @@ Options:
                       HTTPS one (or AGENCY_URL); without it, the address each request came to
   --services <file>   the other services a session may be given, as JSON (or AGENCY_SERVICES):
                       {"<name>": {"url", "urlVar", "tokenVar", "tokenEnv"}}, each token read from
-                      this process's variable tokenEnv
+                      this process's variable tokenEnv; "urlByHost": {"<host id>": "<url>"} gives
+                      a session on that host its own instance's address in place of url
   --retire-closed-after <days>
                       delete agents done and closed for longer than this, on the hourly sweep;
                       0 never (default 14, or AGENCY_RETIRE_CLOSED_AFTER)
