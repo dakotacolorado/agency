@@ -39,6 +39,15 @@ export class NameTaken extends Error {}
 /** A request written since it was read. */
 export class Stale extends Error {}
 
+/** A request for an item someone is on already: `on` names them. */
+export class Taken extends Error {
+  readonly on: string[];
+  constructor(on: string[]) {
+    super(on.join(", "));
+    this.on = on;
+  }
+}
+
 /** A guarded agent written since it was read: read it again and redo the change. */
 export class Conflict extends Error {}
 
@@ -304,6 +313,10 @@ export class Store {
    * so of two writes made from one reading only the first lands; the second throws `Stale`.
    */
   async putRequest(request: AgentRequest): Promise<AgentRequest> {
+    return this.putRequestNow(request);
+  }
+
+  private putRequestNow(request: AgentRequest): AgentRequest {
     const { rev, ...fields } = request;
     const written = { ...fields, rev: randomUUID() };
     const endedAt = request.state === "waiting" ? null : (request.withdrawnAt ?? request.startedAt ?? new Date().toISOString());
@@ -315,6 +328,46 @@ export class Store {
         .run(request.id, written.rev, request.state, endedAt, JSON.stringify(fields));
       return written;
     });
+  }
+
+  /**
+   * Records a new request unless its item already has someone on it: an agent neither deleted nor
+   * `done`, a request waiting, or one started at or after `startedSince` whose agent is not made yet.
+   * The check and the write are one transaction, so of two made at once for one item only the first
+   * lands; the second throws `Taken` naming who is on it.
+   */
+  async addRequestUnlessTaken(request: AgentRequest, startedSince: string): Promise<AgentRequest> {
+    return this.transaction(() => {
+      if (request.item !== null) {
+        const on = this.onItem(request.item, startedSince);
+        if (on.length) throw new Taken(on);
+      }
+      return this.putRequestNow(request);
+    });
+  }
+
+  /** Who is on `item`, as `addRequestUnlessTaken` counts them: agents by name, requests as `<role> request <first 8 of its id>`. */
+  protected onItem(item: string, startedSince: string): string[] {
+    const agents = this.db
+      .prepare(
+        `SELECT json_extract(record, '$.name') AS name FROM agents
+         WHERE json_extract(record, '$.item') = ? AND json_extract(record, '$.state') <> 'deleted'
+           AND coalesce(json_extract(record, '$.status'), '') <> 'done'
+         ORDER BY rowid`,
+      )
+      .all(item)
+      .map((row) => row.name as string);
+    const requests = this.db
+      .prepare(
+        `SELECT id, json_extract(record, '$.role') AS role FROM requests
+         WHERE json_extract(record, '$.item') = ?
+           AND (state = 'waiting'
+             OR (state = 'started' AND json_extract(record, '$.startedAt') >= ? AND NOT EXISTS (SELECT 1 FROM agents WHERE agents.id = requests.id)))
+         ORDER BY json_extract(record, '$.createdAt')`,
+      )
+      .all(item, startedSince)
+      .map((row) => `${row.role as string} request ${(row.id as string).slice(0, 8)}`);
+    return [...agents, ...requests];
   }
 
   /** The last copy of a skill read whole, for a start to fall back on when its source does not answer. */

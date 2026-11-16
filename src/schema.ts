@@ -1350,7 +1350,10 @@ export const createRequestRoute = forClientActing({
     ADMISSION +
     " Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its " +
     "own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's " +
-    "choosing; `agentId` names it. A request names no host or agent name.",
+    "choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for " +
+    "an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being " +
+    "made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so " +
+    "of two asked at once for one item only the first is recorded.",
   request: {
     headers: ClaimHeader,
     body: json(
@@ -1363,6 +1366,12 @@ export const createRequestRoute = forClientActing({
           label: AgentLabel.optional().describe("Absent, the role's."),
           labels: Labels.optional().describe("What the host it is placed on must all carry. Absent, none."),
           credentials: Credentials.optional().describe("In place of the role's, as `CreateAgent` takes them."),
+          another: z
+            .boolean()
+            .optional()
+            .describe(
+              "True to ask for one more agent on `item` though someone is on it already. Absent or false, a request for an item with an agent neither deleted nor `done`, or a request waiting or just started, is refused.",
+            ),
         })
         .openapi("NewAgentRequest"),
       "What kind of agent, and what it is for.",
@@ -1372,6 +1381,7 @@ export const createRequestRoute = forClientActing({
     201: json(RequestSchema, "Recorded, and `started` if it was admitted at once."),
     ...FAILS,
     400: fails(400, "The request failed validation, the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has."),
+    409: fails(409, "Its `item` has an agent or a request on it already, and it did not say `another: true`."),
   },
 });
 

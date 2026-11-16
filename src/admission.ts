@@ -7,6 +7,12 @@ export const USAGE_LIMIT = 0.9;
 /** A reading older than this, of a window that has not reset since, says nothing about now. */
 export const FRESH_FOR_MS = 15 * 60_000;
 
+/**
+ * A request started this recently whose agent is not recorded yet is being made: it is still on its item.
+ * Past this, its making failed without putting it back, and it holds the item no longer.
+ */
+export const MAKING_FOR_MS = 5 * 60_000;
+
 export const REQUEST_STATES = ["waiting", "started", "withdrawn"] as const;
 
 export type RequestState = (typeof REQUEST_STATES)[number];

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { AgencyApi, type TokenSource } from "./api.ts";
-import { FRESH_FOR_MS, inStartOrder, usageRefusal, type AgentRequest } from "./admission.ts";
+import { FRESH_FOR_MS, inStartOrder, MAKING_FOR_MS, usageRefusal, type AgentRequest } from "./admission.ts";
 import type { Credential } from "./credentials.ts";
 import { FakeStore } from "./fake-store.ts";
 import { TEST_ROLES as SEEDED_ROLES, testRoles } from "./test-roles.ts";
@@ -278,5 +278,81 @@ describe("start order", () => {
       [...SEEDED_ROLES],
     );
     expect(order.map((r) => r.id)).toEqual(["b", "d", "c", "a"]);
+  });
+});
+
+describe("one agent to an item", () => {
+  const refused = async (body: object, requester = "person") => {
+    const res = await call("POST", "/requests", body, { "claimed-by": requester });
+    expect(res.status, await res.clone().text()).toBe(409);
+    return ((await res.json()) as { code: string; message: string });
+  };
+
+  it("refuses a second request while the first waits, naming it", async () => {
+    await beat("laptop", 0);
+    await usage(0.1, 0.1);
+    const first = await ask({ role: "implementer", brief: "Go.", item: "task-1" }, "hopper");
+    expect(first.state).toBe("waiting");
+    const no = await refused({ role: "implementer", brief: "Go.", item: "task-1" });
+    expect(no.code).toBe("ConflictException");
+    expect(no.message).toBe(`Not asked for: implementer request ${first.id.slice(0, 8)} is already on task-1. Ask with \`another: true\` for one more.`);
+    expect((await waiting()).map((r) => r.id)).toEqual([first.id]);
+  });
+
+  it("refuses one while an agent not deleted or done is on it, and takes one once it is", async () => {
+    await beat("laptop", 2);
+    await usage(0.1, 0.1);
+    const first = await ask({ role: "implementer", brief: "Go.", item: "task-1" }, "hopper");
+    expect(first.state).toBe("started");
+    expect((await refused({ role: "reviewer", brief: "Go.", item: "task-1" })).message).toContain(`implementer-${first.id.slice(0, 8)} is already on task-1`);
+    const done = await call("PUT", `/agents/${first.id}/status`, { status: "done", summary: "Shipped." });
+    expect(done.status, await done.clone().text()).toBe(200);
+    const second = await ask({ role: "implementer", brief: "Again.", item: "task-1" }, "person");
+    expect(second.state).toBe("started");
+    expect((await call("DELETE", `/agents/${second.id}`)).status).toBe(202);
+    expect((await ask({ role: "implementer", brief: "Once more.", item: "task-1" })).state).toBe("started");
+  });
+
+  it("takes one more when asked with another: true, and any number without an item", async () => {
+    await beat("laptop", 4);
+    await usage(0.1, 0.1);
+    await ask({ role: "implementer", brief: "Go.", item: "task-1" }, "hopper");
+    expect((await ask({ role: "reviewer", brief: "Review it.", item: "task-1", another: true })).state).toBe("started");
+    await ask({ role: "reviewer", brief: "Go." });
+    await ask({ role: "reviewer", brief: "Go." });
+    expect(store.agents.size).toBe(4);
+  });
+
+  it("counts a request started whose agent is still being made", async () => {
+    await beat("laptop", 0);
+    await usage(0.1, 0.1);
+    const first = await ask({ role: "implementer", brief: "Go.", item: "task-1" });
+    const held = (await store.getRequest(first.id))!;
+    await store.putRequest({ ...held, state: "started", startedAt: now.toISOString(), agentId: first.id });
+    await refused({ role: "implementer", brief: "Go.", item: "task-1" });
+    // One that started long ago and made no agent holds the item no longer.
+    later(MAKING_FOR_MS / 1000 + 1);
+    await ask({ role: "implementer", brief: "Go.", item: "task-1" });
+  });
+
+  // hopper's tick and workplace-ui's Start each check that nobody is on the task, then ask: both
+  // checks pass before either asks, as they did on 8472655a, and still only one agent starts.
+  it("starts exactly one agent when hopper's tick and the person's Start race on one ready task", async () => {
+    await beat("laptop", 2);
+    await usage(0.1, 0.1);
+    const nobody = async () => {
+      const agents = ((await (await call("GET", "/agents?item=task-1")).json()) as { agents: unknown[] }).agents;
+      const requests = ((await (await call("GET", "/requests?item=task-1")).json()) as { requests: unknown[] }).requests;
+      return agents.length === 0 && requests.length === 0;
+    };
+    expect(await Promise.all([nobody(), nobody()])).toEqual([true, true]);
+    const [hopper, person] = await Promise.all([
+      call("POST", "/requests", { role: "implementer", brief: "Go.", item: "task-1" }, { "claimed-by": "hopper" }),
+      call("POST", "/requests", { role: "implementer", brief: "Go.", item: "task-1" }, { "claimed-by": "person" }),
+    ]);
+    expect([hopper.status, person.status].sort()).toEqual([201, 409]);
+    const on = [...store.agents.values()].filter((a) => a.item === "task-1");
+    expect(on).toHaveLength(1);
+    expect(on[0]!.state).toBe("working");
   });
 });
