@@ -5,6 +5,8 @@ import type { Command } from "./schema.ts";
 export interface Credential {
   /** Null for this service, whose address is the one a request came to. */
   url: string | null;
+  /** Its address for a session on each of these hosts, by host id, in place of `url`. */
+  urlByHost?: Readonly<Record<string, string>>;
   urlVar: string;
   tokenVar: string;
   token: TokenSource;
@@ -56,13 +58,17 @@ export class Credentials {
     return `No credential is named ${unknown.join(", ")}; this stage has ${known.length ? known.join(", ") : "none"}.`;
   }
 
-  /** The addresses `names` are reached at, by variable; `self` is this service's own. */
-  addresses(names: string[], self: string): Record<string, string> {
+  /**
+   * The addresses `names` are reached at by a session on host `hostId`, by
+   * variable: a service's instance on that host when its `urlByHost` names
+   * one, else its `url`. `self` is this service's own.
+   */
+  addresses(names: string[], self: string, hostId?: string): Record<string, string> {
     return Object.fromEntries(
       names.flatMap((name) => {
         const known = this.#get(name);
         if (!known) return [];
-        const url = known.url ?? self;
+        const url = (hostId !== undefined && Object.hasOwn(known.urlByHost ?? {}, hostId) ? known.urlByHost![hostId] : known.url) ?? self;
         return [[known.urlVar, url], ...(known.legacyVars ? [[known.legacyVars.urlVar, url]] : [])];
       }),
     );

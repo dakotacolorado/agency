@@ -670,12 +670,13 @@ export class AgencyApi {
 
   /**
    * What a session starts with: its honed skills, this service's own clients,
-   * and the addresses of the services the agent is given, `self` this service's.
+   * and the addresses of the services the agent is given, as its host reaches
+   * them, `self` this service's.
    */
   private async attach(self: string, agent: Agent): Promise<Attached> {
     const credentials = agent.credentials ?? this.fleet.credentials.defaults;
     const read = await this.context.forSession(agent.skills ?? []);
-    const env = this.fleet.credentials.addresses(credentials, self);
+    const env = this.fleet.credentials.addresses(credentials, self, agent.hostId);
     const mcpServers = this.fleet.credentials.mcpServers(credentials, agent.name);
     const own = this.skill();
     return { ...read, clients: { key: own.key, version: own.version, commit: own.commit, files: own.files }, env, credentials, mcpServers };

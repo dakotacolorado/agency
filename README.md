@@ -64,7 +64,9 @@ goes in the file:
 
 A session given `waypoint` gets `url` in `$urlVar` and the token, read from
 agency's own `$tokenEnv`, in `$tokenVar`. With `mcp`, the session also gets
-that MCP server. A service named `honed` is where roles and skills are read
+that MCP server. A service that runs an instance on each host can add
+`"urlByHost": {"<host id>": "<url>"}`: a session on a host it names gets that
+address in `$urlVar` instead of `url`. A service named `honed` is where roles and skills are read
 from.
 
 ## Use it
