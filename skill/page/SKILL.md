@@ -1,14 +1,19 @@
 ---
 name: page
-description: Tell the person whether you need them. Use before you end every turn, and whenever you start waiting on them, to say in one line that you are working (including waiting on your own subagents or background work) or waiting on them, and what for.
+description: Set whether you are working, waiting on the person, in review or done, with a headline for your card. Use before you end every turn, and whenever you start waiting on the person. It is a status flag, not where the person reads anything: your question goes in full in the reply that ends your turn.
 ---
 
 # Page
 
-The person sees one line for each agent, and is notified only when an agent
-is **waiting** on them. From outside, a turn that ends on a question, one that
-ends with the work done and one that ends to wait on your own subagents all
-look the same, so you say which it is.
+The page is a status flag. It sets whether you are working (including waiting
+on your own subagents or background work), waiting on the person, in review or
+done, with a short line and a headline for your card. It notifies the person
+only when you are **waiting**, and it sorts the list of agents.
+
+The person does not read the line. The console shows your latest action over
+it, so the reply that ends your turn replaces it within a second, and their
+next message clears it. Everything the person must read, the question, its
+options and links, goes in full in that reply.
 
 ## Calling it
 
@@ -16,20 +21,22 @@ Run `"$CLAUDE_CONFIG_DIR/skills/page/bin/page"` (called `page` below):
 
 ```sh
 page working 'Waiting on 3 review subagents for PR #41' 'Reviewing PR #41'
-page waiting 'Which schema should the status field use?' 'Asks: status schema'
-page waiting 'The criteria on #41 conflict on the retry limit: 3 or 5?' 'Asks: retry limit'
+page waiting 'Asking which schema the status field uses' 'Asks: status schema'
+page waiting 'Asking about the retry limit: the criteria on #41 conflict' 'Asks: retry limit'
 page review 'PR #41 is open for the reviewer the person asked for' 'In review: PR #41'
 page done 'Answered: the queue holds 3 PRs, none failing' 'Answered: queue'
 ```
 
-The line is at most 280 characters. While working, say what you are doing.
-While waiting, say what you need from the person, so they can answer from the
-line alone.
+For each `waiting` above, the reply that follows asks the question in full:
+which schemas, what each means, the criteria that conflict and links to them.
+
+Keep the line short, at most 280 characters: what you are on, or what you are
+asking about.
 
 Give a headline every time, as the third argument: the line in a few words,
 at most 29 characters, that a person can scan in a list of agents. It shows
-on your card; the whole line shows on your page. It goes with the line, so a
-page without one leaves you with none.
+on your card. It goes with the line, so a page without one leaves you with
+none.
 
 ## When
 
@@ -45,34 +52,33 @@ page without one leaves you with none.
   check: page `waiting`. Page only when you can't go on without them.
 - **Mid-turn**, when you need the person but can keep working on something
   else, page `waiting`, then write the question in your reply, in full, before
-  your next tool call, and carry on. The console shows your latest activity
-  over the page line once you act again, so the person may see only your
-  reply: a question in the page line alone can go unseen.
+  your next tool call, and carry on.
 - **Shipping your own change**: while you wait out another agent's deploy, or
   follow your own deploy run, page `working`, naming the PR and the run.
 - **In review**, only when the person has asked for a review of your PR before
   you merge it: page `review`, naming the PR. This does not notify them. An
-  agent in review is kept, not deleted, so a send-back still reaches you; page
-  it last.
+  agent in review is kept, not deleted, so a send-back still reaches you.
 - **An epic ready for sign-off**: the person closes an epic, never you, from
   its review panel. Ask for it only once every story and task under it reads
   `done` or is closed (finish what is open, or close it `not_planned` with the
   reason on its work log); while any of its PRs is not yet merged and deployed,
-  ship it first. Then page `waiting` with one line naming the epic by its short
-  id, which links the person to the panel:
-  `page waiting '00019346 is ready for sign-off: all 3 stories done and in prod' 'Ready: 00019346'`.
+  ship it first. Then page `waiting` naming the epic by its short id,
+  `page waiting '00019346 is ready for sign-off' 'Ready: 00019346'`, and in
+  your reply name the epic, say what shipped, and give the link to its panel.
 - **Done**, when you have finished what was asked, need no review, and have
   nothing left to do or running: page `done`, with the result in one line. Work
-  that changes a repo is `done` only once merged and its deploy succeeded. A
-  agent made to stop or delete once done is stopped then, so page it last,
-  with nothing left to do. Done does not notify the person; if you need them, page `waiting`
-  instead.
+  that changes a repo is `done` only once merged and its deploy succeeded. An
+  agent made to stop or delete once done is stopped once its turn ends, so
+  leave nothing to do after it. Done does not notify the person; if you need
+  them, page `waiting` instead.
 - A message from the person makes you `working` again by itself.
 
-## Ask in your reply
+## Page, then reply
 
-Ask the person in the text of your reply, after paging `waiting`.
+Whatever the status, the order is the same: page, then end the turn with a
+reply that stands on its own. Waiting, the reply holds the whole question, its
+options and links. Done or in review, it holds the answer, or what you shipped
+or submitted and where to look.
 
-The page line is not your reply. Ending `done` or `review`, write the answer,
-or what you submitted, in your reply first, then page last: the line only
-says it in brief.
+Never end on a reply that points elsewhere ("my choices above", "see the
+page"): the person may see only that reply.
