@@ -22,7 +22,7 @@ import {
 import * as routes from "./schema.ts";
 import { ERROR_CODES, type ErrorStatus } from "./schema.ts";
 import type { Command, Heartbeat, RequestView } from "./schema.ts";
-import { NameTaken, Stale, type Change, type Store } from "./store.ts";
+import { NameTaken, Stale, Taken, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
 import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView, type Starting } from "./fleet.ts";
 import { resumeLimited } from "./sweep.ts";
@@ -36,7 +36,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { LOCAL_URL, mcpServer, type Call } from "./mcp.ts";
 import { buildOf, PACKAGE_VERSION, type Build } from "./build.ts";
 import { NO_ROLES, type Role, type RoleSource } from "./roles.ts";
-import { inStartOrder, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
+import { inStartOrder, MAKING_FOR_MS, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
 import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
 
 export const SPEC_PATH = "/openapi.json";
@@ -268,7 +268,7 @@ export class AgencyApi {
       const unknown = credentials && this.fleet.credentials.refuse(credentials);
       if (unknown) return c.json(failure(400, unknown), 400);
       const id = randomUUID();
-      await this.store.putRequest({
+      const request: AgentRequest = {
         id,
         role: role.name,
         brief: asked.brief ?? null,
@@ -284,7 +284,17 @@ export class AgencyApi {
         startedAt: null,
         agentId: null,
         withdrawnAt: null,
-      });
+      };
+      if (asked.another) await this.store.putRequest(request);
+      else {
+        try {
+          await this.store.addRequestUnlessTaken(request, new Date(this.now().getTime() - MAKING_FOR_MS).toISOString());
+        } catch (err) {
+          if (!(err instanceof Taken)) throw err;
+          const on = err.on.join(", ");
+          return c.json(failure(409, `Not asked for: ${on} ${err.on.length > 1 ? "are" : "is"} already on ${request.item}. Ask with \`another: true\` for one more.`), 409);
+        }
+      }
       await this.admitting(this.origin(c));
       return c.json((await this.requestViews()).find((view) => view.id === id)!, 201);
     });

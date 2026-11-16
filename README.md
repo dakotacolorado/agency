@@ -90,6 +90,9 @@ curl -X POST "$AGENCY_URL/requests" \
 - **A request** waits until both usage windows are under 90% and a connected
   host with the right labels has a free slot. The highest-priority role starts
   first, then the oldest. A waiting request says why it waits.
+- **One agent to an item.** A request for an `item` that already has an
+  agent (not deleted or `done`) or a waiting request is refused with 409,
+  naming who is on it. Send `"another": true` to ask for one more anyway.
 - **An agent's status** is what it says through its `page` skill: `working`,
   `waiting` (on you) or `done`. A turn that ends without one reads `waiting`.
   A message to a waiting agent makes it `working`.
