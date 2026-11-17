@@ -20,6 +20,7 @@ import {
   type Sent,
   type WhenDone,
   type Agent,
+  type Session,
 } from "./domain.ts";
 import * as routes from "./schema.ts";
 import { ERROR_CODES, type ErrorStatus } from "./schema.ts";
@@ -34,6 +35,7 @@ import { LETTERS_ONLY, MARK_ICON, MARK_PIXELS, SUMMARY, TAGLINE } from "./banner
 import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { ownSkill, type Skill } from "./skill.ts";
 import { readFileSync } from "node:fs";
+import { ranOn, sessionsCsv, sessionView, type Tally } from "./sessions.ts";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { LOCAL_URL, mcpServer, type Call } from "./mcp.ts";
 import { buildOf, PACKAGE_VERSION, type Build } from "./build.ts";
@@ -167,7 +169,10 @@ export class AgencyApi {
             body: body === undefined ? undefined : JSON.stringify(body),
           }),
         );
-        return { status: res.status, body: res.status === 204 ? null : await res.json() };
+        if (res.status === 204) return { status: res.status, body: null };
+        // A CSV answer is the tool's text as it is.
+        const json = (res.headers.get("content-type") ?? "").startsWith("application/json");
+        return { status: res.status, body: json ? await res.json() : await res.text() };
       };
       const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       await mcpServer(PACKAGE_VERSION, call, claimedBy).connect(transport);
@@ -229,8 +234,9 @@ export class AgencyApi {
   }
 
   /** An agent as it is served, its model as this stage maps its capability. */
-  private view(agent: Agent, host: Host | null) {
-    return agentView(agent, host, this.now(), this.fleet.capabilities);
+  private async view(agent: Agent, host: Host | null) {
+    const current = agent.session ? await this.store.getSession(agent.id, agent.session.id) : null;
+    return agentView(agent, host, this.now(), this.fleet.capabilities, current);
   }
 
   /** The roles in honed's `agent-roles/`, as last read. */
@@ -364,13 +370,14 @@ export class AgencyApi {
         createdBy: c.req.valid("header")["claimed-by"] ?? null,
       });
       if ("refused" in made) return c.json(failure(made.status, made.refused), made.status);
-      return c.json(this.view(made.agent, made.host), 201);
+      return c.json(await this.view(made.agent, made.host), 201);
     });
 
     app.openapi(routes.listAgentsRoute, async (c) => {
       const { createdBy, all, item, role } = c.req.valid("query");
       const now = this.now();
       const hosts = new Map((await this.store.listHosts()).map((h) => [h.id, h]));
+      const live = await this.store.liveSessions();
       const agents = (await this.store.listAgents())
         .filter(
           (w) =>
@@ -380,14 +387,14 @@ export class AgencyApi {
             (all === "true" || item !== undefined || w.state !== "deleted"),
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now, this.fleet.capabilities));
+        .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now, this.fleet.capabilities, live.get(w.id) ?? null));
       return c.json({ agents }, 200);
     });
 
     app.openapi(routes.getAgentRoute, async (c) => {
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      return c.json(this.view(agent, await this.store.getHost(agent.hostId)), 200);
+      return c.json(await this.view(agent, await this.store.getHost(agent.hostId)), 200);
     });
 
     app.openapi(routes.messageAgentRoute, async (c) => afresh(async () => {
@@ -403,7 +410,7 @@ export class AgencyApi {
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
       if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
-      const view = async (w: Agent) => this.view(w, await this.store.getHost(w.hostId));
+      const view = async (w: Agent) => await this.view(w, await this.store.getHost(w.hostId));
       const renamed = {
         ...agent,
         ...(name !== undefined && { name }),
@@ -457,11 +464,11 @@ export class AgencyApi {
       const then = quiet(said) ? onceQuiet(said) : null;
       if (then === "delete") {
         await this.deleteAgent(said);
-        return c.json(this.view((await this.store.getAgent(agent.id))!, await this.store.getHost(agent.hostId)), 200);
+        return c.json(await this.view((await this.store.getAgent(agent.id))!, await this.store.getHost(agent.hostId)), 200);
       }
       const stop: Command[] = then === "stop" && said.session ? [{ kind: "stop", id: randomUUID(), agentId: agent.id }] : [];
       await this.fleet.apply({ agents: [said], queue: inOrder(agent.hostId, stop, this.now()), guarded: true });
-      return c.json(this.view(said, await this.store.getHost(agent.hostId)), 200);
+      return c.json(await this.view(said, await this.store.getHost(agent.hostId)), 200);
     }));
 
     app.openapi(routes.setAgentTitleRoute, async (c) => afresh(async () => {
@@ -474,7 +481,7 @@ export class AgencyApi {
       }
       const titled: Agent = { ...agent, title };
       await this.fleet.apply({ agents: [titled], guarded: true });
-      return c.json(this.view(titled, await this.store.getHost(agent.hostId)), 200);
+      return c.json(await this.view(titled, await this.store.getHost(agent.hostId)), 200);
     }));
 
     app.openapi(routes.setAgentCapabilityRoute, async (c) => afresh(async () => {
@@ -482,17 +489,20 @@ export class AgencyApi {
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
       if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
-      if (capabilityOf(agent) === capability) return c.json(this.view(agent, await this.store.getHost(agent.hostId)), 200);
+      if (capabilityOf(agent) === capability) return c.json(await this.view(agent, await this.store.getHost(agent.hostId)), 200);
       const changed: Agent = { ...agent, capability };
       const commands: Command[] = [];
+      const tallies: Tally[] = [];
       if (agent.session) {
         const host = await this.fleet.reachable(agent);
         if (typeof host === "string") return c.json(failure(409, host), 409);
         const { model, effort } = this.fleet.capabilities[capability];
         commands.push({ kind: "configure", id: randomUUID(), agentId: agent.id, model, effort });
+        const capabilityChange = { at: this.now().toISOString(), from: capabilityOf(agent), to: capability };
+        tallies.push({ agentId: agent.id, sessionId: agent.session.id, capabilityChange });
       }
-      await this.fleet.apply({ agents: [changed], queue: inOrder(agent.hostId, commands, this.now()), guarded: true });
-      return c.json(this.view(changed, await this.store.getHost(agent.hostId)), 200);
+      await this.fleet.apply({ agents: [changed], tallies, queue: inOrder(agent.hostId, commands, this.now()), guarded: true });
+      return c.json(await this.view(changed, await this.store.getHost(agent.hostId)), 200);
     }));
 
     app.openapi(routes.transcriptRoute, async (c) => {
@@ -510,6 +520,29 @@ export class AgencyApi {
 
 
 
+
+    app.openapi(routes.listSessionsRoute, async (c) => {
+      const { item, role, agentId, model, since, until, limit, nextToken, format } = c.req.valid("query");
+      const after = nextToken === undefined ? null : sessionAfter(nextToken);
+      if (after === undefined) return c.json(failure(400, "nextToken: not a token this route issued."), 400);
+      const instant = (at: string | undefined) => (at === undefined ? undefined : new Date(at).toISOString());
+      const matching = (await this.store.listSessions({ item, role, agentId, since: instant(since), until: instant(until) })).filter(
+        (s) => model === undefined || ranOn(s, model),
+      );
+      const view = (s: Session) => sessionView(s, this.fleet.capabilities);
+      if (format === "csv") {
+        return c.body(sessionsCsv(matching.map(view)), 200, {
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": 'attachment; filename="sessions.csv"',
+        });
+      }
+      const from = after === null ? 0 : matching.findIndex((s) => newer(after, s));
+      const rest = from < 0 ? [] : matching.slice(from);
+      const page = rest.slice(0, limit ?? routes.SESSIONS_PAGE);
+      const last = page.at(-1);
+      const more = rest.length > page.length && last;
+      return c.json({ sessions: page.map(view), nextToken: more ? tokenAfter(last) : null }, 200);
+    });
 
     app.openapi(routes.getUsageRoute, async (c) => c.json(await this.fleet.usage(), 200));
 
@@ -783,6 +816,7 @@ export class AgencyApi {
         { name: routes.TAGS.requests, description: "Ask for an agent in a role, started when usage and a host allow." },
         { name: routes.TAGS.roles, description: "What each kind of agent starts with." },
         { name: routes.TAGS.capabilities, description: "The model each capability, 1 to 3, runs an agent on." },
+        { name: routes.TAGS.sessions, description: "What each session spent, and on what, for an audit." },
         { name: routes.TAGS.hosts, description: "See the hosts agents run on." },
         { name: routes.TAGS.usage, description: "The Claude account's allowance used." },
         { name: routes.TAGS.pages, description: "What a page needs to watch agents live." },
@@ -822,6 +856,23 @@ function seqAfter(cursor: string): number | undefined {
   const match = /^sq=(-1|\d{1,16})$/.exec(Buffer.from(cursor, "base64url").toString());
   return match ? Number(match[1]) : undefined;
 }
+
+/** A page of sessions ends at one, named by its sort key; the next starts at the first after it. */
+const tokenAfter = (s: Session) => Buffer.from(JSON.stringify([s.startedAt, s.agentId, s.id])).toString("base64url");
+
+/** Undefined when `token` is not one `tokenAfter` made. */
+function sessionAfter(token: string): [string, string, string] | undefined {
+  try {
+    const key: unknown = JSON.parse(Buffer.from(token, "base64url").toString());
+    return Array.isArray(key) && key.length === 3 && key.every((k) => typeof k === "string") ? (key as [string, string, string]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether `s` sorts after `key` in `listSessions`' order, newest first. */
+const newer = ([startedAt, agentId, id]: [string, string, string], s: Session): boolean =>
+  [s.startedAt, s.agentId, s.id].join("\u0000") < [startedAt, agentId, id].join("\u0000");
 
 function issues(error: { issues: { path: PropertyKey[]; message: string }[] }): string {
   return error.issues

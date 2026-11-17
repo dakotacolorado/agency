@@ -23,6 +23,10 @@
       "description": "The model each capability, 1 to 3, runs an agent on."
     },
     {
+      "name": "Sessions",
+      "description": "What each session spent, and on what, for an audit."
+    },
+    {
       "name": "Hosts",
       "description": "See the hosts agents run on."
     },
@@ -199,6 +203,18 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "description": "How large its session's context is: the input, cache read and cache write tokens of the session's last request to the model. Absent from a host that does not say, or before the session's first request; the last size reported stands."
+          },
+          "activeMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Time its live session has spent in turns so far, in ms: a running total for the session, not since the last report. The service keeps the highest reported. Absent from a host that does not say."
+          },
+          "turns": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Turns its live session has taken so far, a running total; the service keeps the highest reported. Absent from a host that does not say."
           }
         },
         "required": [
@@ -324,6 +340,45 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "description": "Input tokens read from the prompt cache."
+          },
+          "byModel": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Input tokens not read from or written to the prompt cache."
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Output tokens."
+                },
+                "cacheCreationInputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Input tokens written to the prompt cache."
+                },
+                "cacheReadInputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Input tokens read from the prompt cache."
+                }
+              },
+              "required": [
+                "inputTokens",
+                "outputTokens",
+                "cacheCreationInputTokens",
+                "cacheReadInputTokens"
+              ]
+            },
+            "description": "The same running totals split by the model that spent them, keyed by model id, subagents' on their own models. Kept at the highest of each count per model, as the totals are. Absent from a host that does not say; the session's tokens are then all counted on the model it started on."
           }
         },
         "required": [
@@ -1282,6 +1337,9 @@
               "lost"
             ],
             "description": "Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date."
+          },
+          "currentSession": {
+            "$ref": "#/components/schemas/Session"
           }
         },
         "required": [
@@ -1314,7 +1372,8 @@
           "tasks",
           "told",
           "limitedUntil",
-          "hostStatus"
+          "hostStatus",
+          "currentSession"
         ]
       },
       "Tokens": {
@@ -1352,6 +1411,267 @@
           "cacheReadInputTokens"
         ],
         "description": "Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows."
+      },
+      "Session": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Assigned by the service when it queues the session's `start`.",
+            "example": "9d6a1f0e-4b7c-4e21-a3f8-0c5d2e7b4a19"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Assigned by the service when the agent is created.",
+            "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
+          },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Its agent's name as the session started; null on a record whose agent was never on record."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z][a-z0-9-]{0,39}$",
+            "description": "The role its agent was made from; null for none.",
+            "example": "reviewer"
+          },
+          "item": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "The work item its agent was started on; null for none.",
+            "example": "ca147da6-9a30-4d59-b508-e404d21b9dfd"
+          },
+          "capability": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 3,
+            "description": "Its agent's capability as it started; null on a session from before it was kept.",
+            "example": 2
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model it started on; null on a session from before it was kept.",
+            "example": "claude-sonnet-5-5"
+          },
+          "capabilityChanges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "example": "2026-10-27T12:00:00.000Z",
+                  "description": "When `SetAgentCapability` changed it."
+                },
+                "from": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 3,
+                  "description": "The capability before.",
+                  "example": 2
+                },
+                "to": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 3,
+                  "description": "The capability after.",
+                  "example": 2
+                }
+              },
+              "required": [
+                "at",
+                "from",
+                "to"
+              ]
+            },
+            "description": "Each `SetAgentCapability` while it was live, oldest first."
+          },
+          "tokens": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tokens"
+              },
+              {
+                "description": "Its running total, as its host reported it; on a session from before records kept it, its agent's count."
+              }
+            ]
+          },
+          "modelsUsed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "description": "A Claude model id, as Claude Code's `--model` takes it.",
+                  "example": "claude-sonnet-5-5"
+                },
+                "inputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Input tokens not read from or written to the prompt cache."
+                },
+                "outputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Output tokens."
+                },
+                "cacheCreationInputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Input tokens written to the prompt cache."
+                },
+                "cacheReadInputTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "Input tokens read from the prompt cache."
+                },
+                "estimatedCostUsd": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "What its tokens on this model cost; null for a model with no price."
+                }
+              },
+              "required": [
+                "model",
+                "inputTokens",
+                "outputTokens",
+                "cacheCreationInputTokens",
+                "cacheReadInputTokens",
+                "estimatedCostUsd"
+              ]
+            },
+            "description": "Each model's tokens, as its host reported them by model; from a host that reports none by model, all its tokens on `model`. Empty on a session from before its model was kept."
+          },
+          "estimatedCostUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "`modelsUsed`'s costs summed, those with no price left out. An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high. Null on a session from before its model was kept."
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When its `start` was queued."
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-10-27T12:00:00.000Z",
+            "description": "When it stopped, finished or died; null while it is live."
+          },
+          "activeMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Time it spent in turns, in ms, as its host reported; null on a session from before it was kept."
+          },
+          "turns": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Turns it took, as its host reported; null on a session from before it was kept."
+          },
+          "peakContextTokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The largest context its host reported while it was live; null until one is."
+          },
+          "endReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "stopped",
+              "interrupted",
+              "limit",
+              null
+            ],
+            "description": "`stopped`: told to stop, deleted, or its host ended it cleanly. `interrupted`: it died. `limit`: it ended while a usage limit held its agent. Null while live."
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The honed skill."
+                },
+                "version": {
+                  "type": "integer",
+                  "description": "The version it was given."
+                }
+              },
+              "required": [
+                "name",
+                "version"
+              ]
+            },
+            "description": "The honed skills it started with, in order."
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "role",
+          "item",
+          "capability",
+          "model",
+          "capabilityChanges",
+          "tokens",
+          "modelsUsed",
+          "estimatedCostUsd",
+          "startedAt",
+          "endedAt",
+          "activeMs",
+          "turns",
+          "peakContextTokens",
+          "endReason",
+          "skills"
+        ],
+        "description": "Its live session's record, as `ListSessions` lists it, so far; null without a live session."
       },
       "LinesPush": {
         "type": "object",
@@ -1800,14 +2120,75 @@
               "null"
             ],
             "description": "The context size in tokens above which the model's price goes up, as an agent's `overPriceStep` reads it; null for none."
+          },
+          "prices": {
+            "$ref": "#/components/schemas/Prices"
           }
         },
         "required": [
           "capability",
           "model",
           "effort",
-          "priceStepAt"
+          "priceStepAt",
+          "prices"
         ]
+      },
+      "Prices": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Price"
+          },
+          {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "aboveStep": {
+                "$ref": "#/components/schemas/Price"
+              }
+            },
+            "required": [
+              "aboveStep"
+            ]
+          }
+        ],
+        "description": "What its tokens cost, as a session's `estimatedCostUsd` reckons them; null for a model with no price."
+      },
+      "Price": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "input": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Per million input tokens not read from or written to the cache."
+          },
+          "output": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Per million output tokens."
+          },
+          "cacheRead": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Per million input tokens read from the prompt cache."
+          },
+          "cacheWrite": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Per million input tokens written to the prompt cache, at the 1-hour TTL Claude Code uses."
+          }
+        },
+        "required": [
+          "input",
+          "output",
+          "cacheRead",
+          "cacheWrite"
+        ],
+        "description": "What each token costs once the session's context is past `priceStepAt`; null for a model without a step."
       },
       "RoleList": {
         "type": "object",
@@ -2441,6 +2822,36 @@
         "maxLength": 512,
         "description": "Pass as `after` to read what follows. Unchanged when nothing does yet.",
         "example": "c3E9MTI4"
+      },
+      "SessionList": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Session"
+                },
+                {
+                  "description": "One session of an agent: who ran it on what, what it spent and how long it took. Kept after its agent is deleted."
+                }
+              ]
+            },
+            "description": "The sessions, newest first."
+          },
+          "nextToken": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `nextToken` for the next page; null on the last."
+          }
+        },
+        "required": [
+          "sessions",
+          "nextToken"
+        ]
       },
       "SocketTicket": {
         "type": "object",
@@ -4265,6 +4676,194 @@
           },
           "404": {
             "description": "ResourceNotFoundException: No agent has this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ServiceUnavailableException: No API token is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions": {
+      "get": {
+        "operationId": "ListSessions",
+        "summary": "List sessions",
+        "description": "Every agent's sessions, newest first, kept after their agents are deleted or retired, for an audit of what each task, role and model spent. Each filter narrows the list; `since` and `until` bound `startedAt`. Sessions from before their records kept it have tokens, agent, role and item only. An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high. A page holds at most `limit` (100 unless given); pass `nextToken` for the next. With `format=csv`, every matching session at once as CSV, one row each, for a spreadsheet.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "Only sessions of agents started on this work item.",
+              "example": "ca147da6-9a30-4d59-b508-e404d21b9dfd"
+            },
+            "required": false,
+            "description": "Only sessions of agents started on this work item.",
+            "name": "item",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,39}$",
+              "description": "Only sessions of agents made from this role.",
+              "example": "reviewer"
+            },
+            "required": false,
+            "description": "Only sessions of agents made from this role.",
+            "name": "role",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Only this agent's sessions.",
+              "example": "3b0f6c1e-9a52-4c1d-8f43-2a6e1c7d9b10"
+            },
+            "required": false,
+            "description": "Only this agent's sessions.",
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only sessions that started on this model or spent tokens on it.",
+              "example": "claude-sonnet-5-5"
+            },
+            "required": false,
+            "description": "Only sessions that started on this model or spent tokens on it.",
+            "name": "model",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "string",
+                  "format": "date"
+                }
+              ],
+              "description": "Only sessions started at or after this instant, or this UTC day's start."
+            },
+            "required": false,
+            "description": "Only sessions started at or after this instant, or this UTC day's start.",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "string",
+                  "format": "date"
+                }
+              ],
+              "description": "Only sessions started before this instant, or this UTC day's start."
+            },
+            "required": false,
+            "description": "Only sessions started before this instant, or this UTC day's start.",
+            "name": "until",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "At most this many on a page; 100 unless given."
+            },
+            "required": false,
+            "description": "At most this many on a page; 100 unless given.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512,
+              "description": "The `nextToken` of the page before."
+            },
+            "required": false,
+            "description": "The `nextToken` of the page before.",
+            "name": "nextToken",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "csv"
+              ],
+              "description": "`csv` for every matching session as CSV; JSON unless given."
+            },
+            "required": false,
+            "description": "`csv` for every matching session as CSV; JSON unless given.",
+            "name": "format",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "description": "A header row, then one row per session."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ValidationException: The request failed validation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedException: Missing or incorrect bearer token.",
             "content": {
               "application/json": {
                 "schema": {

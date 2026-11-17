@@ -3,6 +3,7 @@ import { backup, DatabaseSync } from "node:sqlite";
 import { DURABLE, KEPT_FOR, unreported, type Host, type Queued, type Sent, type Session, type Agent } from "./domain.ts";
 import type { TranscriptLine, UsageWindow, UsageWindowName } from "./schema.ts";
 import type { AgentRequest } from "./admission.ts";
+import { tallied, type Tally } from "./sessions.ts";
 
 export interface Connection {
   connectionId: string;
@@ -26,12 +27,22 @@ export interface Change {
    */
   guarded?: boolean;
   sessions?: SessionWrite[];
+  /** Merged into each live session's record after `sessions`; one on no session on record changes nothing. */
+  tallies?: Tally[];
   queue?: { hostId: string; queued: Queued }[];
   /** A name taken by a new agent; the write fails as `NameTaken` if an agent not deleted has it. */
   claim?: { name: string; agentId: string };
   release?: string;
   /** Commands taken off their host's queue in the same write, as `settle` does. */
   settled?: { hostId: string; sent: Sent }[];
+}
+
+export interface SessionFilter {
+  agentId?: string;
+  item?: string;
+  role?: string;
+  since?: string;
+  until?: string;
 }
 
 export class NameTaken extends Error {}
@@ -108,6 +119,17 @@ export class Store {
       UPDATE pending SET record = json_set(record, '$.command.kind', 'delete') WHERE json_extract(record, '$.command.kind') = 'retire';
       UPDATE sent SET record = json_set(record, '$.command.kind', 'delete') WHERE json_extract(record, '$.command.kind') = 'retire';
     `);
+    // A session from before its record kept who ran it and its tokens takes them from its agent: its name now, its tokens as counted.
+    db.exec(`
+      UPDATE sessions SET record = json_set(sessions.record,
+        '$.agentName', json_extract(agents.record, '$.name'),
+        '$.role', json_extract(agents.record, '$.role'),
+        '$.item', json_extract(agents.record, '$.item'),
+        '$.tokens', json(coalesce(json_extract(agents.record, '$.sessionTokens."' || sessions.id || '"'),
+          '{"inputTokens":0,"outputTokens":0,"cacheCreationInputTokens":0,"cacheReadInputTokens":0}')))
+      FROM agents WHERE agents.id = sessions.agent_id AND json_extract(sessions.record, '$.agentName') IS NULL;
+      CREATE INDEX IF NOT EXISTS sessions_by_started ON sessions (started_at);
+    `);
   }
 
   /** The database at `path`, made if absent; `:memory:` for one that lasts as long as the process. */
@@ -176,6 +198,11 @@ export class Store {
           .prepare("INSERT INTO sessions (agent_id, id, started_at, record) VALUES (?, ?, ?, ?) ON CONFLICT (agent_id, id) DO UPDATE SET record = excluded.record")
           .run(merged.agentId, merged.id, merged.startedAt, JSON.stringify(merged));
       }
+      for (const tally of change.tallies ?? []) {
+        const held = parse<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? AND id = ?").get(tally.agentId, tally.sessionId));
+        if (!held) continue;
+        this.db.prepare("UPDATE sessions SET record = ? WHERE agent_id = ? AND id = ?").run(JSON.stringify(tallied(held, tally)), tally.agentId, tally.sessionId);
+      }
       for (const { hostId, queued } of change.queue ?? []) {
         this.db
           .prepare("INSERT OR REPLACE INTO pending (host_id, id, queued_at, durable, record) VALUES (?, ?, ?, ?, ?)")
@@ -213,6 +240,35 @@ export class Store {
   /** Oldest first. */
   async sessionsOf(agentId: string): Promise<Session[]> {
     return all<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? ORDER BY started_at, rowid").all(agentId));
+  }
+
+  async getSession(agentId: string, id: string): Promise<Session | null> {
+    return parse<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? AND id = ?").get(agentId, id));
+  }
+
+  /** Every session not ended, by its agent's id. */
+  async liveSessions(): Promise<Map<string, Session>> {
+    return new Map(
+      all<Session>(this.db.prepare("SELECT record FROM sessions WHERE json_extract(record, '$.endedAt') IS NULL ORDER BY started_at, rowid").all()).map((s) => [s.agentId, s]),
+    );
+  }
+
+  /** Newest first, kept whatever became of their agents; `since` and `until` bound `startedAt`, `until` excluded. */
+  async listSessions(filter: SessionFilter = {}): Promise<Session[]> {
+    const where: string[] = [];
+    const args: string[] = [];
+    const on = (sql: string, value: string | undefined) => {
+      if (value === undefined) return;
+      where.push(sql);
+      args.push(value);
+    };
+    on("agent_id = ?", filter.agentId);
+    on("json_extract(record, '$.item') = ?", filter.item);
+    on("json_extract(record, '$.role') = ?", filter.role);
+    on("started_at >= ?", filter.since);
+    on("started_at < ?", filter.until);
+    const sql = `SELECT record FROM sessions ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY started_at DESC, agent_id DESC, id DESC`;
+    return all<Session>(this.db.prepare(sql).all(...args));
   }
 
   /** Keyed by `seq`, so a line sent again overwrites itself. */

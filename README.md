@@ -50,7 +50,7 @@ it serves.
 | `--services` | `AGENCY_SERVICES` | none | JSON file of the other services a session may be given. |
 | `--retire-closed-after` | `AGENCY_RETIRE_CLOSED_AFTER` | `14` | Days an agent stays `done` with no session before the hourly sweep deletes it, as `DeleteAgent` does. `0` never deletes one. |
 | `--default-runtime` | `AGENCY_DEFAULT_RUNTIME` | `container` | Where an agent runs when its request's labels do not include `runtime:host`: `container` or `host`. |
-| `--capabilities` | `AGENCY_CAPABILITIES` | 1 `claude-haiku-5-5`, 2 `claude-sonnet-5-5`, 3 `claude-opus-5-5` | JSON file of the model each capability (1-3) runs an agent on; each capability it names replaces that one's default (see below). |
+| `--capabilities` | `AGENCY_CAPABILITIES` | 1 `claude-haiku-5-5`, 2 `claude-sonnet-5-5`, 3 `claude-opus-5-5`, at list prices | JSON file of the model each capability (1-3) runs an agent on and its `prices`; each capability it names replaces that one's default (see below). |
 | | `AUTH_TOKEN` | none | The token every caller and host presents. Without it, every call but `/health` and `/openapi.json` answers 503. |
 | | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you while an agent is waiting on you or in review (see [How it works](#how-it-works)). Set both or neither. |
 | | `AGENCY_WORKER_PAGE_URL` | agency's own page | The base address a notification links to, with `/workers/<agent id>` appended, such as a workplace-ui. |
@@ -74,14 +74,28 @@ from.
 The capabilities file gives each capability its `model`, an optional
 `effort` (`low`, `medium`, `high` or `xhigh`; null for Claude Code's default)
 and an optional `priceStepAt`, the context size in tokens above which the
-model's price goes up. By default only capability 1 has one, `100000`:
+model's price goes up. By default only capability 1 has one, `100000`.
+Its optional `prices`, in US dollars per million tokens, price each session's
+`estimatedCostUsd`; `aboveStep` gives the prices past `priceStepAt`. An entry
+without `prices` whose model is a default's keeps that model's prices:
 
 ```json
 {
   "1": { "model": "claude-haiku-5-5", "effort": null, "priceStepAt": 100000 },
-  "2": { "model": "claude-sonnet-5-5", "effort": "high" }
+  "2": { "model": "claude-sonnet-5-5", "effort": "high",
+         "prices": { "input": 2, "output": 10, "cacheRead": 0.1, "cacheWrite": 4, "aboveStep": null } }
 }
 ```
+
+The default prices (Anthropic's list prices, 2026-11; cache writes at the
+1-hour TTL Claude Code uses):
+
+| Model | Input | Output | Cache read | Cache write |
+| --- | --- | --- | --- | --- |
+| `claude-opus-5-5` | 4 | 20 | 0.20 | 8 |
+| `claude-sonnet-5-5` | 2 | 10 | 0.10 | 4 |
+| `claude-haiku-5-5`, up to 100k context | 0.10 | 0.50 | 0.01 | 0.20 |
+| `claude-haiku-5-5`, past 100k | 0.50 | 2.50 | 0.05 | 1.00 |
 
 ## Use it
 
@@ -96,6 +110,13 @@ Ask for an agent:
 curl -X POST "$AGENCY_URL/requests" \
   -H "Authorization: Bearer $AUTH_TOKEN" -H 'content-type: application/json' \
   -d '{"role": "implementer", "brief": "Fix the login bug."}'
+```
+
+See what every session on a task spent, and on which models (add
+`&format=csv` for a spreadsheet):
+
+```sh
+curl "$AGENCY_URL/sessions?item=<task id>" -H "Authorization: Bearer $AUTH_TOKEN"
 ```
 
 ## How it works
@@ -135,7 +156,16 @@ curl -X POST "$AGENCY_URL/requests" \
   chosen when the agent is made and kept for its life; each agent's
   `runtime` says which it has.
 - **A session** is one run of an agent. One that dies leaves its agent
-  `interrupted`, and it can be resumed.
+  `interrupted`, and it can be resumed. Each keeps a record, after its agent
+  is deleted too (`GET /sessions`): its agent, role, task, capability and
+  model at start and each capability change, each model's tokens, start, end,
+  time in turns, turns and why it ended. A live agent's `currentSession` is
+  its record so far.
+- **A session's cost** is an estimate at API list prices: the account may be
+  on a subscription, which bills otherwise. agency does not know each
+  request's context size, so a model with a price step is priced above it for
+  the whole session once its context went past `priceStepAt`. Sessions from
+  before records kept them have tokens only, and no cost.
 - **A usage limit** that stops an agent's turn is reported by its host as
   `limitedUntil`, when the limit resets. About a minute after that, agency
   tells the agent its limit has reset and to carry on, starting its session

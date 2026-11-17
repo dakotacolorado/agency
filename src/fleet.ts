@@ -40,6 +40,7 @@ import {
   type Usage,
   type UsageReport,
 } from "./schema.ts";
+import { sessionView, type Tally } from "./sessions.ts";
 import { Conflict, type Change, type SessionWrite, type Store } from "./store.ts";
 
 /**
@@ -126,9 +127,10 @@ export class Fleet {
   async announce(agents: Agent[]): Promise<void> {
     if (!agents.length) return;
     const hosts = new Map((await this.store.listHosts()).map((h) => [h.id, h]));
+    const current = await Promise.all(agents.map((w) => (w.session ? this.store.getSession(w.id, w.session.id) : null)));
     const now = this.now();
     await this.push.toViewers(
-      agents.map((w) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now, this.capabilities) })),
+      agents.map((w, i) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now, this.capabilities, current[i]) })),
     );
   }
 
@@ -198,7 +200,7 @@ export class Fleet {
     const stop: Command = { kind: "stop", id: randomUUID(), agentId: agent.id };
     await this.apply({
       agents: [{ ...agent, state: "idle", session: null, ...afterSession(agent) }],
-      sessions: [{ ...agent.session, agentId: agent.id, endedAt: now.toISOString(), ended: "stopped" }],
+      sessions: [{ ...agent.session, agentId: agent.id, endedAt: now.toISOString(), ended: "stopped", endReason: "stopped" }],
       queue: inOrder(agent.hostId, [stop], now),
       guarded: true,
     });
@@ -215,7 +217,7 @@ export class Fleet {
     const commands: Command[] = [];
     const sessions: SessionWrite[] = [];
     if (agent.session) {
-      sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended: "stopped" });
+      sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended: "stopped", endReason: "stopped" });
       commands.push({ kind: "stop", id: randomUUID(), agentId: agent.id });
     }
     const deletion: Command = { kind: "delete", id: randomUUID(), agentId: agent.id };
@@ -283,10 +285,14 @@ export class Fleet {
     const queue: Change["queue"] = [];
     const settled: NonNullable<Change["settled"]> = [];
     const deleting = new Set<string>();
+    const tallies: Tally[] = [];
+    // A session ending as a usage limit holds it, as it is now or as this report says, ended by the limit.
+    const limitedNow = new Set(report.agents.filter((a) => a.limitedUntil).map((a) => a.id));
 
     const end = (agent: Agent, ended: SessionEnding) => {
       if (!agent.session) return;
-      sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended });
+      const endReason = agent.limitedUntil || limitedNow.has(agent.id) ? "limit" : ended;
+      sessions.push({ ...agent.session, agentId: agent.id, endedAt: at, ended, endReason });
       const next: Agent = {
         ...agent,
         state: ended === "stopped" ? "idle" : "interrupted",
@@ -372,9 +378,13 @@ export class Fleet {
     }
 
     // A limit already resumed from, reported before the resume reached the host, is not set again.
-    for (const { id, limitedUntil, contextTokens } of report.agents) {
+    for (const { id, sessionId, limitedUntil, contextTokens, activeMs, turns } of report.agents) {
       const agent = agents.get(id);
-      if (!agent || agent.state === "deleted") continue;
+      if (!agent) continue;
+      if (sessionId && (activeMs !== undefined || turns !== undefined || contextTokens !== undefined)) {
+        tallies.push({ agentId: id, sessionId, activeMs, turns, contextTokens });
+      }
+      if (agent.state === "deleted") continue;
       const reported = limitedUntil ? new Date(limitedUntil).toISOString() : null;
       const limited = reported !== null && reported === agent.resumed ? null : reported;
       if (limited !== (agent.limitedUntil ?? null)) update(agent, { limitedUntil: limited });
@@ -397,9 +407,10 @@ export class Fleet {
     }
 
     // Counted on a deleted agent too: its last turn's total can arrive in the report that deletes it.
-    for (const { agentId, sessionId, ...reported } of report.tokens ?? []) {
+    for (const { agentId, sessionId, byModel, ...reported } of report.tokens ?? []) {
       const agent = agents.get(agentId);
       if (!agent) continue;
+      tallies.push({ agentId, sessionId, tokens: reported, ...(byModel && { byModel }) });
       const held = agent.sessionTokens?.[sessionId] ?? NO_TOKENS;
       const kept = highest(held, reported);
       if (TOKEN_FIELDS.every((f) => kept[f] === held[f]) && agent.sessionTokens?.[sessionId]) continue;
@@ -407,7 +418,7 @@ export class Fleet {
     }
 
     // Guarded, so a status said, or anything else written, since these agents were read is never put back.
-    await this.apply({ agents: [...changed.values()], sessions, queue, settled, guarded: true });
+    await this.apply({ agents: [...changed.values()], sessions, tallies, queue, settled, guarded: true });
     // Read again, as what this report wrote has a new rev, and deleted even if written since.
     for (const id of deleting) {
       await afresh(async () => {
@@ -442,7 +453,13 @@ const starting = (offered: Queued[], sessionId: string) =>
   offered.some((q) => q.command.kind === "start" && q.command.sessionId === sessionId);
 
 /** An agent as it is served, which `hadSession` and `begun` are not. */
-export const agentView = (agent: Agent, host: Host | null, now: Date, capabilities: CapabilityMap = DEFAULT_CAPABILITIES) => {
+export const agentView = (
+  agent: Agent,
+  host: Host | null,
+  now: Date,
+  capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
+  current: Session | null = null,
+) => {
   const { hadSession: _, begun: __, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, capability: ___________, contextTokens, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
@@ -474,6 +491,7 @@ export const agentView = (agent: Agent, host: Host | null, now: Date, capabiliti
     told: agent.told ?? null,
     limitedUntil: limitedUntil ?? null,
     hostStatus: host ? hostStatus(host.heartbeatAt, now) : ("lost" as const),
+    currentSession: agent.session && current?.id === agent.session.id ? sessionView(current, capabilities) : null,
   };
 };
 
@@ -501,6 +519,16 @@ export function begin(
     startedAt: at,
     endedAt: null,
     ended: null,
+    agentName: agent.name,
+    role: agent.role ?? null,
+    item: agent.item ?? null,
+    capability: capabilityOf(agent),
+    model: runsOn.model,
+    capabilityChanges: [],
+    tokens: NO_TOKENS,
+    activeMs: 0,
+    turns: 0,
+    endReason: null,
     skills: skills.map(({ key, version }) => ({ name: key, version })),
     clients: clients && { version: clients.version, commit: clients.commit },
     contextNote: note,

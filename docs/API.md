@@ -32,6 +32,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [ListHosts](#listhosts): List hosts
 - [ListRequests](#listrequests): List requests
 - [ListRoles](#listroles): List roles
+- [ListSessions](#listsessions): List sessions
 - [ListTranscriptLines](#listtranscriptlines): List transcript lines
 - [PutAgentStatus](#putagentstatus): Put an agent's status
 - [PutAgentTitle](#putagenttitle): Put an agent's title
@@ -75,10 +76,14 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [MessageCommand](#messagecommand)
 - [NewAgent](#newagent)
 - [NewAgentRequest](#newagentrequest)
+- [Price](#price)
+- [Prices](#prices)
 - [Role](#role)
 - [RoleList](#rolelist)
 - [SentCommand](#sentcommand)
 - [SentPush](#sentpush)
+- [Session](#session)
+- [SessionList](#sessionlist)
 - [SessionTokensReport](#sessiontokensreport)
 - [SocketError](#socketerror)
 - [SocketInbound](#socketinbound)
@@ -230,7 +235,46 @@ Content-type: application/json
    "tasks": number,
    "told": boolean,
    "limitedUntil": "string",
-   "hostStatus": "connected | disconnected | lost"
+   "hostStatus": "connected | disconnected | lost",
+   "currentSession": {
+      "id": "string",
+      "agentId": "string",
+      "agentName": "string",
+      "role": "string",
+      "item": "string",
+      "capability": number,
+      "model": "string",
+      "capabilityChanges": [ {
+         "at": "string",
+         "from": number,
+         "to": number
+      } ],
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "modelsUsed": [ {
+         "model": "string",
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number,
+         "estimatedCostUsd": number
+      } ],
+      "estimatedCostUsd": number,
+      "startedAt": "string",
+      "endedAt": "string",
+      "activeMs": number,
+      "turns": number,
+      "peakContextTokens": number,
+      "endReason": "stopped | interrupted | limit | ",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ]
+   }
 }
 ```
 
@@ -355,6 +399,10 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**currentSession**  
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
+Type: [Session](#session) object.
 
 ### Errors
 
@@ -796,7 +844,46 @@ Content-type: application/json
    "tasks": number,
    "told": boolean,
    "limitedUntil": "string",
-   "hostStatus": "connected | disconnected | lost"
+   "hostStatus": "connected | disconnected | lost",
+   "currentSession": {
+      "id": "string",
+      "agentId": "string",
+      "agentName": "string",
+      "role": "string",
+      "item": "string",
+      "capability": number,
+      "model": "string",
+      "capabilityChanges": [ {
+         "at": "string",
+         "from": number,
+         "to": number
+      } ],
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "modelsUsed": [ {
+         "model": "string",
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number,
+         "estimatedCostUsd": number
+      } ],
+      "estimatedCostUsd": number,
+      "startedAt": "string",
+      "endedAt": "string",
+      "activeMs": number,
+      "turns": number,
+      "peakContextTokens": number,
+      "endReason": "stopped | interrupted | limit | ",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ]
+   }
 }
 ```
 
@@ -921,6 +1008,10 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**currentSession**  
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
+Type: [Session](#session) object.
 
 ### Errors
 
@@ -1359,7 +1450,46 @@ Content-type: application/json
       "tasks": number,
       "told": boolean,
       "limitedUntil": "string",
-      "hostStatus": "connected | disconnected | lost"
+      "hostStatus": "connected | disconnected | lost",
+      "currentSession": {
+         "id": "string",
+         "agentId": "string",
+         "agentName": "string",
+         "role": "string",
+         "item": "string",
+         "capability": number,
+         "model": "string",
+         "capabilityChanges": [ {
+            "at": "string",
+            "from": number,
+            "to": number
+         } ],
+         "tokens": {
+            "inputTokens": number,
+            "outputTokens": number,
+            "cacheCreationInputTokens": number,
+            "cacheReadInputTokens": number
+         },
+         "modelsUsed": [ {
+            "model": "string",
+            "inputTokens": number,
+            "outputTokens": number,
+            "cacheCreationInputTokens": number,
+            "cacheReadInputTokens": number,
+            "estimatedCostUsd": number
+         } ],
+         "estimatedCostUsd": number,
+         "startedAt": "string",
+         "endedAt": "string",
+         "activeMs": number,
+         "turns": number,
+         "peakContextTokens": number,
+         "endReason": "stopped | interrupted | limit | ",
+         "skills": [ {
+            "name": "string",
+            "version": number
+         } ]
+      }
    } ]
 }
 ```
@@ -1408,7 +1538,8 @@ Content-type: application/json
       "capability": number,
       "model": "string",
       "effort": "low | medium | high | xhigh | ",
-      "priceStepAt": number
+      "priceStepAt": number,
+      "prices": value
    } ]
 }
 ```
@@ -1625,6 +1756,131 @@ HTTP status: 503
 
 ---
 
+## ListSessions
+
+Every agent's sessions, newest first, kept after their agents are deleted or retired, for an audit of what each task, role and model spent. Each filter narrows the list; `since` and `until` bound `startedAt`. Sessions from before their records kept it have tokens, agent, role and item only. An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high. A page holds at most `limit` (100 unless given); pass `nextToken` for the next. With `format=csv`, every matching session at once as CSV, one row each, for a spreadsheet.
+
+### Request syntax
+
+```http
+GET /sessions?item=item&role=role&agentId=agentId&model=model&since=since&until=until&limit=limit&nextToken=nextToken&format=format HTTP/1.1
+Authorization: Bearer token
+```
+
+### Query parameters
+
+**item**  
+Only sessions of agents started on this work item.  
+Type: String. Length: 1 to 64. Required: No.
+
+**role**  
+Only sessions of agents made from this role.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Required: No.
+
+**agentId**  
+Only this agent's sessions.  
+Type: String. Required: No.
+
+**model**  
+Only sessions that started on this model or spent tokens on it.  
+Type: String. Required: No.
+
+**since**  
+Only sessions started at or after this instant, or this UTC day's start.  
+Type: String. Required: No.
+
+**until**  
+Only sessions started before this instant, or this UTC day's start.  
+Type: String. Required: No.
+
+**limit**  
+At most this many on a page; 100 unless given.  
+Type: Integer. Range: 1 to 1000. Required: No.
+
+**nextToken**  
+The `nextToken` of the page before.  
+Type: String. Length: 0 to 512. Required: No.
+
+**format**  
+`csv` for every matching session as CSV; JSON unless given.  
+Type: String. Valid values: `json` | `csv`. Required: No.
+
+### Response syntax
+
+```http
+HTTP/1.1 200
+Content-type: application/json
+
+{
+   "sessions": [ {
+      "id": "string",
+      "agentId": "string",
+      "agentName": "string",
+      "role": "string",
+      "item": "string",
+      "capability": number,
+      "model": "string",
+      "capabilityChanges": [ {
+         "at": "string",
+         "from": number,
+         "to": number
+      } ],
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "modelsUsed": [ {
+         "model": "string",
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number,
+         "estimatedCostUsd": number
+      } ],
+      "estimatedCostUsd": number,
+      "startedAt": "string",
+      "endedAt": "string",
+      "activeMs": number,
+      "turns": number,
+      "peakContextTokens": number,
+      "endReason": "stopped | interrupted | limit | ",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ]
+   } ],
+   "nextToken": "string"
+}
+```
+
+### Response elements
+
+**sessions**  
+The sessions, newest first.  
+Type: Array of [Session](#session) objects.
+
+**nextToken**  
+Pass as `nextToken` for the next page; null on the last.  
+Type: String. Nullable: Yes.
+
+### Errors
+
+**ValidationException**  
+The request failed validation.  
+HTTP status: 400
+
+**UnauthorizedException**  
+Missing or incorrect bearer token.  
+HTTP status: 401
+
+**ServiceUnavailableException**  
+No API token is configured.  
+HTTP status: 503
+
+---
+
 ## ListTranscriptLines
 
 Poll with the returned `next`, or take `lines` on a socket, to follow it as it grows.
@@ -1790,7 +2046,46 @@ Content-type: application/json
    "tasks": number,
    "told": boolean,
    "limitedUntil": "string",
-   "hostStatus": "connected | disconnected | lost"
+   "hostStatus": "connected | disconnected | lost",
+   "currentSession": {
+      "id": "string",
+      "agentId": "string",
+      "agentName": "string",
+      "role": "string",
+      "item": "string",
+      "capability": number,
+      "model": "string",
+      "capabilityChanges": [ {
+         "at": "string",
+         "from": number,
+         "to": number
+      } ],
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "modelsUsed": [ {
+         "model": "string",
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number,
+         "estimatedCostUsd": number
+      } ],
+      "estimatedCostUsd": number,
+      "startedAt": "string",
+      "endedAt": "string",
+      "activeMs": number,
+      "turns": number,
+      "peakContextTokens": number,
+      "endReason": "stopped | interrupted | limit | ",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ]
+   }
 }
 ```
 
@@ -1915,6 +2210,10 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**currentSession**  
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
+Type: [Session](#session) object.
 
 ### Errors
 
@@ -2020,7 +2319,46 @@ Content-type: application/json
    "tasks": number,
    "told": boolean,
    "limitedUntil": "string",
-   "hostStatus": "connected | disconnected | lost"
+   "hostStatus": "connected | disconnected | lost",
+   "currentSession": {
+      "id": "string",
+      "agentId": "string",
+      "agentName": "string",
+      "role": "string",
+      "item": "string",
+      "capability": number,
+      "model": "string",
+      "capabilityChanges": [ {
+         "at": "string",
+         "from": number,
+         "to": number
+      } ],
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "modelsUsed": [ {
+         "model": "string",
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number,
+         "estimatedCostUsd": number
+      } ],
+      "estimatedCostUsd": number,
+      "startedAt": "string",
+      "endedAt": "string",
+      "activeMs": number,
+      "turns": number,
+      "peakContextTokens": number,
+      "endReason": "stopped | interrupted | limit | ",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ]
+   }
 }
 ```
 
@@ -2145,6 +2483,10 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**currentSession**  
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
+Type: [Session](#session) object.
 
 ### Errors
 
@@ -2324,7 +2666,46 @@ Content-type: application/json
    "tasks": number,
    "told": boolean,
    "limitedUntil": "string",
-   "hostStatus": "connected | disconnected | lost"
+   "hostStatus": "connected | disconnected | lost",
+   "currentSession": {
+      "id": "string",
+      "agentId": "string",
+      "agentName": "string",
+      "role": "string",
+      "item": "string",
+      "capability": number,
+      "model": "string",
+      "capabilityChanges": [ {
+         "at": "string",
+         "from": number,
+         "to": number
+      } ],
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "modelsUsed": [ {
+         "model": "string",
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number,
+         "estimatedCostUsd": number
+      } ],
+      "estimatedCostUsd": number,
+      "startedAt": "string",
+      "endedAt": "string",
+      "activeMs": number,
+      "turns": number,
+      "peakContextTokens": number,
+      "endReason": "stopped | interrupted | limit | ",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ]
+   }
 }
 ```
 
@@ -2449,6 +2830,10 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**currentSession**  
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
+Type: [Session](#session) object.
 
 ### Errors
 
@@ -2622,7 +3007,46 @@ Content-type: application/json
    "tasks": number,
    "told": boolean,
    "limitedUntil": "string",
-   "hostStatus": "connected | disconnected | lost"
+   "hostStatus": "connected | disconnected | lost",
+   "currentSession": {
+      "id": "string",
+      "agentId": "string",
+      "agentName": "string",
+      "role": "string",
+      "item": "string",
+      "capability": number,
+      "model": "string",
+      "capabilityChanges": [ {
+         "at": "string",
+         "from": number,
+         "to": number
+      } ],
+      "tokens": {
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number
+      },
+      "modelsUsed": [ {
+         "model": "string",
+         "inputTokens": number,
+         "outputTokens": number,
+         "cacheCreationInputTokens": number,
+         "cacheReadInputTokens": number,
+         "estimatedCostUsd": number
+      } ],
+      "estimatedCostUsd": number,
+      "startedAt": "string",
+      "endedAt": "string",
+      "activeMs": number,
+      "turns": number,
+      "peakContextTokens": number,
+      "endReason": "stopped | interrupted | limit | ",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ]
+   }
 }
 ```
 
@@ -2747,6 +3171,10 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**currentSession**  
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
+Type: [Session](#session) object.
 
 ### Errors
 
@@ -3049,6 +3477,10 @@ Type: String. Nullable: Yes. Required: Yes.
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`. Required: Yes.
 
+**currentSession**  
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
+Type: [Session](#session) object. Required: Yes.
+
 ## AgentCapability
 
 ### Contents
@@ -3124,6 +3556,14 @@ Type: String. Nullable: Yes. Required: No.
 
 **contextTokens**  
 How large its session's context is: the input, cache read and cache write tokens of the session's last request to the model. Absent from a host that does not say, or before the session's first request; the last size reported stands.  
+Type: Integer. Range: 0 to 9007199254740991. Required: No.
+
+**activeMs**  
+Time its live session has spent in turns so far, in ms: a running total for the session, not since the last report. The service keeps the highest reported. Absent from a host that does not say.  
+Type: Integer. Range: 0 to 9007199254740991. Required: No.
+
+**turns**  
+Turns its live session has taken so far, a running total; the service keeps the highest reported. Absent from a host that does not say.  
 Type: Integer. Range: 0 to 9007199254740991. Required: No.
 
 ## AgentRequest
@@ -3261,6 +3701,10 @@ Type: String. Valid values: `low` | `medium` | `high` | `xhigh` | `null`. Nullab
 **priceStepAt**  
 The context size in tokens above which the model's price goes up, as an agent's `overPriceStep` reads it; null for none.  
 Type: Integer. Nullable: Yes. Required: Yes.
+
+**prices**  
+What its tokens cost, as a session's `estimatedCostUsd` reckons them; null for a model with no price.  
+Type: [Prices](#prices) object. Required: Yes.
 
 ## Command
 
@@ -3648,6 +4092,34 @@ Type: Integer. Range: 1 to 3. Required: No.
 True to ask for one more agent on `item` though someone is on it already. Absent or false, a request for an item with an agent neither deleted nor `done`, or a request waiting or just started, is refused.  
 Type: Boolean. Required: No.
 
+## Price
+
+What each token costs once the session's context is past `priceStepAt`; null for a model without a step.
+
+### Contents
+
+**input**  
+Per million input tokens not read from or written to the cache.  
+Type: Number. Range: 0 to any. Required: Yes.
+
+**output**  
+Per million output tokens.  
+Type: Number. Range: 0 to any. Required: Yes.
+
+**cacheRead**  
+Per million input tokens read from the prompt cache.  
+Type: Number. Range: 0 to any. Required: Yes.
+
+**cacheWrite**  
+Per million input tokens written to the prompt cache, at the 1-hour TTL Claude Code uses.  
+Type: Number. Range: 0 to any. Required: Yes.
+
+## Prices
+
+What its tokens cost, as a session's `estimatedCostUsd` reckons them; null for a model with no price.
+
+### Contents
+
 ## Role
 
 A role, as its honed skill `agent-roles/<name>` defines it: its `SKILL.md` is what an agent in it is told, and its `role.json` these settings.
@@ -3742,6 +4214,96 @@ Type: String. Required: Yes.
 **sent**  
 Type: [SentCommand](#sentcommand) object. Required: Yes.
 
+## Session
+
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.
+
+### Contents
+
+**id**  
+Assigned by the service when it queues the session's `start`.  
+Type: String. Required: Yes.
+
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+**agentName**  
+Its agent's name as the session started; null on a record whose agent was never on record.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**role**  
+The role its agent was made from; null for none.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes. Required: Yes.
+
+**item**  
+The work item its agent was started on; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes. Required: Yes.
+
+**capability**  
+Its agent's capability as it started; null on a session from before it was kept.  
+Type: Integer. Range: 1 to 3. Nullable: Yes. Required: Yes.
+
+**model**  
+The model it started on; null on a session from before it was kept.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**capabilityChanges**  
+Each `SetAgentCapability` while it was live, oldest first.  
+Type: Array of Object. Required: Yes.
+
+**tokens**  
+Its running total, as its host reported it; on a session from before records kept it, its agent's count.  
+Type: [Tokens](#tokens) object. Required: Yes.
+
+**modelsUsed**  
+Each model's tokens, as its host reported them by model; from a host that reports none by model, all its tokens on `model`. Empty on a session from before its model was kept.  
+Type: Array of Object. Required: Yes.
+
+**estimatedCostUsd**  
+`modelsUsed`'s costs summed, those with no price left out. An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high. Null on a session from before its model was kept.  
+Type: Number. Range: 0 to any. Nullable: Yes. Required: Yes.
+
+**startedAt**  
+When its `start` was queued.  
+Type: String. Required: Yes.
+
+**endedAt**  
+When it stopped, finished or died; null while it is live.  
+Type: String. Nullable: Yes. Required: Yes.
+
+**activeMs**  
+Time it spent in turns, in ms, as its host reported; null on a session from before it was kept.  
+Type: Integer. Nullable: Yes. Required: Yes.
+
+**turns**  
+Turns it took, as its host reported; null on a session from before it was kept.  
+Type: Integer. Nullable: Yes. Required: Yes.
+
+**peakContextTokens**  
+The largest context its host reported while it was live; null until one is.  
+Type: Integer. Nullable: Yes. Required: Yes.
+
+**endReason**  
+`stopped`: told to stop, deleted, or its host ended it cleanly. `interrupted`: it died. `limit`: it ended while a usage limit held its agent. Null while live.  
+Type: String. Valid values: `stopped` | `interrupted` | `limit` | `null`. Nullable: Yes. Required: Yes.
+
+**skills**  
+The honed skills it started with, in order.  
+Type: Array of Object. Required: Yes.
+
+## SessionList
+
+### Contents
+
+**sessions**  
+The sessions, newest first.  
+Type: Array of [Session](#session) objects. Required: Yes.
+
+**nextToken**  
+Pass as `nextToken` for the next page; null on the last.  
+Type: String. Nullable: Yes. Required: Yes.
+
 ## SessionTokensReport
 
 A session's running total of tokens so far, not what was used since the last report. The service keeps the highest of each count reported for the session, so a total sent again, or late, never adds twice.
@@ -3771,6 +4333,10 @@ Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
 **cacheReadInputTokens**  
 Input tokens read from the prompt cache.  
 Type: Integer. Range: 0 to 9007199254740991. Required: Yes.
+
+**byModel**  
+The same running totals split by the model that spent them, keyed by model id, subagents' on their own models. Kept at the highest of each count per model, as the totals are. Absent from a host that does not say; the session's tokens are then all counted on the model it started on.  
+Type: Object. Required: No.
 
 ## SocketError
 
