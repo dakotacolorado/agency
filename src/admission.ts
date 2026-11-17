@@ -3,7 +3,7 @@ import type { Role } from "./roles.ts";
 import type { Usage, UsageWindow } from "./schema.ts";
 
 /** At or above this share of either usage window, nothing is admitted. */
-export const USAGE_LIMIT = 0.9;
+export const USAGE_LIMIT = 0.95;
 
 /** A reading older than this, of a window that has not reset since, says nothing about now. */
 export const FRESH_FOR_MS = 15 * 60_000;

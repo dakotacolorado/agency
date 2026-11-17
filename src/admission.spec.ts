@@ -73,12 +73,12 @@ const request = async (id: string) => (await (await call("GET", `/requests/${id}
 const waiting = async () => ((await (await call("GET", "/requests")).json()) as { requests: Record<string, any>[] }).requests;
 
 describe("a request for an agent", () => {
-  it("waits while usage is at or over 90%, and says so", async () => {
+  it("waits while usage is at or over 95%, and says so", async () => {
     await beat("laptop", 2);
-    await usage(0.9, 0.2);
+    await usage(0.95, 0.2);
     const asked = await ask({ role: "reviewer", brief: "Review PR #41.", subject: "PR #41" });
     expect(asked).toMatchObject({ state: "waiting", agentId: null, position: 1 });
-    expect(asked.why).toBe("Waits on usage: 5-hour usage is 90%, at or over 90%.");
+    expect(asked.why).toBe("Waits on usage: 5-hour usage is 95%, at or over 95%.");
     expect(store.agents.size).toBe(0);
   });
 
