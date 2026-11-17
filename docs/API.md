@@ -95,7 +95,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 
 ## CreateAgent
 
-Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.
+Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
 
 ### Request syntax
 
@@ -140,7 +140,7 @@ Where it lives. Absent, the service places it on a `connected` host with room (`
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: No.
 
 **labels**  
-Without `hostId`, what the host it is placed on must all carry.  
+Without `hostId`, what the host it is placed on must all carry. With `runtime:host` among them, it runs on the host rather than in a container (see `runtime`), with or without `hostId`.  
 Type: Array of strings. At most 64 items. Required: No.
 
 **brief**  
@@ -188,6 +188,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
+   "runtime": "container | host",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -255,6 +256,10 @@ Type: String. Nullable: Yes.
 **whenDone**  
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
+
+**runtime**  
+Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
+Type: String. Valid values: `container` | `host`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -346,7 +351,7 @@ HTTP status: 503
 
 ## CreateRequest
 
-Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded.
+Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
 
 ### Request syntax
 
@@ -397,7 +402,7 @@ Absent, the role's.
 Type: String. Length: 1 to 40. Required: No.
 
 **labels**  
-What the host it is placed on must all carry. Absent, none.  
+What the host it is placed on must all carry. Absent, none. With `runtime:host` among them, its agent runs on the host rather than in a container (see the agent's `runtime`); every host carries that label.  
 Type: Array of strings. At most 64 items. Required: No.
 
 **credentials**  
@@ -719,6 +724,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
+   "runtime": "container | host",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -786,6 +792,10 @@ Type: String. Nullable: Yes.
 **whenDone**  
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
+
+**runtime**  
+Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
+Type: String. Valid values: `container` | `host`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -1247,6 +1257,7 @@ Content-type: application/json
       },
       "createdBy": "string",
       "whenDone": "keep | stop | delete",
+      "runtime": "container | host",
       "skills": [ "string" ],
       "credentials": [ "string" ],
       "hostId": "string",
@@ -1622,6 +1633,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
+   "runtime": "container | host",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -1689,6 +1701,10 @@ Type: String. Nullable: Yes.
 **whenDone**  
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
+
+**runtime**  
+Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
+Type: String. Valid values: `container` | `host`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -1827,6 +1843,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
+   "runtime": "container | host",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -1894,6 +1911,10 @@ Type: String. Nullable: Yes.
 **whenDone**  
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
+
+**runtime**  
+Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
+Type: String. Valid values: `container` | `host`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -2174,6 +2195,7 @@ Content-type: application/json
    },
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
+   "runtime": "container | host",
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -2241,6 +2263,10 @@ Type: String. Nullable: Yes.
 **whenDone**  
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`.
+
+**runtime**  
+Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
+Type: String. Valid values: `container` | `host`.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -2517,6 +2543,10 @@ Type: String. Nullable: Yes. Required: Yes.
 **whenDone**  
 What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.  
 Type: String. Valid values: `keep` | `stop` | `delete`. Required: Yes.
+
+**runtime**  
+Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
+Type: String. Valid values: `container` | `host`. Required: Yes.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -3040,7 +3070,7 @@ Where it lives. Absent, the service places it on a `connected` host with room (`
 Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`. Required: No.
 
 **labels**  
-Without `hostId`, what the host it is placed on must all carry.  
+Without `hostId`, what the host it is placed on must all carry. With `runtime:host` among them, it runs on the host rather than in a container (see `runtime`), with or without `hostId`.  
 Type: Array of strings. At most 64 items. Required: No.
 
 **brief**  
@@ -3092,7 +3122,7 @@ Absent, the role's.
 Type: String. Length: 1 to 40. Required: No.
 
 **labels**  
-What the host it is placed on must all carry. Absent, none.  
+What the host it is placed on must all carry. Absent, none. With `runtime:host` among them, its agent runs on the host rather than in a container (see the agent's `runtime`); every host carries that label.  
 Type: Array of strings. At most 64 items. Required: No.
 
 **credentials**  
@@ -3324,6 +3354,10 @@ Type: String. Required: Yes.
 **resume**  
 True to carry on the agent's last conversation (`--continue`), false to begin one.  
 Type: Boolean. Required: Yes.
+
+**runtime**  
+Where the host runs the session: `container` in a container, `host` on the host itself, as the agent's `runtime` says.  
+Type: String. Valid values: `container` | `host`. Required: Yes.
 
 **text**  
 The session's first message, when it has one.  

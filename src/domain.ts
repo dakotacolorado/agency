@@ -92,6 +92,18 @@ export const WHEN_DONE = ["keep", "stop", "delete"] as const;
 
 export type WhenDone = (typeof WHEN_DONE)[number];
 
+/** Where an agent's sessions run: in a container on its host, or on the host itself. */
+export const RUNTIMES = ["container", "host"] as const;
+
+export type Runtime = (typeof RUNTIMES)[number];
+
+/** The request label that runs an agent on the host. */
+export const HOST_RUNTIME_LABEL = "runtime:host";
+
+/** `host` when `labels` asks for it, otherwise the stage's default. */
+export const runtimeFor = (labels: readonly string[], fallback: Runtime): Runtime =>
+  labels.includes(HOST_RUNTIME_LABEL) ? "host" : fallback;
+
 export const SUMMARY_LIMIT = 280;
 
 /** Short enough to fit on one line of an agent's card. */
@@ -203,6 +215,8 @@ export interface Agent {
   role?: string | null;
   createdBy?: string | null;
   whenDone?: WhenDone;
+  /** Chosen when it is made and kept for its life; records written before it lack it, and ran on the host. */
+  runtime?: Runtime;
   /** The honed skills each session is given, by name. */
   skills?: string[];
   /** The services each session is given, by name; absent, every one the stage has. */

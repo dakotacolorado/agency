@@ -142,6 +142,32 @@ describe("agency --retire-closed-after", () => {
   });
 });
 
+describe("agency --default-runtime", () => {
+  it("is in --help with its default and variable", () => {
+    const done = spawnSync(process.execPath, [CLI, "--help"], { env: clean(), encoding: "utf8" });
+    expect(done.stdout).toContain("--default-runtime <container|host>");
+    expect(done.stdout).toContain("(default container, or AGENCY_DEFAULT_RUNTIME)");
+  });
+
+  it("refuses a runtime it does not have", () => {
+    const done = spawnSync(process.execPath, [CLI, "--db", ":memory:", "--port", "0"], { env: { ...clean(), AGENCY_DEFAULT_RUNTIME: "vm" }, encoding: "utf8" });
+    expect(done.status).toBe(1);
+    expect(done.stderr).toContain("--default-runtime must be container or host, not vm");
+  });
+
+  it("makes an agent in a container by default, or in AGENCY_DEFAULT_RUNTIME's, and on the host with runtime:host", async () => {
+    const made = async (url: string, name: string, labels: string[]) =>
+      ((await (await fetch(`${url}/agents`, { method: "POST", headers: auth("a"), body: JSON.stringify({ name, hostId: "laptop", labels }) })).json()) as { runtime: string }).runtime;
+    const plain = await serve(join(temp(), "as.db"), { AUTH_TOKEN: "a" });
+    await hostBeat(plain.url, "a");
+    expect(await made(plain.url, "boxed", [])).toBe("container");
+    expect(await made(plain.url, "bare", ["runtime:host"])).toBe("host");
+    const pinned = await serve(join(temp(), "as.db"), { AUTH_TOKEN: "a", AGENCY_DEFAULT_RUNTIME: "host" });
+    await hostBeat(pinned.url, "a");
+    expect(await made(pinned.url, "pinned", [])).toBe("host");
+  });
+});
+
 describe("agency backup", () => {
   it("copies the database to the file it names", async () => {
     const dir = temp();

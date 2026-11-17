@@ -29,7 +29,7 @@ describe("a client generated from openapi.json", async () => {
     const agent: S["Agent"] = {
       id: "w", name: "frontend-1", hostId: "h",
       state: "idle", session: null, createdAt: "t", reportedAt: null, hostStatus: "lost", title: null, label: null, item: null, role: null,
-      tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, createdBy: null, whenDone: "keep", skills: [], credentials: null,
+      tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, createdBy: null, whenDone: "keep", runtime: "host", skills: [], credentials: null,
       status: null, summary: null, headline: null, saidAt: null, activity: null, tasks: 0, told: null, limitedUntil: null,
     };
     const live: S["Agent"] = { ...agent, state: "working", session: { id: "s", startedAt: "t" } };
@@ -45,7 +45,7 @@ describe("a client generated from openapi.json", async () => {
     const created: S["NewAgent"] = { name: "a", hostId: "h" };
     const commands: S["Command"][] = [
       { kind: "create", id: "c", agentId: "w", name: "a" },
-      { kind: "start", id: "c", agentId: "w", sessionId: "s", resume: false, text: "Go." },
+      { kind: "start", id: "c", agentId: "w", sessionId: "s", resume: false, runtime: "host", text: "Go." },
       { kind: "message", id: "c", agentId: "w", text: "hi" },
       { kind: "interrupt", id: "c", agentId: "w" },
       { kind: "stop", id: "c", agentId: "w" },

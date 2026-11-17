@@ -165,7 +165,7 @@ describe("the shapes", async () => {
     expect(fields("Agent")).toEqual(
       [
         "createdAt", "hostId", "hostStatus", "id", "name", "reportedAt", "session", "state", "title",
-        "label", "item", "role", "tokens", "createdBy", "whenDone", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil",
+        "label", "item", "role", "tokens", "createdBy", "whenDone", "runtime", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil",
       ].sort(),
     );
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
@@ -181,7 +181,7 @@ describe("the shapes", async () => {
     expect(fields("Usage")).toEqual(["fiveHour", "readAt", "sevenDay"]);
     expect(fields("UsageWindow")).toEqual(["hostId", "readAt", "resetsAt", "utilization"]);
     expect(fields("CreateCommand")).toEqual(["id", "kind", "name", "agentId"].sort());
-    expect(fields("StartCommand")).toEqual(["context", "credentials", "documents", "env", "id", "kind", "mcpServers", "resume", "secrets", "sessionId", "text", "agentId"].sort());
+    expect(fields("StartCommand")).toEqual(["context", "credentials", "documents", "env", "id", "kind", "mcpServers", "resume", "runtime", "secrets", "sessionId", "text", "agentId"].sort());
     expect(fields("NewAgent")).toEqual(["brief", "credentials", "hostId", "item", "label", "labels", "name", "role", "skills", "whenDone"]);
     expect(fields("Message")).toEqual(["interrupt", "text"]);
     expect(fields("SocketTicket")).toEqual(["expiresAt", "socketUrl", "ticket"]);

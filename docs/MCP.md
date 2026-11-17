@@ -62,14 +62,14 @@ What the server tells an agent when it connects:
 
 ### create_agent
 
-Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room.
+Records the agent `idle` and queues `create` for its host, which makes its home. With a `brief`, also queues a `start` whose first message is the brief, and the agent is `working` at once. Without a `hostId`, the service chooses a connected host with room. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
 | `name` | string | yes | Unique among agents not deleted. Names its home folder and tmux session on its host. |
 | `role` | string |  | The role it is made from (`ListRoles`): its `skills`, `credentials`, `whenDone`, `label` and `brief` are the agent's, each unless given here, which overrides the role's. A role this stage does not have is refused. |
 | `hostId` | string |  | Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), the one with the most first, carrying every one of `labels`. |
-| `labels` | string[] |  | Without `hostId`, what the host it is placed on must all carry. |
+| `labels` | string[] |  | Without `hostId`, what the host it is placed on must all carry. With `runtime:host` among them, it runs on the host rather than in a container (see `runtime`), with or without `hostId`. |
 | `brief` | string |  | The first session's first message. Absent, the role's, if it has one; otherwise no session starts. |
 | `label` | string |  | Absent, the role's, or without one none. |
 | `item` | string |  | The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none. |
@@ -79,7 +79,7 @@ Records the agent `idle` and queues `create` for its host, which makes its home.
 
 ### create_request
 
-Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded.
+Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 90% (from a reading under 15 minutes old, or one whose window has since reset) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, still admits one request at a time while both windows read under 70%: one starts once none has since that reading, or none in the last 15 minutes, so the agent it starts gives the next reading. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
@@ -88,7 +88,7 @@ Records the request `waiting`, then admits what it can at once. A request starts
 | `item` | string |  | A work-tracker item's id: the epic, story or task the agent was started on. Never changes. |
 | `subject` | string |  | What it is for when that is no work item, such as `PR #41` or `judgment 3f…`: shown, never read. |
 | `label` | string |  | Absent, the role's. |
-| `labels` | string[] |  | What the host it is placed on must all carry. Absent, none. |
+| `labels` | string[] |  | What the host it is placed on must all carry. Absent, none. With `runtime:host` among them, its agent runs on the host rather than in a container (see the agent's `runtime`); every host carries that label. |
 | `credentials` | string[] |  | In place of the role's, as `CreateAgent` takes them. |
 | `another` | boolean |  | True to ask for one more agent on `item` though someone is on it already. Absent or false, a request for an item with an agent neither deleted nor `done`, or a request waiting or just started, is refused. |
 

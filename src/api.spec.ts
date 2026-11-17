@@ -129,6 +129,7 @@ const host = async (id: string) => (await read("/hosts")).hosts.find((h: { id: s
 /** What a start is queued with to reach this service: its address and the name of its token, never the token. */
 /** What every start carries without any honed skill: this service's address, and its own clients. */
 const SELF = {
+  runtime: "container",
   env: { AGENCY_URL: "http://local", AG_URL: "http://local" },
   credentials: ["agency"],
   context: { key: "agency", version: expect.any(Number), files: expect.arrayContaining([expect.objectContaining({ path: "skills/page/bin/page" })]) },
@@ -242,6 +243,7 @@ describe("creating an agent", () => {
       tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
       createdBy: null,
       whenDone: "keep",
+      runtime: "container",
       skills: [],
       credentials: null,
       status: null,
@@ -1477,6 +1479,51 @@ describe("an agent made without naming a host", () => {
     await beat("laptop", { capacity: 1 });
     await beat("desktop", { capacity: 3 });
     expect((await (await make({ hostId: "laptop", labels: ["gpu"] })).json()).hostId).toBe("laptop");
+  });
+});
+
+describe("an agent's runtime", () => {
+  beforeEach(async () => {
+    api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, defaultRuntime: "container" });
+    await beat("laptop", { capacity: 4, labels: ["linux", "runtime:host"] });
+  });
+
+  const startOf = (id: string) => queued().filter((c) => c.kind === "start" && c.agentId === id).at(-1);
+
+  it("is the stage's default without the runtime:host label, and in its start", async () => {
+    const made = await create({ brief: "Go." });
+    expect((await agent(made.id)).runtime).toBe("container");
+    expect(startOf(made.id)).toMatchObject({ kind: "start", runtime: "container" });
+  });
+
+  it("is host with the runtime:host label, placed or not", async () => {
+    const placed = await call("POST", "/agents", { name: "placed-1", labels: ["runtime:host"], brief: "Go." });
+    expect(placed.status, await placed.clone().text()).toBe(201);
+    const { id, hostId, runtime } = await placed.json();
+    expect({ hostId, runtime }).toEqual({ hostId: "laptop", runtime: "host" });
+    expect(startOf(id)).toMatchObject({ runtime: "host" });
+    const named = await create({ name: "named-1", labels: ["runtime:host"] });
+    expect((await agent(named.id)).runtime).toBe("host");
+    expect((await read("/agents")).agents.map((a: { runtime: string }) => a.runtime).sort()).toEqual(["host", "host"]);
+  });
+
+  it("is kept for its life: a resumed session runs where its first did", async () => {
+    const made = await create({ labels: ["runtime:host"], brief: "Go." });
+    await endSession(made.id);
+    api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, defaultRuntime: "container" });
+    const res = await call("POST", `/agents/${made.id}/messages`, { text: "Carry on." });
+    expect(res.status).toBe(202);
+    expect(startOf(made.id)).toMatchObject({ resume: true, runtime: "host" });
+    expect((await agent(made.id)).runtime).toBe("host");
+  });
+
+  it("is host for an agent recorded before runtimes were chosen", async () => {
+    const made = await create();
+    const { runtime: _, ...before } = store.agents.get(made.id)!;
+    store.plant(before);
+    expect((await agent(made.id)).runtime).toBe("host");
+    await call("POST", `/agents/${made.id}/messages`, { text: "Go." });
+    expect(startOf(made.id)).toMatchObject({ runtime: "host" });
   });
 });
 

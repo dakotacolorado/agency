@@ -432,7 +432,7 @@ const starting = (offered: Queued[], sessionId: string) =>
 
 /** An agent as it is served, which `hadSession` and `begun` are not. */
 export const agentView = (agent: Agent, host: Host | null, now: Date) => {
-  const { hadSession: _, begun: __, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
+  const { hadSession: _, begun: __, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
   const { turn: ______, paged: _______, ...rest } = served as typeof served & { turn?: unknown; paged?: unknown };
@@ -445,6 +445,7 @@ export const agentView = (agent: Agent, host: Host | null, now: Date) => {
     tokens: summed(sessionTokens),
     createdBy: createdBy ?? null,
     whenDone: whenDone ?? "keep",
+    runtime: runtime ?? "host",
     skills: skills ?? [],
     // An agent made before credentials were chosen was given today's defaults at each start.
     credentials: credentials ?? null,
@@ -507,6 +508,7 @@ export function begin(
       agentId: agent.id,
       sessionId: session.id,
       resume: agent.hadSession,
+      runtime: agent.runtime ?? "host",
       ...(text !== undefined && { text }),
       ...(clients && { context: { key: clients.key, version: clients.version, files: clients.files } }),
       ...(skills.length && { documents: skills }),

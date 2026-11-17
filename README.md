@@ -49,6 +49,7 @@ it serves.
 | `--public-url` | `AGENCY_URL` | the address each request came to | The address agents and hosts reach agency at. |
 | `--services` | `AGENCY_SERVICES` | none | JSON file of the other services a session may be given. |
 | `--retire-closed-after` | `AGENCY_RETIRE_CLOSED_AFTER` | `14` | Days an agent stays `done` with no session before the hourly sweep deletes it, as `DeleteAgent` does. `0` never deletes one. |
+| `--default-runtime` | `AGENCY_DEFAULT_RUNTIME` | `container` | Where an agent runs when its request's labels do not include `runtime:host`: `container` or `host`. |
 | | `AUTH_TOKEN` | none | The token every caller and host presents. Without it, every call but `/health` and `/openapi.json` answers 503. |
 | | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you while an agent is waiting on you or in review (see [How it works](#how-it-works)). Set both or neither. |
 | | `AGENCY_WORKER_PAGE_URL` | agency's own page | The base address a notification links to, with `/workers/<agent id>` appended, such as a workplace-ui. |
@@ -104,6 +105,13 @@ curl -X POST "$AGENCY_URL/requests" \
   of you. It is taken back as soon as the agent leaves `waiting` or `review`,
   is sent a message or an interrupt, or is deleted or retired. On start and
   every hour, agency takes back any it left open and posts any missing.
+- **Where an agent runs.** Agents run in containers by default. A request
+  whose `labels` include `runtime:host` runs its agent on the host instead,
+  for host work such as installs, `/etc`, podman builds or the host's
+  systemd. **A host agent may not have full functionality:** the host may
+  lack the tools, logins or environment a container gets. The runtime is
+  chosen when the agent is made and kept for its life; each agent's
+  `runtime` says which it has.
 - **A session** is one run of an agent. One that dies leaves its agent
   `interrupted`, and it can be resumed.
 - **A usage limit** that stops an agent's turn is reported by its host as
