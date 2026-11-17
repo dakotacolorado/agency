@@ -273,7 +273,8 @@ Content-type: application/json
       "skills": [ {
          "name": "string",
          "version": number
-      } ]
+      } ],
+      "secretNames": [ "string" ]
    }
 }
 ```
@@ -882,7 +883,8 @@ Content-type: application/json
       "skills": [ {
          "name": "string",
          "version": number
-      } ]
+      } ],
+      "secretNames": [ "string" ]
    }
 }
 ```
@@ -1488,7 +1490,8 @@ Content-type: application/json
          "skills": [ {
             "name": "string",
             "version": number
-         } ]
+         } ],
+         "secretNames": [ "string" ]
       }
    } ]
 }
@@ -1849,7 +1852,8 @@ Content-type: application/json
       "skills": [ {
          "name": "string",
          "version": number
-      } ]
+      } ],
+      "secretNames": [ "string" ]
    } ],
    "nextToken": "string"
 }
@@ -2084,7 +2088,8 @@ Content-type: application/json
       "skills": [ {
          "name": "string",
          "version": number
-      } ]
+      } ],
+      "secretNames": [ "string" ]
    }
 }
 ```
@@ -2357,7 +2362,8 @@ Content-type: application/json
       "skills": [ {
          "name": "string",
          "version": number
-      } ]
+      } ],
+      "secretNames": [ "string" ]
    }
 }
 ```
@@ -2704,7 +2710,8 @@ Content-type: application/json
       "skills": [ {
          "name": "string",
          "version": number
-      } ]
+      } ],
+      "secretNames": [ "string" ]
    }
 }
 ```
@@ -3045,7 +3052,8 @@ Content-type: application/json
       "skills": [ {
          "name": "string",
          "version": number
-      } ]
+      } ],
+      "secretNames": [ "string" ]
    }
 }
 ```
@@ -4292,6 +4300,10 @@ Type: String. Valid values: `stopped` | `interrupted` | `limit` | `null`. Nullab
 The honed skills it started with, in order.  
 Type: Array of Object. Required: Yes.
 
+**secretNames**  
+The environment variables keyring's secrets set in it: names only, never a value. Absent on a session from before they were kept.  
+Type: Array of strings. Required: No.
+
 ## SessionList
 
 ### Contents
@@ -4473,7 +4485,7 @@ The services the session is given, by name, as kept on record. Their tokens are 
 Type: Array of strings. At most 16 items. Required: No.
 
 **secrets**  
-The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host writes them to a file in the agent's folder that only it can read, and the session's environment is set from that file, never from a command line.  
+The tokens of `credentials`, by variable, with the secrets keyring grants the session laid over them (keyring's value wins), read as the command is pushed to the host's socket and never stored, so a listed or replayed command holds none and a rotated secret reaches the next start. The host sets them in the session's environment and writes them nowhere.  
 Type: Object. Required: No.
 
 **mcpServers**  

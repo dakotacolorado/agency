@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Attached } from "./context.ts";
 import { capabilityOf, DEFAULT_CAPABILITIES, type CapabilityMap, type CapabilityModel } from "./capabilities.ts";
 import type { Credentials } from "./credentials.ts";
+import { KeyringUnreachable, NO_SECRETS, type SecretSource } from "./keyring.ts";
 import {
   activityOf,
   afterSession,
@@ -64,6 +65,8 @@ export async function afresh<T>(attempt: () => Promise<T>): Promise<T> {
   }
 }
 
+const RESOLVED_MS = 10 * 60_000;
+
 export class Fleet {
   readonly store: Store;
   readonly push: Push;
@@ -71,6 +74,9 @@ export class Fleet {
   readonly credentials: Credentials;
   readonly notifier: AgentNotifier;
   readonly capabilities: CapabilityMap;
+  private readonly keyring: SecretSource;
+  /** Secrets resolved as a start was made, by its command's id, until the command is pushed: in memory only. */
+  private readonly resolved = new Map<string, { secrets: Record<string, string>; until: number }>();
 
   constructor(
     store: Store,
@@ -79,7 +85,9 @@ export class Fleet {
     credentials: Credentials,
     notifier: AgentNotifier = NO_NOTIFIER,
     capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
+    keyring: SecretSource = NO_SECRETS,
   ) {
+    this.keyring = keyring;
     this.capabilities = capabilities;
     this.store = store;
     this.push = push;
@@ -99,8 +107,9 @@ export class Fleet {
     this.notifier.wrote(change.agents ?? []);
     const byHost = new Map<string, SocketOutbound[]>();
     for (const { hostId, queued } of change.queue ?? []) {
-      const command = await this.credentials.seal(queued.command);
-      byHost.set(hostId, [...(byHost.get(hostId) ?? []), { type: "command", command }]);
+      const command = await this.seal(queued.command);
+      // One that cannot be sealed stays pending, for the host's next replay.
+      if (command) byHost.set(hostId, [...(byHost.get(hostId) ?? []), { type: "command", command }]);
     }
     for (const [hostId, messages] of byHost) await this.push.toHost(hostId, messages);
     await this.announce(change.agents ?? []);
@@ -108,6 +117,48 @@ export class Fleet {
       ...(change.queue ?? []).map(({ queued }) => unreported(queued)),
       ...(change.settled ?? []).map(({ sent }) => sent),
     ]);
+  }
+
+  /**
+   * Resolves the secrets keyring grants the session `command` starts, and holds them in memory for `seal`.
+   * Answers their variable names. Throws `KeyringUnreachable`, before anything is written.
+   */
+  async grant(agent: Agent, command: Command): Promise<string[]> {
+    const secrets = await this.granted(agent);
+    this.resolved.set(command.id, { secrets, until: this.now().getTime() + RESOLVED_MS });
+    return Object.keys(secrets);
+  }
+
+  private async granted(agent: Agent): Promise<Record<string, string>> {
+    const host = await this.store.getHost(agent.hostId);
+    return this.keyring.resolve({ agent: agent.name, role: agent.role ?? null, labels: host?.labels ?? [] });
+  }
+
+  /**
+   * A command as it goes to its host: a `start` carries the tokens of the services it is given, over which
+   * keyring's secrets are laid, so keyring's value wins. Never stored. Null, logged without a value, for a
+   * start whose secrets keyring cannot give now.
+   */
+  async seal(command: Command): Promise<Command | null> {
+    if (command.kind !== "start") return command;
+    const base = (await this.credentials.seal(command)) as typeof command;
+    try {
+      const held = this.resolved.get(command.id);
+      this.resolved.delete(command.id);
+      const now = this.now().getTime();
+      for (const [id, { until }] of this.resolved) if (until < now) this.resolved.delete(id);
+      let granted = held && held.until >= now ? held.secrets : null;
+      if (!granted) {
+        const agent = await this.store.getAgent(command.agentId);
+        granted = agent ? await this.granted(agent) : {};
+      }
+      const secrets = { ...base.secrets, ...granted };
+      return Object.keys(secrets).length ? { ...base, secrets } : base;
+    } catch (err) {
+      if (!(err instanceof KeyringUnreachable)) throw err;
+      console.error(`Not sending start ${command.id}: ${err.message}`);
+      return null;
+    }
   }
 
   /** Off its host's queue, and every viewer told. */
@@ -179,7 +230,13 @@ export class Fleet {
     if (text === undefined) return { refused: `${agent.name} is ${agent.state}, with no session to interrupt.` };
     const full = await this.full(host);
     if (full) return { refused: full };
-    const started = await starting(agent, now.toISOString(), text);
+    let started: Awaited<ReturnType<Starting>>;
+    try {
+      started = await starting(agent, now.toISOString(), text);
+    } catch (err) {
+      if (err instanceof KeyringUnreachable) return { refused: `${err.message}; ${agent.name} was not started without its secrets.` };
+      throw err;
+    }
     await this.apply({
       agents: [{ ...started.agent, ...written }],
       sessions: [started.session],

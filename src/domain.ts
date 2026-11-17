@@ -355,6 +355,8 @@ export interface Session {
   clients: { version: number; commit: string } | null;
   /** Why a skill was left out, or given from honed's last good copy. */
   contextNote: string | null;
+  /** The variables keyring's secrets set in it: names only, never a value. Absent before they were kept. */
+  secretNames?: string[];
 }
 
 /** A host's places are its sessions: an agent with none holds no place. */

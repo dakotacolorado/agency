@@ -53,6 +53,7 @@ it serves.
 | `--capabilities` | `AGENCY_CAPABILITIES` | 1 `claude-haiku-5-5`, 2 `claude-sonnet-5-5`, 3 `claude-opus-5-5`, at list prices | JSON file of the model each capability (1-3) runs an agent on and its `prices`; each capability it names replaces that one's default (see below). |
 | | `AUTH_TOKEN` | none | The token every caller and host presents. Without it, every call but `/health` and `/openapi.json` answers 503. |
 | | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you while an agent is waiting on you or in review (see [How it works](#how-it-works)). Set both or neither. |
+| | `AGENCY_KEYRING_URL`, `AGENCY_KEYRING_TOKEN` | none | A [keyring](https://github.com/dakotacolorado/keyring) server and a resolver token. Each new or resumed session is given the secrets keyring grants it, over the services' tokens: keyring's value wins. While keyring cannot be reached, no session starts and its request says why. Set both or neither. |
 | | `AGENCY_WORKER_PAGE_URL` | agency's own page | The base address a notification links to, with `/workers/<agent id>` appended, such as a workplace-ui. |
 
 The services file names each service and where its token comes from. No token

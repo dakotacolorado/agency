@@ -187,7 +187,7 @@ describe("the shapes", async () => {
     expect(fields("CapabilityModel")).toEqual(["capability", "effort", "model", "priceStepAt", "prices"]);
     expect(fields("Session")).toEqual(
       [
-        "id", "agentId", "agentName", "role", "item", "capability", "model", "capabilityChanges", "tokens", "modelsUsed",
+        "id", "agentId", "secretNames", "agentName", "role", "item", "capability", "model", "capabilityChanges", "tokens", "modelsUsed",
         "estimatedCostUsd", "startedAt", "endedAt", "activeMs", "turns", "peakContextTokens", "endReason", "skills",
       ].sort(),
     );

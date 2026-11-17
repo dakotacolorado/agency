@@ -474,10 +474,10 @@ export const CommandSchema = z
           .record(z.string(), z.string())
           .optional()
           .describe(
-            "The tokens of `credentials`, by variable, read as the command is pushed to the host's socket and " +
-              "never stored, so a listed or replayed command holds none and a rotated secret reaches the next " +
-              "start. The host writes them to a file in the agent's folder that only it can read, and the " +
-              "session's environment is set from that file, never from a command line.",
+            "The tokens of `credentials`, by variable, with the secrets keyring grants the session laid over them " +
+              "(keyring's value wins), read as the command is pushed to the host's socket and never stored, so a " +
+              "listed or replayed command holds none and a rotated secret reaches the next start. The host sets " +
+              "them in the session's environment and writes them nowhere.",
           ),
         mcpServers: z
           .record(
@@ -616,6 +616,10 @@ export const SessionSchema = z
         }),
       )
       .describe("The honed skills it started with, in order."),
+    secretNames: z
+      .array(z.string())
+      .optional()
+      .describe("The environment variables keyring's secrets set in it: names only, never a value. Absent on a session from before they were kept."),
   })
   .describe("One session of an agent: who ran it on what, what it spent and how long it took. Kept after its agent is deleted.")
   .openapi("Session");

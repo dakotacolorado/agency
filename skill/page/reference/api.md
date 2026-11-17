@@ -142,6 +142,7 @@ Its live session's record, as `ListSessions` lists it, so far; null without a li
 | `peakContextTokens` | integer or null | The largest context its host reported while it was live; null until one is. |
 | `endReason` | `stopped`, `interrupted`, `limit`, `null` | `stopped`: told to stop, deleted, or its host ended it cleanly. `interrupted`: it died. `limit`: it ended while a usage limit held its agent. Null while live. |
 | `skills` | {name: string, version: integer}[] | The honed skills it started with, in order. |
+| `secretNames`? | string[] | The environment variables keyring's secrets set in it: names only, never a value. Absent on a session from before they were kept. |
 
 ## Error
 
