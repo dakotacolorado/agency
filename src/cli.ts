@@ -8,6 +8,7 @@ import { parseArgs } from "node:util";
 import { banner, SUMMARY, TAGLINE, WORDMARK } from "./banner.ts";
 import { PACKAGE_VERSION } from "./build.ts";
 import { SELF } from "./credentials.ts";
+import { RUNTIMES, type Runtime } from "./domain.ts";
 import { start, type Running } from "./server.ts";
 import { readServices, type Services } from "./services.ts";
 import { Store } from "./store.ts";
@@ -35,6 +36,9 @@ Options:
   --retire-closed-after <days>
                       delete agents done and closed for longer than this, on the hourly sweep;
                       0 never (default 14, or AGENCY_RETIRE_CLOSED_AFTER)
+  --default-runtime <container|host>
+                      where an agent runs when its labels do not include runtime:host
+                      (default container, or AGENCY_DEFAULT_RUNTIME)
   -h, --help          this
 
 Environment:
@@ -52,6 +56,7 @@ const { values, positionals } = parseArgs({
     services: { type: "string" },
     "public-url": { type: "string" },
     "retire-closed-after": { type: "string" },
+    "default-runtime": { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -116,10 +121,13 @@ if (Boolean(nudgeUrl) !== Boolean(nudgeToken)) fail("AGENCY_NUDGE_URL and AGENCY
 const retireSetting = values["retire-closed-after"] ?? setting("RETIRE_CLOSED_AFTER");
 const retireClosedAfter = retireSetting === undefined || retireSetting.trim() === "" ? RETIRE_CLOSED_AFTER : Number(retireSetting);
 if (!Number.isFinite(retireClosedAfter) || retireClosedAfter < 0) fail(`--retire-closed-after must be a number of days, 0 or more, not ${retireSetting}`);
+const runtimeSetting = (values["default-runtime"] ?? setting("DEFAULT_RUNTIME"))?.trim() || "container";
+if (!(RUNTIMES as readonly string[]).includes(runtimeSetting)) fail(`--default-runtime must be ${RUNTIMES.join(" or ")}, not ${runtimeSetting}`);
+const defaultRuntime = runtimeSetting as Runtime;
 const workerPageUrl = setting("WORKER_PAGE_URL")?.trim() || null;
 const starting = (): Running => {
   try {
-    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl, retireClosedAfter });
+    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl, retireClosedAfter, defaultRuntime });
   } catch (err) {
     return fail((err as Error).message);
   }

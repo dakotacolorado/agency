@@ -356,3 +356,30 @@ describe("one agent to an item", () => {
     expect(on[0]!.state).toBe("working");
   });
 });
+
+describe("the runtime of a request's agent", () => {
+  beforeEach(async () => {
+    api = new AgencyApi(store, TOKEN, {
+      now: () => now,
+      roles: testRoles(),
+      context: { forSession: async () => ({ skills: [], note: null }), refuse: async () => null },
+      defaultRuntime: "container",
+    });
+    await api.beat("laptop", { version: "1", labels: ["runtime:host"], capacity: 4 });
+    await usage(0.1, 0.1);
+  });
+
+  const runtimeOf = async (asked: { agentId: string | null }) =>
+    ((await (await call("GET", `/agents/${asked.agentId}`)).json()) as { runtime: string }).runtime;
+
+  it("is host when its labels include runtime:host, and the stage's default otherwise", async () => {
+    const onHost = await ask({ role: "reviewer", brief: "Go.", subject: "PR #1", labels: ["runtime:host"] });
+    expect(onHost.state).toBe("started");
+    expect(await runtimeOf(onHost)).toBe("host");
+    const inContainer = await ask({ role: "reviewer", brief: "Go.", subject: "PR #2" });
+    expect(inContainer, inContainer.why ?? "").toMatchObject({ state: "started" });
+    expect(await runtimeOf(inContainer)).toBe("container");
+    const starts = (store.commands.get("laptop") ?? []).map((q) => q.command).filter((c) => c.kind === "start");
+    expect(starts.map((c) => (c as { runtime: string }).runtime)).toEqual(["host", "container"]);
+  });
+});

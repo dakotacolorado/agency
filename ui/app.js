@@ -297,6 +297,7 @@ async function agentPage(id) {
       agent.summary && ["Summary", h("span", { class: "text" }, agent.summary, h("span", { class: "muted" }, ` (${when(agent.saidAt)})`))],
       agent.activity && ["Activity", [agent.activity.text, h("span", { class: "muted" }, ` (${when(agent.activity.at)})`)]],
       ["Host", hostCell(agent)],
+      ["Runtime", agent.runtime],
       ["Role", agent.role ?? "none"],
       agent.label && ["Label", agent.label],
       agent.item && ["Item", h("span", { class: "mono" }, agent.item)],

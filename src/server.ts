@@ -3,6 +3,7 @@ import { HonedContext, NO_CONTEXT } from "./context.ts";
 import { credentialsOf, type Services } from "./services.ts";
 import { HonedRoles, NO_ROLES } from "./roles.ts";
 import { Store } from "./store.ts";
+import type { Runtime } from "./domain.ts";
 import { agentPage, NO_NOTIFIER, Nudge } from "./nudge.ts";
 import type { Server } from "node:http";
 import { SocketHandler } from "./socket.ts";
@@ -27,6 +28,8 @@ export interface Config {
   workerPageUrl?: string | null;
   /** Days an agent stays `done` and closed before the sweep deletes it; `0` never. Absent, `RETIRE_CLOSED_AFTER`. */
   retireClosedAfter?: number;
+  /** Where an agent runs when its labels do not ask for the host. Absent, `container`. */
+  defaultRuntime?: Runtime;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -59,6 +62,7 @@ export function start(config: Config): Running {
     context,
     roles,
     notifier,
+    defaultRuntime: config.defaultRuntime ?? "container",
   });
   const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier);
   const retireAfter = config.retireClosedAfter ?? RETIRE_CLOSED_AFTER;

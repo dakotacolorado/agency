@@ -20,6 +20,8 @@ import {
   TITLE_LIMIT,
   WHEN_DONE,
   AGENT_STATES,
+  HOST_RUNTIME_LABEL,
+  RUNTIMES,
 } from "./domain.ts";
 import { FRESH_FOR_MS, REQUEST_STATES, STALE_UNDER, USAGE_LIMIT } from "./admission.ts";
 
@@ -88,6 +90,21 @@ const CredentialNames = z
   .openapi({ example: ["work-tracker", "agency"] });
 
 const Credentials = CredentialNames;
+
+const RUNNING_WHERE =
+  "Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host " +
+  "work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, " +
+  "since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.";
+
+const Runtime = z
+  .enum(RUNTIMES)
+  .describe(
+    "Where its sessions run. `container`: in a container on its host, with the tools, logins and environment " +
+      `agents are given. \`host\`: on the host itself, for host work such as installs, \`/etc\`, podman builds or the ` +
+      "host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or " +
+      `environment a container gets. Chosen when it is made, \`host\` when its labels include \`${HOST_RUNTIME_LABEL}\` and ` +
+      "otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.",
+  );
 
 const WhenDone = z
   .enum(WHEN_DONE)
@@ -371,6 +388,7 @@ export const CommandSchema = z
         resume: z
           .boolean()
           .describe("True to carry on the agent's last conversation (`--continue`), false to begin one."),
+        runtime: Runtime.describe("Where the host runs the session: `container` in a container, `host` on the host itself, as the agent's `runtime` says."),
         text: Text.optional().describe("The session's first message, when it has one."),
         context: ContextSchema.optional().describe(
           "agency's own clients, `page` and `title`, as files to write into the agent's Claude Code " +
@@ -475,6 +493,7 @@ export const AgentSchema = z
       .nullable()
       .describe("The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none."),
     whenDone: WhenDone,
+    runtime: Runtime,
     skills: z.array(z.string()).describe("The honed skills each session is given, by name: its role's own first."),
     credentials: z
       .array(z.string())
@@ -951,7 +970,8 @@ export const createAgentRoute = forClientActing({
   description:
     "Records the agent `idle` and queues `create` for its host, which makes its home. With a " +
     "`brief`, also queues a `start` whose first message is the brief, and the agent is `working` " +
-    "at once. Without a `hostId`, the service chooses a connected host with room.",
+    "at once. Without a `hostId`, the service chooses a connected host with room. " +
+    RUNNING_WHERE,
   request: {
     headers: ClaimHeader,
     body: json(
@@ -966,7 +986,10 @@ export const createAgentRoute = forClientActing({
             "Where it lives. Absent, the service places it on a `connected` host with room (`available` above 0), " +
               "the one with the most first, carrying every one of `labels`.",
           ),
-          labels: Labels.optional().describe("Without `hostId`, what the host it is placed on must all carry."),
+          labels: Labels.optional().describe(
+            "Without `hostId`, what the host it is placed on must all carry. With `runtime:host` among them, it runs on the host " +
+              "rather than in a container (see `runtime`), with or without `hostId`.",
+          ),
           brief: Text.optional().describe("The first session's first message. Absent, the role's, if it has one; otherwise no session starts."),
           label: AgentLabel.optional().describe("Absent, the role's, or without one none."),
           item: ItemId.optional().describe(
@@ -1353,7 +1376,8 @@ export const createRequestRoute = forClientActing({
     "choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for " +
     "an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being " +
     "made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so " +
-    "of two asked at once for one item only the first is recorded.",
+    "of two asked at once for one item only the first is recorded. " +
+    RUNNING_WHERE,
   request: {
     headers: ClaimHeader,
     body: json(
@@ -1364,7 +1388,10 @@ export const createRequestRoute = forClientActing({
           item: ItemId.optional(),
           subject: Subject.optional(),
           label: AgentLabel.optional().describe("Absent, the role's."),
-          labels: Labels.optional().describe("What the host it is placed on must all carry. Absent, none."),
+          labels: Labels.optional().describe(
+            "What the host it is placed on must all carry. Absent, none. With `runtime:host` among them, its agent runs on the " +
+              "host rather than in a container (see the agent's `runtime`); every host carries that label.",
+          ),
           credentials: Credentials.optional().describe("In place of the role's, as `CreateAgent` takes them."),
           another: z
             .boolean()

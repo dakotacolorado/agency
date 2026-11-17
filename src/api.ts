@@ -12,8 +12,10 @@ import {
   keepsPastSession,
   onceQuiet,
   quiet,
+  runtimeFor,
   unreachable,
   type Host,
+  type Runtime,
   type Queued,
   type Sent,
   type WhenDone,
@@ -93,6 +95,8 @@ export interface ApiOptions {
   credentials?: Record<string, Credential>;
   /** Tells the person, through nudge, while an agent waits on them or is in review. */
   notifier?: AgentNotifier;
+  /** Where an agent runs when its labels do not ask for the host. Absent, `container`. */
+  defaultRuntime?: Runtime;
 }
 
 export class AgencyApi {
@@ -105,6 +109,7 @@ export class AgencyApi {
   private readonly socketUrl: string | null;
   private readonly socketPath: string | null;
   private readonly publicUrl: string | null;
+  private readonly defaultRuntime: Runtime;
 
   private readonly context: ContextSource;
   private readonly roleSource: RoleSource;
@@ -118,6 +123,7 @@ export class AgencyApi {
     this.socketUrl = options.socketUrl ?? null;
     this.socketPath = options.socketPath ?? null;
     this.publicUrl = options.publicUrl?.replace(/\/$/, "") ?? null;
+    this.defaultRuntime = options.defaultRuntime ?? "container";
     this.context = options.context ?? NO_CONTEXT;
     this.roleSource = options.roles ?? NO_ROLES;
     this.skill = options.skill ?? ownSkill;
@@ -586,6 +592,7 @@ export class AgencyApi {
         name: nameFor(request),
         role,
         hostId: placed,
+        labels: request.labels,
         ...(request.brief !== null && { brief: request.brief }),
         ...(request.label !== null && { label: request.label }),
         ...(request.item !== null && { item: request.item }),
@@ -638,6 +645,7 @@ export class AgencyApi {
       role: role?.name ?? null,
       createdBy: asked.createdBy,
       whenDone: whenDone ?? "keep",
+      runtime: runtimeFor(labels ?? [], this.defaultRuntime),
       skills,
       ...(credentials && { credentials }),
       state: "idle",
