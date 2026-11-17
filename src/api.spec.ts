@@ -20,6 +20,7 @@ import { RESUME_TEXT, type Command, type SocketOutbound } from "./schema.ts";
 import { SocketHandler } from "./socket.ts";
 import type { ContextSource, Read } from "./context.ts";
 import type { Credential } from "./credentials.ts";
+import { KeyringUnreachable, type Resolving, type SecretSource } from "./keyring.ts";
 import { TEST_ROLES as SEEDED_ROLES, testRoles } from "./test-roles.ts";
 
 const TOKEN = { value: async () => "secret" } satisfies TokenSource;
@@ -1449,6 +1450,121 @@ describe("an agent's credentials", () => {
     expect(pushed().at(-1)).toMatchObject({ resume: true, mcpServers: servers });
     const configs = JSON.stringify(pushed().map((c) => c.mcpServers));
     for (const token of ["wt-1", "secret", "ds-1"]) expect(configs).not.toContain(token);
+  });
+
+  describe("with keyring", () => {
+    let asked: Resolving[];
+    let answer: () => Record<string, string>;
+    const keyring: SecretSource = {
+      resolve: async (who) => {
+        asked.push(who);
+        return answer();
+      },
+    };
+
+    beforeEach(() => {
+      asked = [];
+      answer = () => ({ GH_TOKEN: "gh-secret-1" });
+      api = new AgencyApi(store, TOKEN, { now: () => now, poster, socketUrl: SOCKET, credentials: credentials(), keyring });
+    });
+
+    it("resolves for the agent, its role and its host's labels, and lets keyring's value win over the services'", async () => {
+      await beat("laptop", { capacity: 4, labels: ["gpu"] });
+      answer = () => ({ GH_TOKEN: "gh-secret-1", WT_TOKEN: "from-keyring" });
+      await create({ name: "planner-1", brief: "Go.", credentials: ["work-tracker"] });
+      expect(asked).toEqual([{ agent: "planner-1", role: null, labels: ["gpu"] }]);
+      expect(pushed()[0]!.secrets).toEqual({ WT_TOKEN: "from-keyring", GH_TOKEN: "gh-secret-1" });
+    });
+
+    it("resolves again for a resumed session, and records only the variable names", async () => {
+      const made = await create({ name: "planner-1", brief: "Go.", credentials: [] });
+      await endSession(made.id);
+      answer = () => ({ GH_TOKEN: "gh-secret-2" });
+      await call("POST", `/agents/${made.id}/messages`, { text: "Again." });
+      expect(asked).toHaveLength(2);
+      expect(pushed().at(-1)!.secrets).toEqual({ GH_TOKEN: "gh-secret-2" });
+      expect((await sessionsOf(made.id)).sessions).toContainEqual(expect.objectContaining({ secretNames: ["GH_TOKEN"] }));
+      const all = await everything(made.id);
+      expect(all).not.toContain("gh-secret");
+      expect(all).toContain("GH_TOKEN");
+    });
+
+    it("does not start a new agent while keyring is unreachable, saying why", async () => {
+      answer = () => {
+        throw new KeyringUnreachable("fetch failed");
+      };
+      const res = await call("POST", "/agents", { name: "planner-1", hostId: "laptop", brief: "Go." });
+      expect(res.status).toBe(503);
+      expect((await res.json()).message).toContain("keyring unreachable");
+      expect(pushed()).toHaveLength(0);
+    });
+
+    it("does not start or resume a message's session while keyring is unreachable, and the agent stays idle", async () => {
+      const made = await create({ name: "planner-1", brief: "Go." });
+      await endSession(made.id);
+      const before = pushed().length;
+      answer = () => {
+        throw new KeyringUnreachable("fetch failed");
+      };
+      const res = await call("POST", `/agents/${made.id}/messages`, { text: "Again." });
+      expect(await res.text()).toContain("keyring unreachable");
+      expect(pushed()).toHaveLength(before);
+      expect((await agent(made.id)).session).toBeNull();
+    });
+
+    describe("when its host holds a session it will not run without secrets", () => {
+      const needs = async (id: string, sessionId: string) => {
+        const connectionId = "restarted";
+        await store.putConnection({ connectionId, kind: "host", hostId: "laptop", connectedAt: now.toISOString() });
+        await new SocketHandler(store, TOKEN, poster, () => now, credentials(), undefined, undefined, undefined, keyring, () => api.restartWaiting(() => {})).handle({
+          requestContext: { connectionId, eventType: "MESSAGE" },
+          body: JSON.stringify({ type: "report", agents: [{ id, state: "waiting", sessionId, needsStart: true }] }),
+        });
+      };
+
+      it("answers with a start that resumes it, carrying freshly resolved secrets, and does not ask twice", async () => {
+        const made = await create({ name: "planner-1", brief: "Go." });
+        const old = (await agent(made.id)).session.id;
+        answer = () => ({ GH_TOKEN: "after-restart" });
+        await needs(made.id, old);
+        const starts = pushed();
+        expect(starts).toHaveLength(2);
+        expect(starts[1]).toMatchObject({ resume: true, secrets: { GH_TOKEN: "after-restart" } });
+        expect(starts[1]!.sessionId).not.toBe(old);
+        expect((await agent(made.id)).session.id).toBe(starts[1]!.sessionId);
+        // The host still reports the old session until it takes the start: nothing more is sent.
+        await needs(made.id, old);
+        expect(pushed()).toHaveLength(2);
+        expect(await everything(made.id)).not.toContain("after-restart");
+      });
+
+      it("waits, saying keyring is unreachable, and starts it once keyring answers", async () => {
+        const made = await create({ name: "planner-1", brief: "Go." });
+        const old = (await agent(made.id)).session.id;
+        answer = () => {
+          throw new KeyringUnreachable("fetch failed");
+        };
+        await needs(made.id, old);
+        expect(pushed()).toHaveLength(1);
+        expect(JSON.stringify(await agent(made.id))).toContain("keyring unreachable");
+        answer = () => ({ GH_TOKEN: "back" });
+        expect(await api.restartWaiting(() => {})).toEqual(["planner-1"]);
+        expect(pushed()[1]).toMatchObject({ resume: true, secrets: { GH_TOKEN: "back" } });
+      });
+    });
+
+    it("withholds a replayed start it cannot resolve, rather than sending it without its secrets", async () => {
+      await create({ name: "planner-1", brief: "Go." });
+      answer = () => {
+        throw new KeyringUnreachable("fetch failed");
+      };
+      await store.putConnection({ connectionId: "again", kind: "host", hostId: "laptop", connectedAt: now.toISOString() });
+      await new SocketHandler(store, TOKEN, poster, () => now, credentials(), undefined, undefined, undefined, keyring).handle({
+        requestContext: { connectionId: "again", eventType: "MESSAGE" },
+        body: JSON.stringify({ type: "ping" }),
+      });
+      expect(poster.to("again").filter((m) => m.type === "command" && m.command.kind === "start")).toEqual([]);
+    });
   });
 
   it("starts without a token it cannot read", async () => {

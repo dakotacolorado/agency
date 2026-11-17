@@ -2,6 +2,7 @@ import { fixedToken, AgencyApi } from "./api.ts";
 import { HonedContext, NO_CONTEXT } from "./context.ts";
 import { credentialsOf, type Services } from "./services.ts";
 import { HonedRoles, NO_ROLES } from "./roles.ts";
+import { Keyring } from "./keyring.ts";
 import { Store } from "./store.ts";
 import type { Runtime } from "./domain.ts";
 import type { CapabilityMap } from "./capabilities.ts";
@@ -23,6 +24,8 @@ export interface Config {
   services: Services;
   /** This service's address as agents and hosts reach it, such as its Tailscale HTTPS one. */
   publicUrl?: string | null;
+  /** keyring, which resolves each session's secrets with a resolver token; without it, a session is given only the services' tokens. */
+  keyring?: { url: string; token: string } | null;
   /** nudge, which tells the person while an agent waits on them or is in review; without it, nobody is told. */
   nudge?: { url: string; token: string } | null;
   /** Where nudge's notifications link, as a base `/workers/<agent id>` is appended to; without it, agency's own page. */
@@ -57,6 +60,7 @@ export function start(config: Config): Running {
   const roles = honed?.url ? new HonedRoles({ url: honed.url, token: honed.token }, store) : NO_ROLES;
   const sockets = new Sockets();
   const notifier = config.nudge ? new Nudge(config.nudge.url, config.nudge.token, agentPage(config.publicUrl, config.workerPageUrl)) : NO_NOTIFIER;
+  const keyring = config.keyring ? new Keyring(config.keyring.url, config.keyring.token) : undefined;
   const api = new AgencyApi(store, token, {
     poster: sockets,
     socketPath: SOCKET_PATH,
@@ -65,10 +69,11 @@ export function start(config: Config): Running {
     context,
     roles,
     notifier,
+    ...(keyring && { keyring }),
     defaultRuntime: config.defaultRuntime ?? "container",
     ...(config.capabilities && { capabilities: config.capabilities }),
   });
-  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier, api.fleet.capabilities);
+  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier, api.fleet.capabilities, keyring, () => api.restartWaiting());
   const retireAfter = config.retireClosedAfter ?? RETIRE_CLOSED_AFTER;
   const stopTimers = startTimers(store, {
     retire: () => retireClosed(api.fleet, retireAfter),

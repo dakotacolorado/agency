@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AgencyApi, type TokenSource } from "./api.ts";
 import { FRESH_FOR_MS, inStartOrder, MAKING_FOR_MS, usageRefusal, type AgentRequest } from "./admission.ts";
 import type { Credential } from "./credentials.ts";
+import { KeyringUnreachable } from "./keyring.ts";
 import { FakeStore } from "./fake-store.ts";
 import { TEST_ROLES as SEEDED_ROLES, testRoles } from "./test-roles.ts";
 
@@ -86,6 +87,31 @@ describe("a request for an agent", () => {
     await usage(0.1, 0.1);
     const asked = await ask({ role: "reviewer", brief: "Go." });
     expect(asked).toMatchObject({ state: "waiting", why: "Waits on a host: No connected host has room for an agent." });
+  });
+
+  it("waits, saying keyring is unreachable, rather than starting without its secrets", async () => {
+    let up = false;
+    api = new AgencyApi(store, TOKEN, {
+      now: () => now,
+      roles: testRoles(),
+      context: { forSession: async () => ({ skills: [], note: null }), refuse: async () => null },
+      credentials: { agency: known("agency", null, "AG") },
+      keyring: {
+        resolve: async () => {
+          if (!up) throw new KeyringUnreachable("fetch failed");
+          return { GH_TOKEN: "gh-secret" };
+        },
+      },
+    });
+    await beat("laptop", 2);
+    await usage(0.1, 0.1);
+    const asked = await ask({ role: "reviewer", brief: "Go." });
+    expect(asked).toMatchObject({ state: "waiting", agentId: null });
+    expect(asked.why).toContain("keyring unreachable");
+    expect(store.agents.size).toBe(0);
+    up = true;
+    await api.admit("http://local");
+    expect(await request(asked.id)).toMatchObject({ state: "started" });
   });
 
   it("waits on usage never reported, or read too long ago, but not on a window since reset", async () => {

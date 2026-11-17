@@ -27,11 +27,12 @@ import { ERROR_CODES, type ErrorStatus } from "./schema.ts";
 import type { Command, Heartbeat, RequestView } from "./schema.ts";
 import { NameTaken, Stale, Taken, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
-import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView, type Starting } from "./fleet.ts";
+import { Fleet, afresh, begin, conflicted, hostView, inOrder, sentView, agentView, type Starting } from "./fleet.ts";
 import { resumeLimited } from "./sweep.ts";
 import { NO_SOCKET, Push, type Poster } from "./push.ts";
 import { NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
 import { LETTERS_ONLY, MARK_ICON, MARK_PIXELS, SUMMARY, TAGLINE } from "./banner.ts";
+import { KeyringUnreachable, NO_SECRETS, type SecretSource } from "./keyring.ts";
 import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { ownSkill, type Skill } from "./skill.ts";
 import { readFileSync } from "node:fs";
@@ -96,6 +97,8 @@ export interface ApiOptions {
   skill?: () => Skill;
   /** The services an agent may be given, by name; without them, only this one. */
   credentials?: Record<string, Credential>;
+  /** Where each session's secrets are resolved; without one, a session is given only the services' tokens. */
+  keyring?: SecretSource;
   /** Tells the person, through nudge, while an agent waits on them or is in review. */
   notifier?: AgentNotifier;
   /** Where an agent runs when its labels do not ask for the host. Absent, `container`. */
@@ -139,6 +142,7 @@ export class AgencyApi {
       new Credentials(options.credentials ?? { [SELF]: selfCredential(token) }),
       options.notifier ?? NO_NOTIFIER,
       options.capabilities ?? DEFAULT_CAPABILITIES,
+      options.keyring ?? NO_SECRETS,
     );
     this.hono = new OpenAPIHono({
       defaultHook: (result, c) =>
@@ -730,7 +734,13 @@ export class AgencyApi {
     const commands: Command[] = [{ kind: "create", id: randomUUID(), agentId: id, name }];
     const sessions = [];
     if (brief !== undefined) {
-      const started = await this.starting(self, agent, at, brief);
+      let started: Awaited<ReturnType<AgencyApi["starting"]>>;
+      try {
+        started = await this.starting(self, agent, at, brief);
+      } catch (err) {
+        if (err instanceof KeyringUnreachable) return { refused: `${err.message}; ${name} was not started without its secrets.`, status: 503 };
+        throw err;
+      }
       agent = started.agent;
       sessions.push(started.session);
       commands.push(started.command);
@@ -768,14 +778,52 @@ export class AgencyApi {
     return (agent, at, text) => this.starting(self, agent, at, text);
   }
 
+  /**
+   * Starts again each agent whose host holds its session but will not run it without a start's secrets
+   * (`needsStart`, after the host restarted or swapped in): a start that resumes it, with freshly resolved
+   * secrets. While keyring cannot be reached it starts none and says so on the agent's activity; the next
+   * call tries again. Answers the names started.
+   */
+  async restartWaiting(log: (line: string) => void = console.log): Promise<string[]> {
+    const started: string[] = [];
+    for (const agent of await this.store.listAgents()) {
+      if (!agent.needsStart || agent.state === "deleted" || !agent.session) continue;
+      const now = this.now();
+      const at = now.toISOString();
+      try {
+        const made = await this.starting(this.publicUrl ?? "http://local", agent, at);
+        const { needsStart: _, ...rest } = made.agent;
+        await this.fleet.apply({
+          agents: [{ ...rest, hadSession: true }],
+          sessions: [{ ...agent.session, agentId: agent.id, endedAt: at, ended: "interrupted", endReason: "interrupted" }, made.session],
+          queue: inOrder(agent.hostId, [made.command], now),
+          guarded: true,
+        });
+        started.push(agent.name);
+        log(JSON.stringify({ restarted: agent.name, session: made.session.id }));
+      } catch (err) {
+        if (err instanceof KeyringUnreachable) {
+          log(JSON.stringify({ restarted: "waits", agent: agent.name, why: err.message }));
+          const text = `Waits to be started again: ${err.message}.`;
+          if (agent.activity?.text !== text) await this.fleet.apply({ agents: [{ ...agent, activity: { text, at } }], guarded: true }).catch(() => {});
+        } else if (!conflicted(err)) log(JSON.stringify({ restarted: "failed", agent: agent.name, error: (err as Error).message }));
+      }
+    }
+    return started;
+  }
+
   /** Resumes each agent whose usage limit has reset; see `resumeLimited`. Run every `RESUME_SECONDS`. */
-  resume(log?: (line: string) => void): Promise<string[]> {
+  async resume(log?: (line: string) => void): Promise<string[]> {
+    await this.restartWaiting(log);
     return resumeLimited(this.fleet, this.starter(this.publicUrl ?? "http://local"), log);
   }
 
   /** A new session, with what it starts with. */
   private async starting(self: string, agent: Agent, at: string, text?: string): Promise<ReturnType<typeof begin>> {
-    return begin(agent, at, text, await this.attach(self, agent), this.fleet.capabilities[capabilityOf(agent)]);
+    const started = begin(agent, at, text, await this.attach(self, agent), this.fleet.capabilities[capabilityOf(agent)]);
+    // Before anything is written: keyring unreachable means no session, not one without its secrets.
+    const secretNames = await this.fleet.grant(agent, started.command);
+    return secretNames.length ? { ...started, session: { ...started.session, secretNames } } : started;
   }
 
   /**

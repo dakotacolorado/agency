@@ -230,6 +230,8 @@ export interface Agent {
   hadSession: boolean;
   /** The session its host has reported it started; never served. */
   begun?: string | null;
+  /** Its host holds its session but will not run it without a start's secrets, and said so; cleared by the start made for it. Never served. */
+  needsStart?: boolean;
   /** Background tasks and subagents its live session has open, as its host last said; 0 without one. */
   tasks?: number;
   /** Whether its live session's current or last turn began with a message delivered to it; null when its host has not said. */
@@ -355,6 +357,8 @@ export interface Session {
   clients: { version: number; commit: string } | null;
   /** Why a skill was left out, or given from honed's last good copy. */
   contextNote: string | null;
+  /** The variables keyring's secrets set in it: names only, never a value. Absent before they were kept. */
+  secretNames?: string[];
 }
 
 /** A host's places are its sessions: an agent with none holds no place. */

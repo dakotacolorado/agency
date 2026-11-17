@@ -47,6 +47,8 @@ Options:
   -h, --help          this
 
 Environment:
+  AGENCY_KEYRING_URL, AGENCY_KEYRING_TOKEN
+                  keyring and a resolver token: each session is given the secrets it grants
   AUTH_TOKEN      the bearer token every caller and host presents
 
 Without AUTH_TOKEN, every call but /health and /openapi.json answers 503.
@@ -124,6 +126,9 @@ const publicUrl = values["public-url"] ?? setting("URL") ?? null;
 // nudge, which tells the person when an agent waits on them: both settings, or neither.
 const nudgeUrl = setting("NUDGE_URL")?.trim(), nudgeToken = setting("NUDGE_TOKEN")?.trim();
 if (Boolean(nudgeUrl) !== Boolean(nudgeToken)) fail("AGENCY_NUDGE_URL and AGENCY_NUDGE_TOKEN go together: set both, or neither");
+// keyring, which gives each session its secrets: both settings, or neither.
+const keyringUrl = setting("KEYRING_URL")?.trim(), keyringToken = setting("KEYRING_TOKEN")?.trim();
+if (Boolean(keyringUrl) !== Boolean(keyringToken)) fail("KEYRING_URL and KEYRING_TOKEN go together: set both, or neither");
 const retireSetting = values["retire-closed-after"] ?? setting("RETIRE_CLOSED_AFTER");
 const retireClosedAfter = retireSetting === undefined || retireSetting.trim() === "" ? RETIRE_CLOSED_AFTER : Number(retireSetting);
 if (!Number.isFinite(retireClosedAfter) || retireClosedAfter < 0) fail(`--retire-closed-after must be a number of days, 0 or more, not ${retireSetting}`);
@@ -142,7 +147,7 @@ if (capabilitiesFile) {
 const workerPageUrl = setting("WORKER_PAGE_URL")?.trim() || null;
 const starting = (): Running => {
   try {
-    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl, retireClosedAfter, defaultRuntime, ...(capabilities && { capabilities }) });
+    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, keyring: keyringUrl && keyringToken ? { url: keyringUrl, token: keyringToken } : null, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl, retireClosedAfter, defaultRuntime, ...(capabilities && { capabilities }) });
   } catch (err) {
     return fail((err as Error).message);
   }

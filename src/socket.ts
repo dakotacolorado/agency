@@ -2,6 +2,7 @@ import type { TokenSource } from "./api.ts";
 import { withdrawn } from "./domain.ts";
 import { hash, same } from "./secret.ts";
 import { DEFAULT_CAPABILITIES, type CapabilityMap } from "./capabilities.ts";
+import { NO_SECRETS, type SecretSource } from "./keyring.ts";
 import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { Fleet } from "./fleet.ts";
 import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
@@ -39,6 +40,7 @@ export class SocketHandler {
   private readonly token: TokenSource;
   private readonly now: () => Date;
   private readonly fleet: Fleet;
+  private readonly onNeedStart: () => Promise<unknown>;
   private readonly onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void>;
 
   constructor(
@@ -50,12 +52,15 @@ export class SocketHandler {
     onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void> = async () => {},
     notifier: AgentNotifier = NO_NOTIFIER,
     capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
+    keyring: SecretSource = NO_SECRETS,
+    onNeedStart: () => Promise<unknown> = async () => {},
   ) {
+    this.onNeedStart = onNeedStart;
     this.onHeartbeat = onHeartbeat;
     this.store = store;
     this.token = token;
     this.now = now;
-    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials), notifier, capabilities);
+    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials), notifier, capabilities, keyring);
   }
 
   async handle(event: SocketEvent): Promise<SocketResult> {
@@ -128,6 +133,7 @@ export class SocketHandler {
     }
     const { agents = [], lines = [], commandResults = [], tokens = [], usage } = message;
     await this.fleet.report(connection.hostId!, { agents, lines, commandResults, tokens });
+    if (agents.some((a) => a.needsStart)) await this.onNeedStart().catch((err) => console.error("Could not start again what its host holds:", (err as Error).name));
     if (usage) await this.fleet.reportUsage(connection.hostId!, usage);
     return { statusCode: 200 };
   }
@@ -147,9 +153,8 @@ export class SocketHandler {
     const pending = (await this.store.pending(connection.hostId!)).filter(
       (queued) => !withdrawn(queued, now) && !reported.has(queued.command.id),
     );
-    const commands = await Promise.all(
-      pending.map(async ({ command }) => ({ type: "command" as const, command: await this.fleet.credentials.seal(command) })),
-    );
+    const sealed = await Promise.all(pending.map(async ({ command }) => this.fleet.seal(command)));
+    const commands = sealed.flatMap((command) => (command ? [{ type: "command" as const, command }] : []));
     await this.fleet.push.toConnection(connection.connectionId, ...commands);
   }
 }
