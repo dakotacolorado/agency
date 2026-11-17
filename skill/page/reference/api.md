@@ -105,6 +105,7 @@ Body: `AgentTitle`. What the agent names itself.
 | `told` | boolean or null | Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said. |
 | `limitedUntil` | string or null (date-time) | When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too. |
 | `hostStatus` | `connected`, `disconnected`, `lost` | Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date. |
+| `currentSession` | `Session` |  |
 
 ## Tokens
 
@@ -116,6 +117,31 @@ Tokens its sessions have used, summed, as its host reported each session's runni
 | `outputTokens` | integer (≥ 0, ≤ 9007199254740991) | Output tokens. |
 | `cacheCreationInputTokens` | integer (≥ 0, ≤ 9007199254740991) | Input tokens written to the prompt cache. |
 | `cacheReadInputTokens` | integer (≥ 0, ≤ 9007199254740991) | Input tokens read from the prompt cache. |
+
+## Session
+
+Its live session's record, as `ListSessions` lists it, so far; null without a live session.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | string (uuid) | Assigned by the service when it queues the session's `start`. |
+| `agentId` | string (uuid) | Assigned by the service when the agent is created. |
+| `agentName` | string or null | Its agent's name as the session started; null on a record whose agent was never on record. |
+| `role` | string or null | The role its agent was made from; null for none. |
+| `item` | string or null (min 1, max 64) | The work item its agent was started on; null for none. |
+| `capability` | integer or null (≥ 1, ≤ 3) | Its agent's capability as it started; null on a session from before it was kept. |
+| `model` | string or null | The model it started on; null on a session from before it was kept. |
+| `capabilityChanges` | {at: string (date-time), from: integer (≥ 1, ≤ 3), to: integer (≥ 1, ≤ 3)}[] | Each `SetAgentCapability` while it was live, oldest first. |
+| `tokens` | `Tokens` and any |  |
+| `modelsUsed` | {model: string, inputTokens: integer (≥ 0, ≤ 9007199254740991), outputTokens: integer (≥ 0, ≤ 9007199254740991), cacheCreationInputTokens: integer (≥ 0, ≤ 9007199254740991), cacheReadInputTokens: integer (≥ 0, ≤ 9007199254740991), estimatedCostUsd: number or null (≥ 0)}[] | Each model's tokens, as its host reported them by model; from a host that reports none by model, all its tokens on `model`. Empty on a session from before its model was kept. |
+| `estimatedCostUsd` | number or null (≥ 0) | `modelsUsed`'s costs summed, those with no price left out. An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high. Null on a session from before its model was kept. |
+| `startedAt` | string (date-time) | When its `start` was queued. |
+| `endedAt` | string or null (date-time) | When it stopped, finished or died; null while it is live. |
+| `activeMs` | integer or null | Time it spent in turns, in ms, as its host reported; null on a session from before it was kept. |
+| `turns` | integer or null | Turns it took, as its host reported; null on a session from before it was kept. |
+| `peakContextTokens` | integer or null | The largest context its host reported while it was live; null until one is. |
+| `endReason` | `stopped`, `interrupted`, `limit`, `null` | `stopped`: told to stop, deleted, or its host ended it cleanly. `interrupted`: it died. `limit`: it ended while a usage limit held its agent. Null while live. |
+| `skills` | {name: string, version: integer}[] | The honed skills it started with, in order. |
 
 ## Error
 

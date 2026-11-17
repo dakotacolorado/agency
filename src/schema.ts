@@ -11,7 +11,7 @@ import {
   LINE_LIMIT,
   LOST_AFTER,
   REPORTED_STATES,
-  SESSION_ENDINGS,
+  END_REASONS,
   ACTIVITY_LIMIT,
   SAID,
   STATUSES,
@@ -307,6 +307,23 @@ export const AgentReportSchema = z
           "request to the model. Absent from a host that does not say, or before the session's first request; the last " +
           "size reported stands.",
       ),
+    activeMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .optional()
+      .describe(
+        "Time its live session has spent in turns so far, in ms: a running total for the session, not since the last report. " +
+          "The service keeps the highest reported. Absent from a host that does not say.",
+      ),
+    turns: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .optional()
+      .describe("Turns its live session has taken so far, a running total; the service keeps the highest reported. Absent from a host that does not say."),
   })
   .openapi("AgentReport");
 
@@ -329,6 +346,14 @@ export const SessionTokensReportSchema = z
     agentId: AgentId,
     sessionId: SessionId,
     ...tokenFields,
+    byModel: z
+      .record(z.string().min(1).max(100), z.object(tokenFields))
+      .optional()
+      .describe(
+        "The same running totals split by the model that spent them, keyed by model id, subagents' on their own models. " +
+          "Kept at the highest of each count per model, as the totals are. Absent from a host that does not say; the session's " +
+          "tokens are then all counted on the model it started on.",
+      ),
   })
   .describe(
     "A session's running total of tokens so far, not what was used since the last report. The service " +
@@ -515,6 +540,86 @@ const HostStatus = z
       `most ${2 * HEARTBEAT_INTERVAL} seconds. \`disconnected\`: at most ${LOST_AFTER}. \`lost\`: longer.`,
   );
 
+const Dollars = z.number().min(0).describe("US dollars at Anthropic's API list prices, as the capability map's `prices` give them.");
+
+const PriceSchema = z
+  .object({
+    input: Dollars.describe("Per million input tokens not read from or written to the cache."),
+    output: Dollars.describe("Per million output tokens."),
+    cacheRead: Dollars.describe("Per million input tokens read from the prompt cache."),
+    cacheWrite: Dollars.describe("Per million input tokens written to the prompt cache, at the 1-hour TTL Claude Code uses."),
+  })
+  .openapi("Price");
+
+const PricesSchema = PriceSchema.extend({
+  aboveStep: PriceSchema.nullable().describe(
+    "What each token costs once the session's context is past `priceStepAt`; null for a model without a step.",
+  ),
+}).openapi("Prices");
+
+const COST_NOTE =
+  "An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, " +
+  "which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it " +
+  "for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high.";
+
+export const SessionSchema = z
+  .object({
+    id: SessionId,
+    agentId: AgentId,
+    agentName: z.string().nullable().describe("Its agent's name as the session started; null on a record whose agent was never on record."),
+    role: RoleName.nullable().describe("The role its agent was made from; null for none."),
+    item: ItemId.nullable().describe("The work item its agent was started on; null for none."),
+    capability: Capability.nullable().describe("Its agent's capability as it started; null on a session from before it was kept."),
+    model: ModelName.nullable().describe("The model it started on; null on a session from before it was kept."),
+    capabilityChanges: z
+      .array(
+        z.object({
+          at: Instant.describe("When `SetAgentCapability` changed it."),
+          from: Capability.describe("The capability before."),
+          to: Capability.describe("The capability after."),
+        }),
+      )
+      .describe("Each `SetAgentCapability` while it was live, oldest first."),
+    tokens: TokensSchema.describe("Its running total, as its host reported it; on a session from before records kept it, its agent's count."),
+    modelsUsed: z
+      .array(
+        z.object({
+          model: ModelName,
+          ...tokenFields,
+          estimatedCostUsd: Dollars.nullable().describe("What its tokens on this model cost; null for a model with no price."),
+        }),
+      )
+      .describe(
+        "Each model's tokens, as its host reported them by model; from a host that reports none by model, all its tokens on " +
+          "`model`. Empty on a session from before its model was kept.",
+      ),
+    estimatedCostUsd: Dollars.nullable().describe(
+      `\`modelsUsed\`'s costs summed, those with no price left out. ${COST_NOTE} Null on a session from before its model was kept.`,
+    ),
+    startedAt: Instant.describe("When its `start` was queued."),
+    endedAt: Instant.nullable().describe("When it stopped, finished or died; null while it is live."),
+    activeMs: z.number().int().nullable().describe("Time it spent in turns, in ms, as its host reported; null on a session from before it was kept."),
+    turns: z.number().int().nullable().describe("Turns it took, as its host reported; null on a session from before it was kept."),
+    peakContextTokens: z.number().int().nullable().describe("The largest context its host reported while it was live; null until one is."),
+    endReason: z
+      .enum(END_REASONS)
+      .nullable()
+      .describe(
+        "`stopped`: told to stop, deleted, or its host ended it cleanly. `interrupted`: it died. `limit`: it ended while a usage " +
+          "limit held its agent. Null while live.",
+      ),
+    skills: z
+      .array(
+        z.object({
+          name: z.string().describe("The honed skill."),
+          version: z.number().int().describe("The version it was given."),
+        }),
+      )
+      .describe("The honed skills it started with, in order."),
+  })
+  .describe("One session of an agent: who ran it on what, what it spent and how long it took. Kept after its agent is deleted.")
+  .openapi("Session");
+
 export const AgentSchema = z
   .object({
     id: AgentId,
@@ -655,40 +760,11 @@ export const AgentSchema = z
     hostStatus: HostStatus.describe(
       "Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.",
     ),
+    currentSession: SessionSchema.nullable().describe("Its live session's record, as `ListSessions` lists it, so far; null without a live session."),
   })
   .openapi("Agent");
 
-export const SessionSchema = z
-  .object({
-    id: SessionId,
-    agentId: AgentId,
-    startedAt: Instant.describe("When its `start` was queued."),
-    endedAt: Instant.nullable().describe("When it ended; null while it is live."),
-    ended: z
-      .enum(SESSION_ENDINGS)
-      .nullable()
-      .describe("`stopped`: told to stop, or its host ended it cleanly. `interrupted`: it died. Null while live."),
-    skills: z
-      .array(
-        z.object({
-          name: z.string().describe("The honed skill."),
-          version: z.number().int().describe("The version it was given."),
-        }),
-      )
-      .describe("The honed skills it started with, in order."),
-    clients: z
-      .object({
-        version: z.number().int().describe("The commit count of the agency build they came from."),
-        commit: z.string().describe("Its commit."),
-      })
-      .nullable()
-      .describe("The `page` and `title` clients it started with; null on a session that started with none."),
-    contextNote: z
-      .string()
-      .nullable()
-      .describe("Why a skill it was made with was left out, or given from honed's last good copy; null when none was."),
-  })
-  .openapi("Session");
+
 
 export const HostSchema = z
   .object({
@@ -942,6 +1018,7 @@ export type SocketOutbound = z.infer<typeof SocketOutboundSchema>;
 export const TAGS = {
   agents: "Agents",
   capabilities: "Capabilities",
+  sessions: "Sessions",
   requests: "Requests",
   roles: "Roles",
   hosts: "Hosts",
@@ -957,6 +1034,7 @@ const tagOf = (path: string): string => {
     agents: TAGS.agents,
     requests: TAGS.requests,
     capabilities: TAGS.capabilities,
+    sessions: TAGS.sessions,
     roles: TAGS.roles,
     hosts: TAGS.hosts,
     usage: TAGS.usage,
@@ -1366,6 +1444,7 @@ export const CapabilityEntrySchema = z
       .int()
       .nullable()
       .describe("The context size in tokens above which the model's price goes up, as an agent's `overPriceStep` reads it; null for none."),
+    prices: PricesSchema.nullable().describe("What its tokens cost, as a session's `estimatedCostUsd` reckons them; null for a model with no price."),
   })
   .openapi("CapabilityModel");
 
@@ -1384,6 +1463,58 @@ export const listCapabilitiesRoute = forClientReading({
       z.object({ capabilities: z.array(CapabilityEntrySchema).describe("Every capability, 1 first.") }).openapi("CapabilityList"),
       "The capabilities.",
     ),
+    ...FAILS,
+  },
+});
+
+export const SESSIONS_PAGE = 100;
+
+export const listSessionsRoute = forClientReading({
+  method: "get",
+  path: "/sessions",
+  operationId: "ListSessions",
+  summary: "List sessions",
+  description:
+    "Every agent's sessions, newest first, kept after their agents are deleted or retired, for an audit of what each " +
+    "task, role and model spent. Each filter narrows the list; `since` and `until` bound `startedAt`. Sessions from " +
+    "before their records kept it have tokens, agent, role and item only. " +
+    COST_NOTE +
+    ` A page holds at most \`limit\` (${SESSIONS_PAGE} unless given); pass \`nextToken\` for the next. With \`format=csv\`, every ` +
+    "matching session at once as CSV, one row each, for a spreadsheet.",
+  request: {
+    query: z.object({
+      item: ItemId.optional().describe("Only sessions of agents started on this work item."),
+      role: RoleName.optional().describe("Only sessions of agents made from this role."),
+      agentId: AgentId.optional().describe("Only this agent's sessions."),
+      model: ModelName.optional().describe("Only sessions that started on this model or spent tokens on it."),
+      since: z
+        .union([z.iso.datetime(), z.iso.date()])
+        .optional()
+        .describe("Only sessions started at or after this instant, or this UTC day's start."),
+      until: z
+        .union([z.iso.datetime(), z.iso.date()])
+        .optional()
+        .describe("Only sessions started before this instant, or this UTC day's start."),
+      limit: z.coerce.number().int().min(1).max(1000).optional().describe(`At most this many on a page; ${SESSIONS_PAGE} unless given.`),
+      nextToken: z.string().max(512).optional().describe("The `nextToken` of the page before."),
+      format: z.enum(["json", "csv"]).optional().describe("`csv` for every matching session as CSV; JSON unless given."),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The sessions.",
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              sessions: z.array(SessionSchema).describe("The sessions, newest first."),
+              nextToken: z.string().nullable().describe("Pass as `nextToken` for the next page; null on the last."),
+            })
+            .openapi("SessionList"),
+        },
+        "text/csv": { schema: z.string().describe("A header row, then one row per session.") },
+      },
+    },
     ...FAILS,
   },
 });

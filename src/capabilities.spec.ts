@@ -77,9 +77,15 @@ describe("capabilities", () => {
       status: 200,
       body: {
         capabilities: [
-          { capability: 1, model: "claude-haiku-5-5", effort: null, priceStepAt: 100000 },
-          { capability: 2, model: "claude-sonnet-5-5", effort: null, priceStepAt: null },
-          { capability: 3, model: "claude-opus-5-5", effort: null, priceStepAt: null },
+          {
+            capability: 1,
+            model: "claude-haiku-5-5",
+            effort: null,
+            priceStepAt: 100000,
+            prices: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.2, aboveStep: { input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 1 } },
+          },
+          { capability: 2, model: "claude-sonnet-5-5", effort: null, priceStepAt: null, prices: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 4, aboveStep: null } },
+          { capability: 3, model: "claude-opus-5-5", effort: null, priceStepAt: null, prices: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 8, aboveStep: null } },
         ],
       },
     });
@@ -87,11 +93,11 @@ describe("capabilities", () => {
 
   it("are the stage's map, each capability it names replacing that one's default", async () => {
     const capabilities = capabilitiesOf({ "2": { model: "claude-sonnet-5-5", effort: "high" } });
-    expect(capabilities).toEqual({ ...DEFAULT_CAPABILITIES, 2: { model: "claude-sonnet-5-5", effort: "high", priceStepAt: null } });
+    expect(capabilities).toEqual({ ...DEFAULT_CAPABILITIES, 2: { ...DEFAULT_CAPABILITIES[2], effort: "high" } });
     expect(() => capabilitiesOf({ "4": { model: "x" } })).toThrow();
     expect(() => capabilitiesOf({ "1": { model: "x", effort: "max" } })).toThrow();
     api = make({ capabilities });
-    expect((await call("GET", "/capabilities")).body.capabilities[1]).toEqual({ capability: 2, model: "claude-sonnet-5-5", effort: "high", priceStepAt: null });
+    expect((await call("GET", "/capabilities")).body.capabilities[1]).toEqual({ capability: 2, ...DEFAULT_CAPABILITIES[2], effort: "high" });
     await create({ brief: "Go.", capability: 2 });
     expect(starts()[0]).toMatchObject({ model: "claude-sonnet-5-5", effort: "high" });
   });

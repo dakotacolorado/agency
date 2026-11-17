@@ -165,17 +165,17 @@ describe("the shapes", async () => {
     expect(fields("Agent")).toEqual(
       [
         "createdAt", "hostId", "hostStatus", "id", "name", "reportedAt", "session", "state", "title",
-        "label", "item", "role", "tokens", "createdBy", "whenDone", "runtime", "capability", "model", "contextTokens", "overPriceStep", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil",
+        "label", "item", "role", "tokens", "createdBy", "whenDone", "runtime", "capability", "model", "contextTokens", "overPriceStep", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil", "currentSession",
       ].sort(),
     );
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
     expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
-    expect(fields("AgentReport")).toEqual(["contextTokens", "id", "limitedUntil", "sessionId", "state", "tasks", "told"]);
+    expect(fields("AgentReport")).toEqual(["activeMs", "contextTokens", "id", "limitedUntil", "sessionId", "state", "tasks", "told", "turns"]);
     expect(fields("CommandReport")).toEqual(["commandId", "error", "ok"]);
     expect(fields("Heartbeat")).toEqual(["capacity", "labels", "type", "version"]);
     expect(fields("SocketReport")).toEqual(["agents", "commandResults", "lines", "tokens", "type", "usage"]);
     expect(fields("SessionTokensReport")).toEqual(
-      ["cacheCreationInputTokens", "cacheReadInputTokens", "inputTokens", "outputTokens", "sessionId", "agentId"].sort(),
+      ["byModel", "cacheCreationInputTokens", "cacheReadInputTokens", "inputTokens", "outputTokens", "sessionId", "agentId"].sort(),
     );
     expect(fields("UsageReport")).toEqual(["fiveHour", "readAt", "sevenDay"]);
     expect(fields("Usage")).toEqual(["fiveHour", "readAt", "sevenDay"]);
@@ -184,7 +184,13 @@ describe("the shapes", async () => {
     expect(fields("StartCommand")).toEqual(["context", "credentials", "documents", "env", "id", "kind", "mcpServers", "model", "effort", "resume", "runtime", "secrets", "sessionId", "text", "agentId"].sort());
     expect(fields("NewAgent")).toEqual(["brief", "capability", "credentials", "hostId", "item", "label", "labels", "name", "role", "skills", "whenDone"]);
     expect(fields("ConfigureCommand")).toEqual(["agentId", "effort", "id", "kind", "model"]);
-    expect(fields("CapabilityModel")).toEqual(["capability", "effort", "model", "priceStepAt"]);
+    expect(fields("CapabilityModel")).toEqual(["capability", "effort", "model", "priceStepAt", "prices"]);
+    expect(fields("Session")).toEqual(
+      [
+        "id", "agentId", "agentName", "role", "item", "capability", "model", "capabilityChanges", "tokens", "modelsUsed",
+        "estimatedCostUsd", "startedAt", "endedAt", "activeMs", "turns", "peakContextTokens", "endReason", "skills",
+      ].sort(),
+    );
     expect(fields("Message")).toEqual(["interrupt", "text"]);
     expect(fields("SocketTicket")).toEqual(["expiresAt", "socketUrl", "ticket"]);
     expect(fields("Accepted")).toEqual(["commandId"]);

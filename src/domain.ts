@@ -314,12 +314,41 @@ export const SESSION_ENDINGS = ["stopped", "interrupted"] as const;
 
 export type SessionEnding = (typeof SESSION_ENDINGS)[number];
 
+/** Why a session ended: as `SessionEnding`, or `limit` when a usage limit held it as it ended. */
+export const END_REASONS = [...SESSION_ENDINGS, "limit"] as const;
+
+export type EndReason = (typeof END_REASONS)[number];
+
+export interface CapabilityChange {
+  at: string;
+  from: Capability;
+  to: Capability;
+}
+
 export interface Session {
   id: string;
   agentId: string;
   startedAt: string;
   endedAt: string | null;
   ended: SessionEnding | null;
+  /** Records written before the session record kept these lack them; see `Store`'s migration for what it fills in. */
+  agentName?: string;
+  role?: string | null;
+  item?: string | null;
+  /** At its start; `capabilityChanges` has each change since. Absent on a session from before it was kept. */
+  capability?: Capability;
+  model?: string;
+  capabilityChanges?: CapabilityChange[];
+  /** The running total, as `Agent.sessionTokens` holds it. */
+  tokens?: Tokens;
+  /** Each model's running total, as its host reported them; absent until one does. */
+  byModel?: Record<string, Tokens>;
+  /** Time spent in turns, in ms, and turns taken: the highest its host reported. */
+  activeMs?: number;
+  turns?: number;
+  /** The largest `contextTokens` its host reported while it was live. */
+  peakContextTokens?: number;
+  endReason?: EndReason | null;
   /** The honed skills it was given, by name and version. */
   skills: { name: string; version: number }[];
   /** The build of agency whose `page` and `title` it was given; null for none. */

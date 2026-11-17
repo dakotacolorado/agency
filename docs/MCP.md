@@ -34,6 +34,7 @@ What the server tells an agent when it connects:
 > - send_message talks to an agent: it starts a session carrying on its conversation when none is live. stop_agent ends its live session and keeps it, for send_message to start again. delete_agent ends the agent for good.
 > - An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.
 > - list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.
+> - list_sessions lists each session's record, newest first: its task, role, capability and models, tokens, estimated cost and time, filtered by item, role, agentId, model and time.
 > - Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.
 
 ## Tools
@@ -53,6 +54,7 @@ What the server tells an agent when it connects:
 | [`list_hosts`](#list_hosts) | List hosts | yes |
 | [`list_requests`](#list_requests) | List requests | yes |
 | [`list_roles`](#list_roles) | List roles | yes |
+| [`list_sessions`](#list_sessions) | List sessions | yes |
 | [`list_transcript_lines`](#list_transcript_lines) | List transcript lines | yes |
 | [`put_agent_status`](#put_agent_status) | Put an agent's status |  |
 | [`put_agent_title`](#put_agent_title) | Put an agent's title |  |
@@ -182,6 +184,22 @@ Those `waiting`, in the order they would start, each with why it waits. With `al
 Every role an agent can be made from, highest `priority` first: each skill in honed's `agent-roles/` group, read now, or as last read when honed does not answer. A role is changed in honed, never here.
 
 No input.
+
+### list_sessions
+
+Every agent's sessions, newest first, kept after their agents are deleted or retired, for an audit of what each task, role and model spent. Each filter narrows the list; `since` and `until` bound `startedAt`. Sessions from before their records kept it have tokens, agent, role and item only. An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high. A page holds at most `limit` (100 unless given); pass `nextToken` for the next. With `format=csv`, every matching session at once as CSV, one row each, for a spreadsheet.
+
+| Input | Type | Required | |
+| --- | --- | --- | --- |
+| `item` | string |  | Only sessions of agents started on this work item. |
+| `role` | string |  | Only sessions of agents made from this role. |
+| `agentId` | string |  | Only this agent's sessions. |
+| `model` | string |  | Only sessions that started on this model or spent tokens on it. |
+| `since` | string or string |  | Only sessions started at or after this instant, or this UTC day's start. |
+| `until` | string or string |  | Only sessions started before this instant, or this UTC day's start. |
+| `limit` | integer |  | At most this many on a page; 100 unless given. |
+| `nextToken` | string |  | The `nextToken` of the page before. |
+| `format` | `json`, `csv` |  | `csv` for every matching session as CSV; JSON unless given. |
 
 ### list_transcript_lines
 

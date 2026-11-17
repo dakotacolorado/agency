@@ -11,6 +11,7 @@ export const INSTRUCTIONS = `agency: ${TAGLINE} It runs lasting Claude Code agen
 - send_message talks to an agent: it starts a session carrying on its conversation when none is live. stop_agent ends its live session and keeps it, for send_message to start again. delete_agent ends the agent for good.
 - An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.
 - list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.
+- list_sessions lists each session's record, newest first: its task, role, capability and models, tokens, estimated cost and time, filtered by item, role, agentId, model and time.
 - Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.`;
 
 /** The address the MCP docs give; served, this deployment's own replaces it. */
@@ -105,7 +106,7 @@ export function mcpServer(version: string, call: Call, claimedBy?: string): McpS
         const { method, path, body } = requestOf(route, input);
         const headers = route.request?.headers && claimedBy ? { "claimed-by": claimedBy } : undefined;
         const res = await call(method, path, { body, ...(headers && { headers }) });
-        const text = res.body === null ? `${res.status}` : JSON.stringify(res.body, null, 2);
+        const text = res.body === null ? `${res.status}` : typeof res.body === "string" ? res.body : JSON.stringify(res.body, null, 2);
         return { content: [{ type: "text" as const, text }], ...(res.status >= 400 && { isError: true }) };
       }) as never,
     );

@@ -1,5 +1,5 @@
 {
-  "instructions": "agency: Agents at your command, across all your computers. It runs lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session carrying on its conversation when none is live. stop_agent ends its live session and keeps it, for send_message to start again. delete_agent ends the agent for good.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
+  "instructions": "agency: Agents at your command, across all your computers. It runs lasting Claude Code agents, each living on one host and run in sessions.\n\n- An agent is made on a host (create_agent), or asked for in a role (create_request), which starts it once Claude usage and a host's room allow.\n- A role names the honed skills each session reads, the services it is given and what becomes of it once done (list_roles).\n- send_message talks to an agent: it starts a session carrying on its conversation when none is live. stop_agent ends its live session and keeps it, for send_message to start again. delete_agent ends the agent for good.\n- An agent's status is working, idle, waiting (on the person), review or done; put_agent_status is how an agent says it of itself.\n- list_transcript_lines reads what an agent and its tools said, after a cursor: call it again from next.\n- list_sessions lists each session's record, newest first: its task, role, capability and models, tokens, estimated cost and time, filtered by item, role, agentId, model and time.\n- Every tool takes the token this server was connected with, and is refused as the API would refuse it. The host protocol (heartbeats, the socket, a session's context) is the hosts', not tools.",
   "tools": [
     {
       "name": "create_agent",
@@ -453,6 +453,94 @@
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
         "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_sessions",
+      "title": "List sessions",
+      "description": "Every agent's sessions, newest first, kept after their agents are deleted or retired, for an audit of what each task, role and model spent. Each filter narrows the list; `since` and `until` bound `startedAt`. Sessions from before their records kept it have tokens, agent, role and item only. An estimate at API list prices, from the stage's capability map (`ListCapabilities`): the account may be on a subscription, which bills otherwise. agency does not know each request's context size, so a model with a price step is priced above it for the whole session once its `peakContextTokens` went past `priceStepAt`, which errs high. A page holds at most `limit` (100 unless given); pass `nextToken` for the next. With `format=csv`, every matching session at once as CSV, one row each, for a spreadsheet.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "item": {
+            "description": "Only sessions of agents started on this work item.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "role": {
+            "description": "Only sessions of agents made from this role.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+          },
+          "agentId": {
+            "description": "Only this agent's sessions.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "model": {
+            "description": "Only sessions that started on this model or spent tokens on it.",
+            "type": "string"
+          },
+          "since": {
+            "description": "Only sessions started at or after this instant, or this UTC day's start.",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              }
+            ]
+          },
+          "until": {
+            "description": "Only sessions started before this instant, or this UTC day's start.",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              }
+            ]
+          },
+          "limit": {
+            "description": "At most this many on a page; 100 unless given.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "nextToken": {
+            "description": "The `nextToken` of the page before.",
+            "type": "string",
+            "maxLength": 512
+          },
+          "format": {
+            "description": "`csv` for every matching session as CSV; JSON unless given.",
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ]
+          }
+        }
       },
       "annotations": {
         "readOnlyHint": true,

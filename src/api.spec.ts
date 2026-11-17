@@ -260,6 +260,7 @@ describe("creating an agent", () => {
       told: null,
       limitedUntil: null,
       hostStatus: "connected",
+      currentSession: null,
     });
     const [command] = queued();
     expect(command).toEqual({
@@ -296,6 +297,16 @@ describe("creating an agent", () => {
           startedAt: NOW.toISOString(),
           endedAt: null,
           ended: null,
+          agentName: "frontend-1",
+          role: null,
+          item: null,
+          capability: 3,
+          model: "claude-opus-5-5",
+          capabilityChanges: [],
+          tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 },
+          activeMs: 0,
+          turns: 0,
+          endReason: null,
           skills: [],
           clients: { version: expect.any(Number), commit: expect.any(String) },
           contextNote: null,
