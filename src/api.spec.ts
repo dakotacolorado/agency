@@ -130,6 +130,7 @@ const host = async (id: string) => (await read("/hosts")).hosts.find((h: { id: s
 /** What every start carries without any honed skill: this service's address, and its own clients. */
 const SELF = {
   runtime: "container",
+  model: "claude-opus-5-5",
   env: { AGENCY_URL: "http://local", AG_URL: "http://local" },
   credentials: ["agency"],
   context: { key: "agency", version: expect.any(Number), files: expect.arrayContaining([expect.objectContaining({ path: "skills/page/bin/page" })]) },
@@ -244,6 +245,10 @@ describe("creating an agent", () => {
       createdBy: null,
       whenDone: "keep",
       runtime: "container",
+      capability: 3,
+      model: "claude-opus-5-5",
+      contextTokens: null,
+      overPriceStep: false,
       skills: [],
       credentials: null,
       status: null,

@@ -29,7 +29,7 @@ describe("a client generated from openapi.json", async () => {
     const agent: S["Agent"] = {
       id: "w", name: "frontend-1", hostId: "h",
       state: "idle", session: null, createdAt: "t", reportedAt: null, hostStatus: "lost", title: null, label: null, item: null, role: null,
-      tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, createdBy: null, whenDone: "keep", runtime: "host", skills: [], credentials: null,
+      tokens: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0 }, createdBy: null, whenDone: "keep", runtime: "host", capability: 2, model: "claude-sonnet-5-5", contextTokens: null, overPriceStep: false, skills: [], credentials: null,
       status: null, summary: null, headline: null, saidAt: null, activity: null, tasks: 0, told: null, limitedUntil: null,
     };
     const live: S["Agent"] = { ...agent, state: "working", session: { id: "s", startedAt: "t" } };
@@ -45,7 +45,8 @@ describe("a client generated from openapi.json", async () => {
     const created: S["NewAgent"] = { name: "a", hostId: "h" };
     const commands: S["Command"][] = [
       { kind: "create", id: "c", agentId: "w", name: "a" },
-      { kind: "start", id: "c", agentId: "w", sessionId: "s", resume: false, runtime: "host", text: "Go." },
+      { kind: "start", id: "c", agentId: "w", sessionId: "s", resume: false, runtime: "host", model: "claude-haiku-5-5", effort: "low", text: "Go." },
+      { kind: "configure", id: "c", agentId: "w", model: "claude-sonnet-5-5", effort: null },
       { kind: "message", id: "c", agentId: "w", text: "hi" },
       { kind: "interrupt", id: "c", agentId: "w" },
       { kind: "stop", id: "c", agentId: "w" },
@@ -61,7 +62,7 @@ describe("a client generated from openapi.json", async () => {
     const accepted: S["Accepted"] = { commandId: null };
     const report: S["SocketInbound"] = {
       type: "report",
-      agents: [{ id: "w", state: "waiting", sessionId: "s" }],
+      agents: [{ id: "w", state: "waiting", sessionId: "s", contextTokens: 120000 }],
       lines: [{ agentId: "w", sessionId: "s", seq: 0, at: "t", from: "tool", text: "ls" }],
       commandResults: [{ commandId: "c", ok: false, error: "no" }],
     };

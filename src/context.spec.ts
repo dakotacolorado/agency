@@ -15,7 +15,7 @@ const PLANNER = skill("agent-roles/planner", 2, [
 ]);
 const IMPLEMENTER = skill("agent-roles/implementer", 1, [
   { path: "SKILL.md", content: "Do it." },
-  { path: "role.json", content: ROLE_JSON({ label: "ticket", priority: 10, brief: null, summary: null, skills: ["team/git-commits"] }) },
+  { path: "role.json", content: ROLE_JSON({ label: "ticket", priority: 10, brief: null, summary: null, skills: ["team/git-commits"], capability: 2 }) },
 ]);
 
 /** A honed answering its list and each skill by name, 404 for any other; `seen` records each path asked for and its token. */
@@ -95,8 +95,8 @@ describe("roles from honed", () => {
     const team = skill("team/git-commits", 3, [{ path: "SKILL.md", content: "Commit." }]);
     const roles = await new HonedRoles(service, new FakeStore(), honed({ "agent-roles/implementer": IMPLEMENTER, "agent-roles/planner": PLANNER, "team/git-commits": team })).list();
     expect(roles).toEqual([
-      { name: "planner", skills: ["agent-roles/planner"], credentials: null, whenDone: "stop", label: "plan: new work", description: "Plans.", priority: 40, brief: "Ask.", version: 2 },
-      { name: "implementer", skills: ["agent-roles/implementer", "team/git-commits"], credentials: null, whenDone: "stop", label: "ticket", description: null, priority: 10, brief: null, version: 1 },
+      { name: "planner", skills: ["agent-roles/planner"], credentials: null, whenDone: "stop", label: "plan: new work", description: "Plans.", priority: 40, capability: 3, brief: "Ask.", version: 2 },
+      { name: "implementer", skills: ["agent-roles/implementer", "team/git-commits"], credentials: null, whenDone: "stop", label: "ticket", description: null, priority: 10, capability: 2, brief: null, version: 1 },
     ]);
   });
 
@@ -118,5 +118,8 @@ describe("roles from honed", () => {
     expect(roles.map((r) => r.name)).toEqual(["planner"]);
     expect(logged.sort()).toEqual(["agent-roles/bare has no role.json", expect.stringMatching(/^agent-roles\/broken's role\.json: whenDone: /)]);
     expect(roleOf(skill("agent-roles/x", 1, [{ path: "role.json", content: "{" }]))).toMatch(/is not JSON/);
+    for (const capability of [0, 4, 2.5]) {
+      expect(roleOf(skill("agent-roles/x", 1, [{ path: "role.json", content: ROLE_JSON({ capability }) }]))).toMatch(/role\.json: capability: /);
+    }
   });
 });
