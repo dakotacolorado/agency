@@ -215,6 +215,10 @@
             "minimum": 0,
             "maximum": 9007199254740991,
             "description": "Turns its live session has taken so far, a running total; the service keeps the highest reported. Absent from a host that does not say."
+          },
+          "needsStart": {
+            "type": "boolean",
+            "description": "True when the host holds a session of this agent it will not run itself, because it holds none of the secrets a start gives it (it restarted, or swapped in after a drain). The service answers with a `start` that resumes it and carries them. Absent otherwise."
           }
         },
         "required": [

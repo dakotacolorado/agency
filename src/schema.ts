@@ -324,6 +324,14 @@ export const AgentReportSchema = z
       .max(Number.MAX_SAFE_INTEGER)
       .optional()
       .describe("Turns its live session has taken so far, a running total; the service keeps the highest reported. Absent from a host that does not say."),
+    needsStart: z
+      .boolean()
+      .optional()
+      .describe(
+        "True when the host holds a session of this agent it will not run itself, because it holds none of the secrets " +
+          "a start gives it (it restarted, or swapped in after a drain). The service answers with a `start` that resumes it " +
+          "and carries them. Absent otherwise.",
+      ),
   })
   .openapi("AgentReport");
 

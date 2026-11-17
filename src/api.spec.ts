@@ -1512,6 +1512,47 @@ describe("an agent's credentials", () => {
       expect((await agent(made.id)).session).toBeNull();
     });
 
+    describe("when its host holds a session it will not run without secrets", () => {
+      const needs = async (id: string, sessionId: string) => {
+        const connectionId = "restarted";
+        await store.putConnection({ connectionId, kind: "host", hostId: "laptop", connectedAt: now.toISOString() });
+        await new SocketHandler(store, TOKEN, poster, () => now, credentials(), undefined, undefined, undefined, keyring, () => api.restartWaiting(() => {})).handle({
+          requestContext: { connectionId, eventType: "MESSAGE" },
+          body: JSON.stringify({ type: "report", agents: [{ id, state: "waiting", sessionId, needsStart: true }] }),
+        });
+      };
+
+      it("answers with a start that resumes it, carrying freshly resolved secrets, and does not ask twice", async () => {
+        const made = await create({ name: "planner-1", brief: "Go." });
+        const old = (await agent(made.id)).session.id;
+        answer = () => ({ GH_TOKEN: "after-restart" });
+        await needs(made.id, old);
+        const starts = pushed();
+        expect(starts).toHaveLength(2);
+        expect(starts[1]).toMatchObject({ resume: true, secrets: { GH_TOKEN: "after-restart" } });
+        expect(starts[1]!.sessionId).not.toBe(old);
+        expect((await agent(made.id)).session.id).toBe(starts[1]!.sessionId);
+        // The host still reports the old session until it takes the start: nothing more is sent.
+        await needs(made.id, old);
+        expect(pushed()).toHaveLength(2);
+        expect(await everything(made.id)).not.toContain("after-restart");
+      });
+
+      it("waits, saying keyring is unreachable, and starts it once keyring answers", async () => {
+        const made = await create({ name: "planner-1", brief: "Go." });
+        const old = (await agent(made.id)).session.id;
+        answer = () => {
+          throw new KeyringUnreachable("fetch failed");
+        };
+        await needs(made.id, old);
+        expect(pushed()).toHaveLength(1);
+        expect(JSON.stringify(await agent(made.id))).toContain("keyring unreachable");
+        answer = () => ({ GH_TOKEN: "back" });
+        expect(await api.restartWaiting(() => {})).toEqual(["planner-1"]);
+        expect(pushed()[1]).toMatchObject({ resume: true, secrets: { GH_TOKEN: "back" } });
+      });
+    });
+
     it("withholds a replayed start it cannot resolve, rather than sending it without its secrets", async () => {
       await create({ name: "planner-1", brief: "Go." });
       answer = () => {

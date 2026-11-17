@@ -170,7 +170,7 @@ describe("the shapes", async () => {
     );
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
     expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
-    expect(fields("AgentReport")).toEqual(["activeMs", "contextTokens", "id", "limitedUntil", "sessionId", "state", "tasks", "told", "turns"]);
+    expect(fields("AgentReport")).toEqual(["activeMs", "contextTokens", "id", "limitedUntil", "needsStart", "sessionId", "state", "tasks", "told", "turns"]);
     expect(fields("CommandReport")).toEqual(["commandId", "error", "ok"]);
     expect(fields("Heartbeat")).toEqual(["capacity", "labels", "type", "version"]);
     expect(fields("SocketReport")).toEqual(["agents", "commandResults", "lines", "tokens", "type", "usage"]);

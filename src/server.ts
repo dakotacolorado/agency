@@ -73,7 +73,7 @@ export function start(config: Config): Running {
     defaultRuntime: config.defaultRuntime ?? "container",
     ...(config.capabilities && { capabilities: config.capabilities }),
   });
-  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier, api.fleet.capabilities, keyring);
+  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier, api.fleet.capabilities, keyring, () => api.restartWaiting());
   const retireAfter = config.retireClosedAfter ?? RETIRE_CLOSED_AFTER;
   const stopTimers = startTimers(store, {
     retire: () => retireClosed(api.fleet, retireAfter),

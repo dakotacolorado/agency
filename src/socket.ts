@@ -40,6 +40,7 @@ export class SocketHandler {
   private readonly token: TokenSource;
   private readonly now: () => Date;
   private readonly fleet: Fleet;
+  private readonly onNeedStart: () => Promise<unknown>;
   private readonly onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void>;
 
   constructor(
@@ -52,7 +53,9 @@ export class SocketHandler {
     notifier: AgentNotifier = NO_NOTIFIER,
     capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
     keyring: SecretSource = NO_SECRETS,
+    onNeedStart: () => Promise<unknown> = async () => {},
   ) {
+    this.onNeedStart = onNeedStart;
     this.onHeartbeat = onHeartbeat;
     this.store = store;
     this.token = token;
@@ -130,6 +133,7 @@ export class SocketHandler {
     }
     const { agents = [], lines = [], commandResults = [], tokens = [], usage } = message;
     await this.fleet.report(connection.hostId!, { agents, lines, commandResults, tokens });
+    if (agents.some((a) => a.needsStart)) await this.onNeedStart().catch((err) => console.error("Could not start again what its host holds:", (err as Error).name));
     if (usage) await this.fleet.reportUsage(connection.hostId!, usage);
     return { statusCode: 200 };
   }

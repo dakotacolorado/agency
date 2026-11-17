@@ -393,7 +393,7 @@ export class Fleet {
     }
     const offered = pending.filter((q) => !withdrawn(q, now));
 
-    for (const { id, state, sessionId, tasks = 0, told = null } of report.agents) {
+    for (const { id, state, sessionId, tasks = 0, told = null, needsStart = false } of report.agents) {
       const agent = agents.get(id);
       if (!agent || agent.state === "deleted") continue;
       const session = agent.session;
@@ -406,6 +406,11 @@ export class Fleet {
         } else if (!isLive(state) && agent.reportedAt === null) {
           update(agent, { reportedAt: at });
         }
+        continue;
+      }
+      if (sessionId === session.id && needsStart) {
+        // Held, not running: a start with its secrets is made for it (`AgencyApi.restartWaiting`).
+        if (!agent.needsStart) update(agent, { needsStart: true, reportedAt: at });
         continue;
       }
       if (sessionId === session.id) {
@@ -517,7 +522,7 @@ export const agentView = (
   capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
   current: Session | null = null,
 ) => {
-  const { hadSession: _, begun: __, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, capability: ___________, contextTokens, ...served } =
+  const { hadSession: _, begun: __, needsStart: ______________, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, capability: ___________, contextTokens, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
   const { turn: ______, paged: _______, ...rest } = served as typeof served & { turn?: unknown; paged?: unknown };

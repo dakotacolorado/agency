@@ -27,7 +27,7 @@ import { ERROR_CODES, type ErrorStatus } from "./schema.ts";
 import type { Command, Heartbeat, RequestView } from "./schema.ts";
 import { NameTaken, Stale, Taken, type Change, type Store } from "./store.ts";
 import { hash, same, ticket } from "./secret.ts";
-import { Fleet, afresh, begin, hostView, inOrder, sentView, agentView, type Starting } from "./fleet.ts";
+import { Fleet, afresh, begin, conflicted, hostView, inOrder, sentView, agentView, type Starting } from "./fleet.ts";
 import { resumeLimited } from "./sweep.ts";
 import { NO_SOCKET, Push, type Poster } from "./push.ts";
 import { NO_CONTEXT, type Attached, type ContextSource } from "./context.ts";
@@ -778,8 +778,43 @@ export class AgencyApi {
     return (agent, at, text) => this.starting(self, agent, at, text);
   }
 
+  /**
+   * Starts again each agent whose host holds its session but will not run it without a start's secrets
+   * (`needsStart`, after the host restarted or swapped in): a start that resumes it, with freshly resolved
+   * secrets. While keyring cannot be reached it starts none and says so on the agent's activity; the next
+   * call tries again. Answers the names started.
+   */
+  async restartWaiting(log: (line: string) => void = console.log): Promise<string[]> {
+    const started: string[] = [];
+    for (const agent of await this.store.listAgents()) {
+      if (!agent.needsStart || agent.state === "deleted" || !agent.session) continue;
+      const now = this.now();
+      const at = now.toISOString();
+      try {
+        const made = await this.starting(this.publicUrl ?? "http://local", agent, at);
+        const { needsStart: _, ...rest } = made.agent;
+        await this.fleet.apply({
+          agents: [{ ...rest, hadSession: true }],
+          sessions: [{ ...agent.session, agentId: agent.id, endedAt: at, ended: "interrupted", endReason: "interrupted" }, made.session],
+          queue: inOrder(agent.hostId, [made.command], now),
+          guarded: true,
+        });
+        started.push(agent.name);
+        log(JSON.stringify({ restarted: agent.name, session: made.session.id }));
+      } catch (err) {
+        if (err instanceof KeyringUnreachable) {
+          log(JSON.stringify({ restarted: "waits", agent: agent.name, why: err.message }));
+          const text = `Waits to be started again: ${err.message}.`;
+          if (agent.activity?.text !== text) await this.fleet.apply({ agents: [{ ...agent, activity: { text, at } }], guarded: true }).catch(() => {});
+        } else if (!conflicted(err)) log(JSON.stringify({ restarted: "failed", agent: agent.name, error: (err as Error).message }));
+      }
+    }
+    return started;
+  }
+
   /** Resumes each agent whose usage limit has reset; see `resumeLimited`. Run every `RESUME_SECONDS`. */
-  resume(log?: (line: string) => void): Promise<string[]> {
+  async resume(log?: (line: string) => void): Promise<string[]> {
+    await this.restartWaiting(log);
     return resumeLimited(this.fleet, this.starter(this.publicUrl ?? "http://local"), log);
   }
 
