@@ -49,6 +49,7 @@ What the server tells an agent when it connects:
 | [`get_role`](#get_role) | Get a role | yes |
 | [`get_usage`](#get_usage) | Get usage | yes |
 | [`list_agents`](#list_agents) | List agents | yes |
+| [`list_capabilities`](#list_capabilities) | List capabilities | yes |
 | [`list_hosts`](#list_hosts) | List hosts | yes |
 | [`list_requests`](#list_requests) | List requests | yes |
 | [`list_roles`](#list_roles) | List roles | yes |
@@ -56,6 +57,7 @@ What the server tells an agent when it connects:
 | [`put_agent_status`](#put_agent_status) | Put an agent's status |  |
 | [`put_agent_title`](#put_agent_title) | Put an agent's title |  |
 | [`send_message`](#send_message) | Send a message |  |
+| [`set_agent_capability`](#set_agent_capability) | Set an agent's capability |  |
 | [`stop_agent`](#stop_agent) | Stop an agent |  |
 | [`update_agent`](#update_agent) | Update an agent |  |
 | [`withdraw_request`](#withdraw_request) | Withdraw a request |  |
@@ -74,6 +76,7 @@ Records the agent `idle` and queues `create` for its host, which makes its home.
 | `label` | string |  | Absent, the role's, or without one none. |
 | `item` | string |  | The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none. |
 | `whenDone` | `keep`, `stop`, `delete` |  | Absent, the role's, or without one `keep`. |
+| `capability` | integer |  | How capable a model it runs on, 1 to 3 (`ListCapabilities`). Absent, the role's, or without one 3. |
 | `credentials` | string[] |  | The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start. |
 | `skills` | string[] |  | Given at each start, at their current version. A skill honed does not have is refused here. Absent, the role's, or without one none. |
 
@@ -90,6 +93,7 @@ Records the request `waiting`, then admits what it can at once. A request starts
 | `label` | string |  | Absent, the role's. |
 | `labels` | string[] |  | What the host it is placed on must all carry. Absent, none. With `runtime:host` among them, its agent runs on the host rather than in a container (see the agent's `runtime`); every host carries that label. |
 | `credentials` | string[] |  | In place of the role's, as `CreateAgent` takes them. |
+| `capability` | integer |  | How capable a model its agent runs on, 1 to 3 (`ListCapabilities`), such as the work item's difficulty. Absent, the role's. |
 | `another` | boolean |  | True to ask for one more agent on `item` though someone is on it already. Absent or false, a request for an item with an agent neither deleted nor `done`, or a request waiting or just started, is refused. |
 
 ### delete_agent
@@ -148,6 +152,12 @@ Deleted agents are listed only with `all=true`, or with `item`. With `createdBy`
 | `item` | string |  | A work-tracker item's id: the epic, story or task the agent was started on. Never changes. |
 | `role` | string |  | Only the agents made from this role. |
 | `all` | `true`, `false` |  | `true` includes deleted agents. |
+
+### list_capabilities
+
+Each capability, 1 to 3, and the model, effort and price step an agent at it runs on, as this stage maps them (agency's `--capabilities` file). By default: 1 `claude-haiku-5-5`, 2 `claude-sonnet-5-5`, 3 `claude-opus-5-5`, each at Claude Code's default effort, and only capability 1's model with a price step, at 100000 tokens. 3 is today's default and the ceiling.
+
+No input.
 
 ### list_hosts
 
@@ -212,6 +222,15 @@ To an agent with a live session, `text` is a `message`, delivered at its next tu
 | `id` | string | yes | Assigned by the service when the agent is created. |
 | `text` | string |  | Required unless `interrupt` is true. |
 | `interrupt` | boolean |  | `true` stops the current turn before `text` is sent. |
+
+### set_agent_capability
+
+Records the agent's new `capability`, and so its `model`. While it has a live session, queues a `configure` for its host with the new model and effort, which the session takes from its next request to the model; otherwise its next start, a resumed one too, carries them. Switching models costs one prompt-cache rewrite on the new model: the session's whole context is written to the new model's cache at its next request. The same capability changes nothing.
+
+| Input | Type | Required | |
+| --- | --- | --- | --- |
+| `id` | string | yes | Assigned by the service when the agent is created. |
+| `capability` | integer | yes | How capable a model the agent runs on, 1 to 3, as `ListCapabilities` maps each to a model: 3 is today's default and the ceiling, 2 and 1 a step and two down, for easier work. A caller names a capability, never a model, so nothing can run an agent above capability 3's model. A number outside 1-3 is refused. |
 
 ### stop_agent
 

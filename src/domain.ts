@@ -1,3 +1,4 @@
+import type { Capability } from "./capabilities.ts";
 import type { Command } from "./schema.ts";
 
 /**
@@ -217,6 +218,10 @@ export interface Agent {
   whenDone?: WhenDone;
   /** Chosen when it is made and kept for its life; records written before it lack it, and ran on the host. */
   runtime?: Runtime;
+  /** How capable a model it runs on; records written before it lack it, and ran at 3. */
+  capability?: Capability;
+  /** Its session's context size at its last request to the model, as its host last reported; null or absent until one is. */
+  contextTokens?: number | null;
   /** The honed skills each session is given, by name. */
   skills?: string[];
   /** The services each session is given, by name; absent, every one the stage has. */

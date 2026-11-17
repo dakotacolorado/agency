@@ -1,3 +1,4 @@
+import type { Capability } from "./capabilities.ts";
 import type { Role } from "./roles.ts";
 import type { Usage, UsageWindow } from "./schema.ts";
 
@@ -32,6 +33,8 @@ export interface AgentRequest {
   labels: string[];
   /** Names, in place of the role's; null for the role's. */
   credentials: string[] | null;
+  /** In place of the role's; null, or absent on a request written before it, for the role's. */
+  capability?: Capability | null;
   requester: string | null;
   state: RequestState;
   /** Why it has not started, as the last admission found; null once it has, or before any looked. */

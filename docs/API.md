@@ -28,6 +28,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [GetRole](#getrole): Get a role
 - [GetUsage](#getusage): Get usage
 - [ListAgents](#listagents): List agents
+- [ListCapabilities](#listcapabilities): List capabilities
 - [ListHosts](#listhosts): List hosts
 - [ListRequests](#listrequests): List requests
 - [ListRoles](#listroles): List roles
@@ -35,6 +36,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [PutAgentStatus](#putagentstatus): Put an agent's status
 - [PutAgentTitle](#putagenttitle): Put an agent's title
 - [SendMessage](#sendmessage): Send a message
+- [SetAgentCapability](#setagentcapability): Set an agent's capability
 - [StopAgent](#stopagent): Stop an agent
 - [UpdateAgent](#updateagent): Update an agent
 - [WithdrawRequest](#withdrawrequest): Withdraw a request
@@ -43,6 +45,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 
 - [Accepted](#accepted)
 - [Agent](#agent)
+- [AgentCapability](#agentcapability)
 - [AgentList](#agentlist)
 - [AgentPush](#agentpush)
 - [AgentRename](#agentrename)
@@ -51,9 +54,12 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [AgentRequestList](#agentrequestlist)
 - [AgentStatus](#agentstatus)
 - [AgentTitle](#agenttitle)
+- [CapabilityList](#capabilitylist)
+- [CapabilityModel](#capabilitymodel)
 - [Command](#command)
 - [CommandPush](#commandpush)
 - [CommandReport](#commandreport)
+- [ConfigureCommand](#configurecommand)
 - [CreateCommand](#createcommand)
 - [Cursor](#cursor)
 - [DeleteCommand](#deletecommand)
@@ -114,6 +120,7 @@ Content-type: application/json
    "label": "string",
    "item": "string",
    "whenDone": "keep | stop | delete",
+   "capability": number,
    "credentials": [ "string" ],
    "skills": [ "string" ]
 }
@@ -159,6 +166,10 @@ Type: String. Length: 1 to 64. Required: No.
 Absent, the role's, or without one `keep`.  
 Type: String. Valid values: `keep` | `stop` | `delete`. Required: No.
 
+**capability**  
+How capable a model it runs on, 1 to 3 (`ListCapabilities`). Absent, the role's, or without one 3.  
+Type: Integer. Range: 1 to 3. Required: No.
+
 **credentials**  
 The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
 Type: Array of strings. At most 16 items. Required: No.
@@ -189,6 +200,10 @@ Content-type: application/json
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
    "runtime": "container | host",
+   "capability": number,
+   "model": "string",
+   "contextTokens": number,
+   "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -261,6 +276,22 @@ Type: String. Valid values: `keep` | `stop` | `delete`.
 Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
 Type: String. Valid values: `container` | `host`.
 
+**capability**  
+How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3.  
+Type: Integer. Range: 1 to 3.
+
+**model**  
+Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on.  
+Type: String.
+
+**contextTokens**  
+How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**overPriceStep**  
+True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
+Type: Boolean.
+
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings.
@@ -328,7 +359,7 @@ Type: String. Valid values: `connected` | `disconnected` | `lost`.
 ### Errors
 
 **ValidationException**  
-The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.  
+The request failed validation (a `capability` outside 1-3 among it), `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.  
 HTTP status: 400
 
 **UnauthorizedException**  
@@ -369,6 +400,7 @@ Content-type: application/json
    "label": "string",
    "labels": [ "string" ],
    "credentials": [ "string" ],
+   "capability": number,
    "another": boolean
 }
 ```
@@ -409,6 +441,10 @@ Type: Array of strings. At most 64 items. Required: No.
 In place of the role's, as `CreateAgent` takes them.  
 Type: Array of strings. At most 16 items. Required: No.
 
+**capability**  
+How capable a model its agent runs on, 1 to 3 (`ListCapabilities`), such as the work item's difficulty. Absent, the role's.  
+Type: Integer. Range: 1 to 3. Required: No.
+
 **another**  
 True to ask for one more agent on `item` though someone is on it already. Absent or false, a request for an item with an agent neither deleted nor `done`, or a request waiting or just started, is refused.  
 Type: Boolean. Required: No.
@@ -428,6 +464,7 @@ Content-type: application/json
    "label": "string",
    "labels": [ "string" ],
    "credentials": [ "string" ],
+   "capability": number,
    "requester": "string",
    "state": "waiting | started | withdrawn",
    "why": "string",
@@ -474,6 +511,10 @@ Type: Array of strings.
 In place of the role's, by name; null for the role's. Never a token.  
 Type: Array of strings. Nullable: Yes.
 
+**capability**  
+In place of the role's; null for the role's, as it is when the agent is made.  
+Type: Integer. Range: 1 to 3. Nullable: Yes.
+
 **requester**  
 The `claimed-by` header it was made with, unverified; null for none.  
 Type: String. Nullable: Yes.
@@ -513,7 +554,7 @@ Type: String. Nullable: Yes.
 ### Errors
 
 **ValidationException**  
-The request failed validation, the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has.  
+The request failed validation (a `capability` outside 1-3 among it), the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has.  
 HTTP status: 400
 
 **UnauthorizedException**  
@@ -725,6 +766,10 @@ Content-type: application/json
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
    "runtime": "container | host",
+   "capability": number,
+   "model": "string",
+   "contextTokens": number,
+   "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -796,6 +841,22 @@ Type: String. Valid values: `keep` | `stop` | `delete`.
 **runtime**  
 Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
 Type: String. Valid values: `container` | `host`.
+
+**capability**  
+How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3.  
+Type: Integer. Range: 1 to 3.
+
+**model**  
+Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on.  
+Type: String.
+
+**contextTokens**  
+How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**overPriceStep**  
+True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
+Type: Boolean.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -951,6 +1012,7 @@ Content-type: application/json
    "label": "string",
    "labels": [ "string" ],
    "credentials": [ "string" ],
+   "capability": number,
    "requester": "string",
    "state": "waiting | started | withdrawn",
    "why": "string",
@@ -996,6 +1058,10 @@ Type: Array of strings.
 **credentials**  
 In place of the role's, by name; null for the role's. Never a token.  
 Type: Array of strings. Nullable: Yes.
+
+**capability**  
+In place of the role's; null for the role's, as it is when the agent is made.  
+Type: Integer. Range: 1 to 3. Nullable: Yes.
 
 **requester**  
 The `claimed-by` header it was made with, unverified; null for none.  
@@ -1084,6 +1150,7 @@ Content-type: application/json
    "label": "string",
    "description": "string",
    "priority": number,
+   "capability": number,
    "brief": "string",
    "version": number
 }
@@ -1118,6 +1185,10 @@ Type: String. Length: 1 to 16384. Nullable: Yes.
 **priority**  
 Of two requests waiting to start, the higher starts first.  
 Type: Integer. Range: 0 to 1000.
+
+**capability**  
+The capability an agent made from it runs at when its caller gives none: its `role.json`'s `capability`, 3 when that has none.  
+Type: Integer. Range: 1 to 3.
 
 **brief**  
 The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
@@ -1258,6 +1329,10 @@ Content-type: application/json
       "createdBy": "string",
       "whenDone": "keep | stop | delete",
       "runtime": "container | host",
+      "capability": number,
+      "model": "string",
+      "contextTokens": number,
+      "overPriceStep": boolean,
       "skills": [ "string" ],
       "credentials": [ "string" ],
       "hostId": "string",
@@ -1294,6 +1369,55 @@ Content-type: application/json
 **agents**  
 The agents, oldest first.  
 Type: Array of [Agent](#agent) objects.
+
+### Errors
+
+**ValidationException**  
+The request failed validation.  
+HTTP status: 400
+
+**UnauthorizedException**  
+Missing or incorrect bearer token.  
+HTTP status: 401
+
+**ServiceUnavailableException**  
+No API token is configured.  
+HTTP status: 503
+
+---
+
+## ListCapabilities
+
+Each capability, 1 to 3, and the model, effort and price step an agent at it runs on, as this stage maps them (agency's `--capabilities` file). By default: 1 `claude-haiku-5-5`, 2 `claude-sonnet-5-5`, 3 `claude-opus-5-5`, each at Claude Code's default effort, and only capability 1's model with a price step, at 100000 tokens. 3 is today's default and the ceiling.
+
+### Request syntax
+
+```http
+GET /capabilities HTTP/1.1
+Authorization: Bearer token
+```
+
+### Response syntax
+
+```http
+HTTP/1.1 200
+Content-type: application/json
+
+{
+   "capabilities": [ {
+      "capability": number,
+      "model": "string",
+      "effort": "low | medium | high | xhigh | ",
+      "priceStepAt": number
+   } ]
+}
+```
+
+### Response elements
+
+**capabilities**  
+Every capability, 1 first.  
+Type: Array of [CapabilityModel](#capabilitymodel) objects.
 
 ### Errors
 
@@ -1410,6 +1534,7 @@ Content-type: application/json
       "label": "string",
       "labels": [ "string" ],
       "credentials": [ "string" ],
+      "capability": number,
       "requester": "string",
       "state": "waiting | started | withdrawn",
       "why": "string",
@@ -1471,6 +1596,7 @@ Content-type: application/json
       "label": "string",
       "description": "string",
       "priority": number,
+      "capability": number,
       "brief": "string",
       "version": number
    } ]
@@ -1634,6 +1760,10 @@ Content-type: application/json
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
    "runtime": "container | host",
+   "capability": number,
+   "model": "string",
+   "contextTokens": number,
+   "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -1705,6 +1835,22 @@ Type: String. Valid values: `keep` | `stop` | `delete`.
 **runtime**  
 Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
 Type: String. Valid values: `container` | `host`.
+
+**capability**  
+How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3.  
+Type: Integer. Range: 1 to 3.
+
+**model**  
+Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on.  
+Type: String.
+
+**contextTokens**  
+How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**overPriceStep**  
+True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
+Type: Boolean.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -1844,6 +1990,10 @@ Content-type: application/json
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
    "runtime": "container | host",
+   "capability": number,
+   "model": "string",
+   "contextTokens": number,
+   "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -1915,6 +2065,22 @@ Type: String. Valid values: `keep` | `stop` | `delete`.
 **runtime**  
 Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
 Type: String. Valid values: `container` | `host`.
+
+**capability**  
+How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3.  
+Type: Integer. Range: 1 to 3.
+
+**model**  
+Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on.  
+Type: String.
+
+**contextTokens**  
+How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**overPriceStep**  
+True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
+Type: Boolean.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -2078,6 +2244,236 @@ HTTP status: 503
 
 ---
 
+## SetAgentCapability
+
+Records the agent's new `capability`, and so its `model`. While it has a live session, queues a `configure` for its host with the new model and effort, which the session takes from its next request to the model; otherwise its next start, a resumed one too, carries them. Switching models costs one prompt-cache rewrite on the new model: the session's whole context is written to the new model's cache at its next request. The same capability changes nothing.
+
+### Request syntax
+
+```http
+PUT /agents/{id}/capability HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
+
+{
+   "capability": number
+}
+```
+
+### URI request parameters
+
+**id**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+### Request body
+
+**capability**  
+How capable a model the agent runs on, 1 to 3, as `ListCapabilities` maps each to a model: 3 is today's default and the ceiling, 2 and 1 a step and two down, for easier work. A caller names a capability, never a model, so nothing can run an agent above capability 3's model. A number outside 1-3 is refused.  
+Type: Integer. Range: 1 to 3. Required: Yes.
+
+### Response syntax
+
+```http
+HTTP/1.1 200
+Content-type: application/json
+
+{
+   "id": "string",
+   "name": "string",
+   "title": "string",
+   "label": "string",
+   "item": "string",
+   "role": "string",
+   "tokens": {
+      "inputTokens": number,
+      "outputTokens": number,
+      "cacheCreationInputTokens": number,
+      "cacheReadInputTokens": number
+   },
+   "createdBy": "string",
+   "whenDone": "keep | stop | delete",
+   "runtime": "container | host",
+   "capability": number,
+   "model": "string",
+   "contextTokens": number,
+   "overPriceStep": boolean,
+   "skills": [ "string" ],
+   "credentials": [ "string" ],
+   "hostId": "string",
+   "state": "idle | working | waiting | interrupted | deleted",
+   "session": {
+      "id": "string",
+      "startedAt": "string",
+      "skills": [ {
+         "name": "string",
+         "version": number
+      } ],
+      "contextNote": "string"
+   },
+   "createdAt": "string",
+   "reportedAt": "string",
+   "status": "working | idle | waiting | review | done | ",
+   "summary": "string",
+   "headline": "string",
+   "saidAt": "string",
+   "activity": {
+      "text": "string",
+      "at": "string"
+   },
+   "tasks": number,
+   "told": boolean,
+   "limitedUntil": "string",
+   "hostStatus": "connected | disconnected | lost"
+}
+```
+
+### Response elements
+
+**id**  
+Assigned by the service when the agent is created.  
+Type: String.
+
+**name**  
+Unique among agents not deleted. Names its home folder and tmux session on its host.  
+Type: String. Pattern: `^[a-z0-9][a-z0-9-]{0,39}$`.
+
+**title**  
+What the agent named itself for its work, with `PutAgentTitle`, or the person with `UpdateAgent`. Kept across sessions; null until one is given. Unlike `name`, it names nothing on its host.  
+Type: String. Nullable: Yes.
+
+**label**  
+A short tag given when it was made or with `UpdateAgent`, shown beside its name. Null for none.  
+Type: String. Nullable: Yes.
+
+**item**  
+The work item it was started on, as given when it was made; null for none.  
+Type: String. Length: 1 to 64. Nullable: Yes.
+
+**role**  
+The role it was made from, as given when it was made; null for one made without.  
+Type: String. Pattern: `^[a-z][a-z0-9-]{0,39}$`. Nullable: Yes.
+
+**tokens**  
+Tokens its sessions have used, summed, as its host reported each session's running total; every count 0 until one is reported. A live session's count still grows.  
+Type: [Tokens](#tokens) object.
+
+**createdBy**  
+The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none.  
+Type: String. Nullable: Yes.
+
+**whenDone**  
+What becomes of the agent once it says it is `done`: `keep`, it stays and a message starts it again; `stop`, its session is stopped; `delete`, it is stopped and deleted, as by `DeleteAgent`. On `review`, `stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.  
+Type: String. Valid values: `keep` | `stop` | `delete`.
+
+**runtime**  
+Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
+Type: String. Valid values: `container` | `host`.
+
+**capability**  
+How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3.  
+Type: Integer. Range: 1 to 3.
+
+**model**  
+Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on.  
+Type: String.
+
+**contextTokens**  
+How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**overPriceStep**  
+True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
+Type: Boolean.
+
+**skills**  
+The honed skills each session is given, by name: its role's own first.  
+Type: Array of strings.
+
+**credentials**  
+The services each session is given, by name; null for every one the stage has. Never a token.  
+Type: Array of strings. Nullable: Yes.
+
+**hostId**  
+The host it lives on.  
+Type: String. Pattern: `^[A-Za-z0-9._-]{1,64}$`.
+
+**state**  
+`idle`: has a home and no live session. `working`, `waiting`: a live session, in a turn or between turns, as its host last reported it (`working` too from the moment a `start` or a message is queued). `interrupted`: its session ended without a stop, and it can be resumed. `deleted`: no longer on the team; its home folder is kept on the host.  
+Type: String. Valid values: `idle` | `working` | `waiting` | `interrupted` | `deleted`.
+
+**session**  
+The live session, or null for none: when it started, and what it started with.  
+Type: Object. Nullable: Yes.
+
+**createdAt**  
+When it was made.  
+Type: String.
+
+**reportedAt**  
+When its host last reported a change to it; null until its host first reports it.  
+Type: String. Nullable: Yes.
+
+**status**  
+What it is doing, as its host sees its turns and as it last said. `working`: a turn of its, or a background task or subagent it started, is running. `idle`: its session is live and neither is, as after it replied; this never needs the person. `waiting`: it said with `PutAgentStatus` that it needs the person, and stays so until the person messages it (a turn it begins by itself does not end it). `review`: its change is submitted to approval-service, said by the agent or by approval-service, and it waits on the reviewer until the change ships or is sent back. `done`: it finished what it was made for, or its change shipped. `review` and `done` are kept once its session ends, and no turn changes them; only a message from the person, or `PutAgentStatus`, does. Otherwise null without a live session. Only `waiting` should notify the person.  
+Type: String. Valid values: `working` | `idle` | `waiting` | `review` | `done` | `null`. Nullable: Yes.
+
+**summary**  
+One line it, or approval-service, last said with `PutAgentStatus`: what it is doing, while `waiting` what it needs from the person. Cleared by a message from the person.  
+Type: String. Nullable: Yes.
+
+**headline**  
+A few words said with its `summary` and gone with it, for a list of agents. Null when none was given.  
+Type: String. Nullable: Yes.
+
+**saidAt**  
+When `summary` was said; null when there is none.  
+Type: String. Nullable: Yes.
+
+**activity**  
+What its latest transcript line says it was doing, and when: a Bash call's description (never its command), another tool's name and target (`Edit src/fleet.ts`, `Agent <its description>`), or the first line of a reply. Never what the person said. Show whichever of it and `summary` is newer, by `at` and `saidAt`. Null until it has done something.  
+Type: Object. Nullable: Yes.
+
+**tasks**  
+Background tasks and subagents its live session has open, as its host last reported; 0 without one.  
+Type: Integer. Range: 0 to any.
+
+**told**  
+Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said.  
+Type: Boolean. Nullable: Yes.
+
+**limitedUntil**  
+When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too.  
+Type: String. Nullable: Yes.
+
+**hostStatus**  
+Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
+Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+### Errors
+
+**ValidationException**  
+The request failed validation.  
+HTTP status: 400
+
+**UnauthorizedException**  
+Missing or incorrect bearer token.  
+HTTP status: 401
+
+**ResourceNotFoundException**  
+No agent has this id.  
+HTTP status: 404
+
+**ConflictException**  
+Nothing was queued: the agent is deleted, or its host is `lost`.  
+HTTP status: 409
+
+**ServiceUnavailableException**  
+No API token is configured.  
+HTTP status: 503
+
+---
+
 ## StopAgent
 
 Ends the agent's live session and keeps the agent: it is recorded `idle` at once, its session ended `stopped`, and a `stop` is queued to its host. What it said in `review` or `done` is kept, as when any session ends. `SendMessage` starts it again, carrying on its conversation.
@@ -2196,6 +2592,10 @@ Content-type: application/json
    "createdBy": "string",
    "whenDone": "keep | stop | delete",
    "runtime": "container | host",
+   "capability": number,
+   "model": "string",
+   "contextTokens": number,
+   "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
    "hostId": "string",
@@ -2267,6 +2667,22 @@ Type: String. Valid values: `keep` | `stop` | `delete`.
 **runtime**  
 Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
 Type: String. Valid values: `container` | `host`.
+
+**capability**  
+How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3.  
+Type: Integer. Range: 1 to 3.
+
+**model**  
+Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on.  
+Type: String.
+
+**contextTokens**  
+How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**overPriceStep**  
+True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
+Type: Boolean.
 
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
@@ -2388,6 +2804,7 @@ Content-type: application/json
    "label": "string",
    "labels": [ "string" ],
    "credentials": [ "string" ],
+   "capability": number,
    "requester": "string",
    "state": "waiting | started | withdrawn",
    "why": "string",
@@ -2433,6 +2850,10 @@ Type: Array of strings.
 **credentials**  
 In place of the role's, by name; null for the role's. Never a token.  
 Type: Array of strings. Nullable: Yes.
+
+**capability**  
+In place of the role's; null for the role's, as it is when the agent is made.  
+Type: Integer. Range: 1 to 3. Nullable: Yes.
 
 **requester**  
 The `claimed-by` header it was made with, unverified; null for none.  
@@ -2548,6 +2969,22 @@ Type: String. Valid values: `keep` | `stop` | `delete`. Required: Yes.
 Where its sessions run. `container`: in a container on its host, with the tools, logins and environment agents are given. `host`: on the host itself, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Chosen when it is made, `host` when its labels include `runtime:host` and otherwise agency's default (`container`, unless `AGENCY_DEFAULT_RUNTIME` says otherwise), and kept for its life. An agent made before runtimes were chosen is `host`.  
 Type: String. Valid values: `container` | `host`. Required: Yes.
 
+**capability**  
+How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3.  
+Type: Integer. Range: 1 to 3. Required: Yes.
+
+**model**  
+Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on.  
+Type: String. Required: Yes.
+
+**contextTokens**  
+How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes. Required: Yes.
+
+**overPriceStep**  
+True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
+Type: Boolean. Required: Yes.
+
 **skills**  
 The honed skills each session is given, by name: its role's own first.  
 Type: Array of strings. Required: Yes.
@@ -2611,6 +3048,14 @@ Type: String. Nullable: Yes. Required: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`. Required: Yes.
+
+## AgentCapability
+
+### Contents
+
+**capability**  
+How capable a model the agent runs on, 1 to 3, as `ListCapabilities` maps each to a model: 3 is today's default and the ceiling, 2 and 1 a step and two down, for easier work. A caller names a capability, never a model, so nothing can run an agent above capability 3's model. A number outside 1-3 is refused.  
+Type: Integer. Range: 1 to 3. Required: Yes.
 
 ## AgentList
 
@@ -2677,6 +3122,10 @@ Type: Boolean. Required: No.
 When the usage limit that ended its session's last turn resets; null or absent once a turn has begun since, or when no limit stopped it. Absent from a host that does not say, read as null.  
 Type: String. Nullable: Yes. Required: No.
 
+**contextTokens**  
+How large its session's context is: the input, cache read and cache write tokens of the session's last request to the model. Absent from a host that does not say, or before the session's first request; the last size reported stands.  
+Type: Integer. Range: 0 to 9007199254740991. Required: No.
+
 ## AgentRequest
 
 ### Contents
@@ -2712,6 +3161,10 @@ Type: Array of strings. Required: Yes.
 **credentials**  
 In place of the role's, by name; null for the role's. Never a token.  
 Type: Array of strings. Nullable: Yes. Required: Yes.
+
+**capability**  
+In place of the role's; null for the role's, as it is when the agent is made.  
+Type: Integer. Range: 1 to 3. Nullable: Yes. Required: Yes.
 
 **requester**  
 The `claimed-by` header it was made with, unverified; null for none.  
@@ -2781,6 +3234,34 @@ Type: String. Length: 1 to 29. Required: No.
 What the agent is there to do, in a few words.  
 Type: String. Length: 1 to 40. Required: Yes.
 
+## CapabilityList
+
+### Contents
+
+**capabilities**  
+Every capability, 1 first.  
+Type: Array of [CapabilityModel](#capabilitymodel) objects. Required: Yes.
+
+## CapabilityModel
+
+### Contents
+
+**capability**  
+How capable a model the agent runs on, 1 to 3, as `ListCapabilities` maps each to a model: 3 is today's default and the ceiling, 2 and 1 a step and two down, for easier work. A caller names a capability, never a model, so nothing can run an agent above capability 3's model. A number outside 1-3 is refused.  
+Type: Integer. Range: 1 to 3. Required: Yes.
+
+**model**  
+The model an agent at this capability runs on.  
+Type: String. Required: Yes.
+
+**effort**  
+Its `--effort`; null for Claude Code's default, `medium`.  
+Type: String. Valid values: `low` | `medium` | `high` | `xhigh` | `null`. Nullable: Yes. Required: Yes.
+
+**priceStepAt**  
+The context size in tokens above which the model's price goes up, as an agent's `overPriceStep` reads it; null for none.  
+Type: Integer. Nullable: Yes. Required: Yes.
+
 ## Command
 
 ### Contents
@@ -2813,6 +3294,32 @@ Type: Boolean. Required: Yes.
 **error**  
 Why not, when `ok` is false, in the host's words.  
 Type: String. Length: 0 to 4096. Required: No.
+
+## ConfigureCommand
+
+Switch the agent's live session to `model` and `effort`, as the Agent SDK's `applyFlagSettings` does, from its next request to the model. Queued by `SetAgentCapability`.
+
+### Contents
+
+**id**  
+Report the command by this id once it is taken.  
+Type: String. Length: 1 to 128. Required: Yes.
+
+**agentId**  
+Assigned by the service when the agent is created.  
+Type: String. Required: Yes.
+
+**kind**  
+Which command this is.  
+Type: String. Valid values: `configure`. Required: Yes.
+
+**model**  
+The model the live session runs on from its next request to the model.  
+Type: String. Required: Yes.
+
+**effort**  
+Its `--effort` from then; null for Claude Code's default.  
+Type: String. Valid values: `low` | `medium` | `high` | `xhigh` | `null`. Nullable: Yes. Required: Yes.
 
 ## CreateCommand
 
@@ -3089,6 +3596,10 @@ Type: String. Length: 1 to 64. Required: No.
 Absent, the role's, or without one `keep`.  
 Type: String. Valid values: `keep` | `stop` | `delete`. Required: No.
 
+**capability**  
+How capable a model it runs on, 1 to 3 (`ListCapabilities`). Absent, the role's, or without one 3.  
+Type: Integer. Range: 1 to 3. Required: No.
+
 **credentials**  
 The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each its services file names, such as `waypoint` and `honed`. A name it does not have is refused. Absent, the role's, or without one all of them. Only the names are kept on record; each token is read at each start.  
 Type: Array of strings. At most 16 items. Required: No.
@@ -3129,6 +3640,10 @@ Type: Array of strings. At most 64 items. Required: No.
 In place of the role's, as `CreateAgent` takes them.  
 Type: Array of strings. At most 16 items. Required: No.
 
+**capability**  
+How capable a model its agent runs on, 1 to 3 (`ListCapabilities`), such as the work item's difficulty. Absent, the role's.  
+Type: Integer. Range: 1 to 3. Required: No.
+
 **another**  
 True to ask for one more agent on `item` though someone is on it already. Absent or false, a request for an item with an agent neither deleted nor `done`, or a request waiting or just started, is refused.  
 Type: Boolean. Required: No.
@@ -3166,6 +3681,10 @@ Type: String. Length: 1 to 16384. Nullable: Yes. Required: Yes.
 **priority**  
 Of two requests waiting to start, the higher starts first.  
 Type: Integer. Range: 0 to 1000. Required: Yes.
+
+**capability**  
+The capability an agent made from it runs at when its caller gives none: its `role.json`'s `capability`, 3 when that has none.  
+Type: Integer. Range: 1 to 3. Required: Yes.
 
 **brief**  
 The first message of an agent made from it with no `brief` of its own; null when the caller must give one.  
@@ -3358,6 +3877,14 @@ Type: Boolean. Required: Yes.
 **runtime**  
 Where the host runs the session: `container` in a container, `host` on the host itself, as the agent's `runtime` says.  
 Type: String. Valid values: `container` | `host`. Required: Yes.
+
+**model**  
+The model the session runs on (`--model`): its agent's `capability`'s, as `ListCapabilities` maps it at the time of the start, a resumed session's too, so an agent whose capability changed while idle resumes on the new model.  
+Type: String. Required: Yes.
+
+**effort**  
+The session's `--effort`, when its capability's entry gives one; absent, Claude Code's default.  
+Type: String. Valid values: `low` | `medium` | `high` | `xhigh`. Required: No.
 
 **text**  
 The session's first message, when it has one.  

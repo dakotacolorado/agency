@@ -50,6 +50,7 @@ it serves.
 | `--services` | `AGENCY_SERVICES` | none | JSON file of the other services a session may be given. |
 | `--retire-closed-after` | `AGENCY_RETIRE_CLOSED_AFTER` | `14` | Days an agent stays `done` with no session before the hourly sweep deletes it, as `DeleteAgent` does. `0` never deletes one. |
 | `--default-runtime` | `AGENCY_DEFAULT_RUNTIME` | `container` | Where an agent runs when its request's labels do not include `runtime:host`: `container` or `host`. |
+| `--capabilities` | `AGENCY_CAPABILITIES` | 1 `claude-haiku-5-5`, 2 `claude-sonnet-5-5`, 3 `claude-opus-5-5` | JSON file of the model each capability (1-3) runs an agent on; each capability it names replaces that one's default (see below). |
 | | `AUTH_TOKEN` | none | The token every caller and host presents. Without it, every call but `/health` and `/openapi.json` answers 503. |
 | | `AGENCY_NUDGE_URL`, `AGENCY_NUDGE_TOKEN` | none | A [nudge](https://github.com/dakotacolorado/nudge) server and producer token, to notify you while an agent is waiting on you or in review (see [How it works](#how-it-works)). Set both or neither. |
 | | `AGENCY_WORKER_PAGE_URL` | agency's own page | The base address a notification links to, with `/workers/<agent id>` appended, such as a workplace-ui. |
@@ -69,6 +70,18 @@ that MCP server. A service that runs an instance on each host can add
 `"urlByHost": {"<host id>": "<url>"}`: a session on a host it names gets that
 address in `$urlVar` instead of `url`. A service named `honed` is where roles and skills are read
 from.
+
+The capabilities file gives each capability its `model`, an optional
+`effort` (`low`, `medium`, `high` or `xhigh`; null for Claude Code's default)
+and an optional `priceStepAt`, the context size in tokens above which the
+model's price goes up. By default only capability 1 has one, `100000`:
+
+```json
+{
+  "1": { "model": "claude-haiku-5-5", "effort": null, "priceStepAt": 100000 },
+  "2": { "model": "claude-sonnet-5-5", "effort": "high" }
+}
+```
 
 ## Use it
 
@@ -90,6 +103,15 @@ curl -X POST "$AGENCY_URL/requests" \
 - **Roles and skills** live in honed. A role is the skill
   `agent-roles/<name>`: what the agent is told, plus its settings in
   `role.json`. An agent gets its role's skills and the ones it names.
+- **Capability** picks an agent's model: 3 is today's default and the
+  ceiling, 2 and 1 a step and two down, for easier work. A caller gives
+  `capability` to `CreateAgent` or `CreateRequest`, never a model; without
+  one, the agent takes its role's (`role.json`'s `capability`, 3 when absent).
+  `GET /capabilities` lists the map. `PUT /agents/{id}/capability` changes a
+  live agent's: its session switches model at its next request, at the cost
+  of one prompt-cache rewrite, and an idle agent's next start uses it. An
+  agent shows its `model` and last `contextTokens`, and `overPriceStep` once
+  that is above its model's `priceStepAt`.
 - **A request** waits until both usage windows are under 90% and a connected
   host with the right labels has a free slot. The highest-priority role starts
   first, then the oldest. A waiting request says why it waits.

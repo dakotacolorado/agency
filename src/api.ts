@@ -40,6 +40,7 @@ import { buildOf, PACKAGE_VERSION, type Build } from "./build.ts";
 import { NO_ROLES, type Role, type RoleSource } from "./roles.ts";
 import { inStartOrder, MAKING_FOR_MS, nameFor, usageAdmits, type AgentRequest } from "./admission.ts";
 import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
+import { CAPABILITIES, capabilityOf, DEFAULT_CAPABILITIES, DEFAULT_CAPABILITY, type Capability, type CapabilityMap } from "./capabilities.ts";
 
 export const SPEC_PATH = "/openapi.json";
 
@@ -97,6 +98,8 @@ export interface ApiOptions {
   notifier?: AgentNotifier;
   /** Where an agent runs when its labels do not ask for the host. Absent, `container`. */
   defaultRuntime?: Runtime;
+  /** The model each capability runs on. Absent, `DEFAULT_CAPABILITIES`. */
+  capabilities?: CapabilityMap;
 }
 
 export class AgencyApi {
@@ -133,6 +136,7 @@ export class AgencyApi {
       this.now,
       new Credentials(options.credentials ?? { [SELF]: selfCredential(token) }),
       options.notifier ?? NO_NOTIFIER,
+      options.capabilities ?? DEFAULT_CAPABILITIES,
     );
     this.hono = new OpenAPIHono({
       defaultHook: (result, c) =>
@@ -224,6 +228,11 @@ export class AgencyApi {
     });
   }
 
+  /** An agent as it is served, its model as this stage maps its capability. */
+  private view(agent: Agent, host: Host | null) {
+    return agentView(agent, host, this.now(), this.fleet.capabilities);
+  }
+
   /** The roles in honed's `agent-roles/`, as last read. */
   async roles(): Promise<Role[]> {
     return this.roleSource.list();
@@ -255,6 +264,10 @@ export class AgencyApi {
       return c.body(null, 204);
     });
 
+    app.openapi(routes.listCapabilitiesRoute, (c) =>
+      c.json({ capabilities: CAPABILITIES.map((capability) => ({ capability, ...this.fleet.capabilities[capability] })) }, 200),
+    );
+
     app.openapi(routes.listRolesRoute, async (c) => c.json({ roles: await this.roles() }, 200));
 
     app.openapi(routes.getRoleRoute, async (c) => {
@@ -283,6 +296,7 @@ export class AgencyApi {
         label: asked.label ?? null,
         labels: asked.labels ?? [],
         credentials,
+        capability: (asked.capability as Capability | undefined) ?? null,
         requester: c.req.valid("header")["claimed-by"] ?? null,
         state: "waiting",
         why: null,
@@ -343,9 +357,14 @@ export class AgencyApi {
       const asked = c.req.valid("json");
       const role = asked.role === undefined ? null : await this.role(asked.role);
       if (asked.role !== undefined && !role) return c.json(failure(400, `This stage has no role named ${asked.role}.`), 400);
-      const made = await this.make(this.origin(c), { ...asked, role, createdBy: c.req.valid("header")["claimed-by"] ?? null });
+      const made = await this.make(this.origin(c), {
+        ...asked,
+        capability: asked.capability as Capability | undefined,
+        role,
+        createdBy: c.req.valid("header")["claimed-by"] ?? null,
+      });
       if ("refused" in made) return c.json(failure(made.status, made.refused), made.status);
-      return c.json(agentView(made.agent, made.host, this.now()), 201);
+      return c.json(this.view(made.agent, made.host), 201);
     });
 
     app.openapi(routes.listAgentsRoute, async (c) => {
@@ -361,14 +380,14 @@ export class AgencyApi {
             (all === "true" || item !== undefined || w.state !== "deleted"),
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now));
+        .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now, this.fleet.capabilities));
       return c.json({ agents }, 200);
     });
 
     app.openapi(routes.getAgentRoute, async (c) => {
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
-      return c.json(agentView(agent, await this.store.getHost(agent.hostId), this.now()), 200);
+      return c.json(this.view(agent, await this.store.getHost(agent.hostId)), 200);
     });
 
     app.openapi(routes.messageAgentRoute, async (c) => afresh(async () => {
@@ -384,7 +403,7 @@ export class AgencyApi {
       const agent = await this.store.getAgent(c.req.valid("param").id);
       if (!agent) return c.json(failure(404, "No agent has this id."), 404);
       if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
-      const view = async (w: Agent) => agentView(w, await this.store.getHost(w.hostId), this.now());
+      const view = async (w: Agent) => this.view(w, await this.store.getHost(w.hostId));
       const renamed = {
         ...agent,
         ...(name !== undefined && { name }),
@@ -438,11 +457,11 @@ export class AgencyApi {
       const then = quiet(said) ? onceQuiet(said) : null;
       if (then === "delete") {
         await this.deleteAgent(said);
-        return c.json(agentView((await this.store.getAgent(agent.id))!, await this.store.getHost(agent.hostId), this.now()), 200);
+        return c.json(this.view((await this.store.getAgent(agent.id))!, await this.store.getHost(agent.hostId)), 200);
       }
       const stop: Command[] = then === "stop" && said.session ? [{ kind: "stop", id: randomUUID(), agentId: agent.id }] : [];
       await this.fleet.apply({ agents: [said], queue: inOrder(agent.hostId, stop, this.now()), guarded: true });
-      return c.json(agentView(said, await this.store.getHost(agent.hostId), this.now()), 200);
+      return c.json(this.view(said, await this.store.getHost(agent.hostId)), 200);
     }));
 
     app.openapi(routes.setAgentTitleRoute, async (c) => afresh(async () => {
@@ -455,7 +474,25 @@ export class AgencyApi {
       }
       const titled: Agent = { ...agent, title };
       await this.fleet.apply({ agents: [titled], guarded: true });
-      return c.json(agentView(titled, await this.store.getHost(agent.hostId), this.now()), 200);
+      return c.json(this.view(titled, await this.store.getHost(agent.hostId)), 200);
+    }));
+
+    app.openapi(routes.setAgentCapabilityRoute, async (c) => afresh(async () => {
+      const capability = c.req.valid("json").capability as Capability;
+      const agent = await this.store.getAgent(c.req.valid("param").id);
+      if (!agent) return c.json(failure(404, "No agent has this id."), 404);
+      if (agent.state === "deleted") return c.json(failure(409, `${agent.name} is deleted.`), 409);
+      if (capabilityOf(agent) === capability) return c.json(this.view(agent, await this.store.getHost(agent.hostId)), 200);
+      const changed: Agent = { ...agent, capability };
+      const commands: Command[] = [];
+      if (agent.session) {
+        const host = await this.fleet.reachable(agent);
+        if (typeof host === "string") return c.json(failure(409, host), 409);
+        const { model, effort } = this.fleet.capabilities[capability];
+        commands.push({ kind: "configure", id: randomUUID(), agentId: agent.id, model, effort });
+      }
+      await this.fleet.apply({ agents: [changed], queue: inOrder(agent.hostId, commands, this.now()), guarded: true });
+      return c.json(this.view(changed, await this.store.getHost(agent.hostId)), 200);
     }));
 
     app.openapi(routes.transcriptRoute, async (c) => {
@@ -529,6 +566,7 @@ export class AgencyApi {
     const rest = requests.filter((r) => r.state !== "waiting").sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return [...waiting, ...rest].map(({ rev: _, ...request }) => ({
       ...request,
+      capability: request.capability ?? null,
       priority: priority.get(request.role) ?? 0,
       position: request.state === "waiting" ? waiting.findIndex((w) => w.id === request.id) + 1 : null,
     }));
@@ -597,6 +635,7 @@ export class AgencyApi {
         ...(request.label !== null && { label: request.label }),
         ...(request.item !== null && { item: request.item }),
         ...(request.credentials !== null && { credentials: request.credentials }),
+        ...(request.capability != null && { capability: request.capability }),
         createdBy: request.requester,
       }).catch(async (err) => {
         await putBack(`Could not start: ${(err as Error).message}`);
@@ -646,6 +685,7 @@ export class AgencyApi {
       createdBy: asked.createdBy,
       whenDone: whenDone ?? "keep",
       runtime: runtimeFor(labels ?? [], this.defaultRuntime),
+      capability: asked.capability ?? role?.capability ?? DEFAULT_CAPABILITY,
       skills,
       ...(credentials && { credentials }),
       state: "idle",
@@ -702,7 +742,7 @@ export class AgencyApi {
 
   /** A new session, with what it starts with. */
   private async starting(self: string, agent: Agent, at: string, text?: string): Promise<ReturnType<typeof begin>> {
-    return begin(agent, at, text, await this.attach(self, agent));
+    return begin(agent, at, text, await this.attach(self, agent), this.fleet.capabilities[capabilityOf(agent)]);
   }
 
   /**
@@ -742,6 +782,7 @@ export class AgencyApi {
         { name: routes.TAGS.agents, description: "Make agents, talk to them, and follow what they do." },
         { name: routes.TAGS.requests, description: "Ask for an agent in a role, started when usage and a host allow." },
         { name: routes.TAGS.roles, description: "What each kind of agent starts with." },
+        { name: routes.TAGS.capabilities, description: "The model each capability, 1 to 3, runs an agent on." },
         { name: routes.TAGS.hosts, description: "See the hosts agents run on." },
         { name: routes.TAGS.usage, description: "The Claude account's allowance used." },
         { name: routes.TAGS.pages, description: "What a page needs to watch agents live." },
@@ -766,6 +807,7 @@ interface NewAgent {
   whenDone?: WhenDone;
   skills?: string[];
   credentials?: string[];
+  capability?: Capability;
   createdBy: string | null;
 }
 

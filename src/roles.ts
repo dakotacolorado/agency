@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_CAPABILITY, type Capability } from "./capabilities.ts";
 import { WHEN_DONE, type WhenDone } from "./domain.ts";
 
 /** The honed group whose skills are the roles. */
@@ -25,6 +26,8 @@ export interface Role {
   /** What it is for and who starts it: markdown; null for none. */
   description: string | null;
   priority: number;
+  /** What an agent made from it runs at when its caller gives no capability. */
+  capability: Capability;
   /** The first message when the caller gives none; null when a caller must. */
   brief: string | null;
   /** The honed version it was read at. */
@@ -41,6 +44,8 @@ export const RoleSettingsSchema = z.object({
   summary: z.string().nullable().default(null),
   /** Other honed skills each session is given beside the role's own. */
   skills: z.array(z.string().min(1)).default([]),
+  /** The capability an agent made from it runs at unless its caller gives one; what every role ran at before this. */
+  capability: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(DEFAULT_CAPABILITY),
 });
 
 /** A role as honed has it, from its skill's files; or why it is not one. */
@@ -56,8 +61,8 @@ export function roleOf(skill: { name: string; version: number; files?: { path: s
   }
   const settings = RoleSettingsSchema.safeParse(parsed);
   if (!settings.success) return `${skill.name}'s role.json: ${settings.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
-  const { label, priority, whenDone, services, brief, summary, skills } = settings.data;
-  return { name, skills: [skill.name, ...skills], credentials: services, whenDone, label, description: summary, priority, brief, version: skill.version };
+  const { label, priority, whenDone, services, brief, summary, skills, capability } = settings.data;
+  return { name, skills: [skill.name, ...skills], credentials: services, whenDone, label, description: summary, priority, capability, brief, version: skill.version };
 }
 
 /** Highest priority first, then by name. */

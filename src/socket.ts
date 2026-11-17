@@ -1,6 +1,7 @@
 import type { TokenSource } from "./api.ts";
 import { withdrawn } from "./domain.ts";
 import { hash, same } from "./secret.ts";
+import { DEFAULT_CAPABILITIES, type CapabilityMap } from "./capabilities.ts";
 import { Credentials, SELF, selfCredential, type Credential } from "./credentials.ts";
 import { Fleet } from "./fleet.ts";
 import { NO_NOTIFIER, type AgentNotifier } from "./nudge.ts";
@@ -48,12 +49,13 @@ export class SocketHandler {
     credentials: Record<string, Credential> = { [SELF]: selfCredential(token) },
     onHeartbeat: (hostId: string, heartbeat: Omit<Heartbeat, "type">) => Promise<void> = async () => {},
     notifier: AgentNotifier = NO_NOTIFIER,
+    capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
   ) {
     this.onHeartbeat = onHeartbeat;
     this.store = store;
     this.token = token;
     this.now = now;
-    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials), notifier);
+    this.fleet = new Fleet(store, new Push(store, poster), now, new Credentials(credentials), notifier, capabilities);
   }
 
   async handle(event: SocketEvent): Promise<SocketResult> {

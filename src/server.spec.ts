@@ -76,7 +76,7 @@ const planner = async (name: string) => {
 describe("roles, as the served process reads them", () => {
   it("are honed's agent-roles/ skills, each with its role.json's settings", async () => {
     expect((await call("GET", "/roles")).body).toEqual({
-      roles: [{ name: "planner", skills: ["agent-roles/planner"], credentials: null, whenDone: "stop", label: "plan: new work", description: "Plans work.", priority: 40, brief: "Ask the person what they want.", version: 5 }],
+      roles: [{ name: "planner", skills: ["agent-roles/planner"], credentials: null, whenDone: "stop", label: "plan: new work", description: "Plans work.", priority: 40, capability: 3, brief: "Ask the person what they want.", version: 5 }],
     });
   });
 });

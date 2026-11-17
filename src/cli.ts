@@ -9,6 +9,7 @@ import { banner, SUMMARY, TAGLINE, WORDMARK } from "./banner.ts";
 import { PACKAGE_VERSION } from "./build.ts";
 import { SELF } from "./credentials.ts";
 import { RUNTIMES, type Runtime } from "./domain.ts";
+import { readCapabilities, type CapabilityMap } from "./capabilities.ts";
 import { start, type Running } from "./server.ts";
 import { readServices, type Services } from "./services.ts";
 import { Store } from "./store.ts";
@@ -39,6 +40,10 @@ Options:
   --default-runtime <container|host>
                       where an agent runs when its labels do not include runtime:host
                       (default container, or AGENCY_DEFAULT_RUNTIME)
+  --capabilities <file>
+                      the model each capability runs an agent on, as JSON (or AGENCY_CAPABILITIES):
+                      {"<1-3>": {"model", "effort", "priceStepAt"}}, each one named replacing its
+                      default (1 claude-haiku-5-5, 2 claude-sonnet-5-5, 3 claude-opus-5-5)
   -h, --help          this
 
 Environment:
@@ -57,6 +62,7 @@ const { values, positionals } = parseArgs({
     "public-url": { type: "string" },
     "retire-closed-after": { type: "string" },
     "default-runtime": { type: "string" },
+    capabilities: { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -124,10 +130,19 @@ if (!Number.isFinite(retireClosedAfter) || retireClosedAfter < 0) fail(`--retire
 const runtimeSetting = (values["default-runtime"] ?? setting("DEFAULT_RUNTIME"))?.trim() || "container";
 if (!(RUNTIMES as readonly string[]).includes(runtimeSetting)) fail(`--default-runtime must be ${RUNTIMES.join(" or ")}, not ${runtimeSetting}`);
 const defaultRuntime = runtimeSetting as Runtime;
+const capabilitiesFile = (values.capabilities ?? setting("CAPABILITIES"))?.trim() || null;
+let capabilities: CapabilityMap | undefined;
+if (capabilitiesFile) {
+  try {
+    capabilities = readCapabilities(resolve(capabilitiesFile));
+  } catch (err) {
+    fail(`cannot read the capabilities in ${capabilitiesFile}: ${(err as Error).message}`);
+  }
+}
 const workerPageUrl = setting("WORKER_PAGE_URL")?.trim() || null;
 const starting = (): Running => {
   try {
-    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl, retireClosedAfter, defaultRuntime });
+    return start({ db: path, token: env.AUTH_TOKEN || null, services, publicUrl, nudge: nudgeUrl && nudgeToken ? { url: nudgeUrl, token: nudgeToken } : null, workerPageUrl, retireClosedAfter, defaultRuntime, ...(capabilities && { capabilities }) });
   } catch (err) {
     return fail((err as Error).message);
   }

@@ -6,6 +6,7 @@ const role = (name: string, fields: Partial<Role> & Pick<Role, "label" | "priori
   credentials: null,
   description: `The ${name} role.`,
   brief: null,
+  capability: 3,
   version: 1,
   ...fields,
 });
@@ -15,7 +16,7 @@ export const TEST_ROLES: readonly Role[] = [
   role("planner", { label: "plan: new work", priority: 40, whenDone: "stop", brief: "You are a planner. Ask the person what they want done." }),
   role("reviewer", { label: "review", priority: 30, whenDone: "delete" }),
   role("onboarder", { label: "onboard", priority: 30, whenDone: "delete" }),
-  role("implementer", { label: "ticket", priority: 10, whenDone: "stop" }),
+  role("implementer", { label: "ticket", priority: 10, whenDone: "stop", capability: 2 }),
 ];
 
 export const testRoles = () => fixedRoles([...TEST_ROLES]);

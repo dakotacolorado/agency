@@ -4,6 +4,7 @@ import { credentialsOf, type Services } from "./services.ts";
 import { HonedRoles, NO_ROLES } from "./roles.ts";
 import { Store } from "./store.ts";
 import type { Runtime } from "./domain.ts";
+import type { CapabilityMap } from "./capabilities.ts";
 import { agentPage, NO_NOTIFIER, Nudge } from "./nudge.ts";
 import type { Server } from "node:http";
 import { SocketHandler } from "./socket.ts";
@@ -30,6 +31,8 @@ export interface Config {
   retireClosedAfter?: number;
   /** Where an agent runs when its labels do not ask for the host. Absent, `container`. */
   defaultRuntime?: Runtime;
+  /** The model each capability runs on. Absent, `DEFAULT_CAPABILITIES`. */
+  capabilities?: CapabilityMap;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -63,8 +66,9 @@ export function start(config: Config): Running {
     roles,
     notifier,
     defaultRuntime: config.defaultRuntime ?? "container",
+    ...(config.capabilities && { capabilities: config.capabilities }),
   });
-  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier);
+  const handler = new SocketHandler(store, token, sockets, undefined, credentials, (hostId, heartbeat) => api.beat(hostId, heartbeat), notifier, api.fleet.capabilities);
   const retireAfter = config.retireClosedAfter ?? RETIRE_CLOSED_AFTER;
   const stopTimers = startTimers(store, {
     retire: () => retireClosed(api.fleet, retireAfter),

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Attached } from "./context.ts";
+import { capabilityOf, DEFAULT_CAPABILITIES, type CapabilityMap, type CapabilityModel } from "./capabilities.ts";
 import type { Credentials } from "./credentials.ts";
 import {
   activityOf,
@@ -68,8 +69,17 @@ export class Fleet {
   readonly now: () => Date;
   readonly credentials: Credentials;
   readonly notifier: AgentNotifier;
+  readonly capabilities: CapabilityMap;
 
-  constructor(store: Store, push: Push, now: () => Date, credentials: Credentials, notifier: AgentNotifier = NO_NOTIFIER) {
+  constructor(
+    store: Store,
+    push: Push,
+    now: () => Date,
+    credentials: Credentials,
+    notifier: AgentNotifier = NO_NOTIFIER,
+    capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
+  ) {
+    this.capabilities = capabilities;
     this.store = store;
     this.push = push;
     this.now = now;
@@ -118,7 +128,7 @@ export class Fleet {
     const hosts = new Map((await this.store.listHosts()).map((h) => [h.id, h]));
     const now = this.now();
     await this.push.toViewers(
-      agents.map((w) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now) })),
+      agents.map((w) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now, this.capabilities) })),
     );
   }
 
@@ -362,12 +372,13 @@ export class Fleet {
     }
 
     // A limit already resumed from, reported before the resume reached the host, is not set again.
-    for (const { id, limitedUntil } of report.agents) {
+    for (const { id, limitedUntil, contextTokens } of report.agents) {
       const agent = agents.get(id);
       if (!agent || agent.state === "deleted") continue;
       const reported = limitedUntil ? new Date(limitedUntil).toISOString() : null;
       const limited = reported !== null && reported === agent.resumed ? null : reported;
       if (limited !== (agent.limitedUntil ?? null)) update(agent, { limitedUntil: limited });
+      if (contextTokens !== undefined && contextTokens !== (agent.contextTokens ?? null)) update(agents.get(id)!, { contextTokens });
     }
 
     const lines = new Map<string, TranscriptLine[]>();
@@ -431,11 +442,12 @@ const starting = (offered: Queued[], sessionId: string) =>
   offered.some((q) => q.command.kind === "start" && q.command.sessionId === sessionId);
 
 /** An agent as it is served, which `hadSession` and `begun` are not. */
-export const agentView = (agent: Agent, host: Host | null, now: Date) => {
-  const { hadSession: _, begun: __, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, ...served } =
+export const agentView = (agent: Agent, host: Host | null, now: Date, capabilities: CapabilityMap = DEFAULT_CAPABILITIES) => {
+  const { hadSession: _, begun: __, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, capability: ___________, contextTokens, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
   const { turn: ______, paged: _______, ...rest } = served as typeof served & { turn?: unknown; paged?: unknown };
+  const runsOn = capabilities[capabilityOf(agent)];
   return {
     ...rest,
     title: title ?? null,
@@ -446,6 +458,10 @@ export const agentView = (agent: Agent, host: Host | null, now: Date) => {
     createdBy: createdBy ?? null,
     whenDone: whenDone ?? "keep",
     runtime: runtime ?? "host",
+    capability: capabilityOf(agent),
+    model: runsOn.model,
+    contextTokens: contextTokens ?? null,
+    overPriceStep: runsOn.priceStepAt !== null && (contextTokens ?? 0) > runsOn.priceStepAt,
     skills: skills ?? [],
     // An agent made before credentials were chosen was given today's defaults at each start.
     credentials: credentials ?? null,
@@ -476,6 +492,7 @@ export function begin(
   at: string,
   text?: string,
   attached: Attached | null = null,
+  runsOn: CapabilityModel = DEFAULT_CAPABILITIES[capabilityOf(agent)],
 ): { agent: Agent; session: Session; command: Command } {
   const { clients = null, skills = [], env = {}, credentials = [], note = null, mcpServers = {} } = attached ?? {};
   const session: Session = {
@@ -500,6 +517,7 @@ export function begin(
       saidAt: null,
       tasks: 0,
       told: null,
+      contextTokens: null,
     },
     session,
     command: {
@@ -509,6 +527,8 @@ export function begin(
       sessionId: session.id,
       resume: agent.hadSession,
       runtime: agent.runtime ?? "host",
+      model: runsOn.model,
+      ...(runsOn.effort !== null && { effort: runsOn.effort }),
       ...(text !== undefined && { text }),
       ...(clients && { context: { key: clients.key, version: clients.version, files: clients.files } }),
       ...(skills.length && { documents: skills }),

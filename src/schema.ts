@@ -24,6 +24,7 @@ import {
   RUNTIMES,
 } from "./domain.ts";
 import { FRESH_FOR_MS, REQUEST_STATES, STALE_UNDER, USAGE_LIMIT } from "./admission.ts";
+import { CAPABILITIES, DEFAULT_CAPABILITIES, DEFAULT_CAPABILITY, EFFORTS } from "./capabilities.ts";
 
 /** Validates every request and generates `openapi.json`, so neither can drift. */
 
@@ -114,6 +115,24 @@ const WhenDone = z
       "`stop` and `delete` both only stop its session, so a send-back can still start it again. Whatever it is, " +
       "an agent `done` with no session for longer than agency's `--retire-closed-after` days (14 unless set) is deleted by its hourly sweep.",
   );
+
+const Capability = z
+  .number()
+  .int()
+  .min(1)
+  .max(3)
+  .describe(
+    "How capable a model the agent runs on, 1 to 3, as `ListCapabilities` maps each to a model: 3 is today's default " +
+      "and the ceiling, 2 and 1 a step and two down, for easier work. A caller names a capability, never a model, so " +
+      "nothing can run an agent above capability 3's model. A number outside 1-3 is refused.",
+  )
+  .openapi({ example: 2 });
+
+const ModelName = z.string().describe("A Claude model id, as Claude Code's `--model` takes it.").openapi({ example: "claude-sonnet-5-5" });
+
+const Effort = z
+  .enum(EFFORTS)
+  .describe("Claude Code's `--effort` for the model.");
 
 const ItemId = z
   .string()
@@ -277,6 +296,17 @@ export const AgentReportSchema = z
         "When the usage limit that ended its session's last turn resets; null or absent once a turn " +
           "has begun since, or when no limit stopped it. Absent from a host that does not say, read as null.",
       ),
+    contextTokens: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .optional()
+      .describe(
+        "How large its session's context is: the input, cache read and cache write tokens of the session's last " +
+          "request to the model. Absent from a host that does not say, or before the session's first request; the last " +
+          "size reported stands.",
+      ),
   })
   .openapi("AgentReport");
 
@@ -389,6 +419,13 @@ export const CommandSchema = z
           .boolean()
           .describe("True to carry on the agent's last conversation (`--continue`), false to begin one."),
         runtime: Runtime.describe("Where the host runs the session: `container` in a container, `host` on the host itself, as the agent's `runtime` says."),
+        model: ModelName.describe(
+          "The model the session runs on (`--model`): its agent's `capability`'s, as `ListCapabilities` maps it at the time " +
+            "of the start, a resumed session's too, so an agent whose capability changed while idle resumes on the new model.",
+        ),
+        effort: Effort.optional().describe(
+          "The session's `--effort`, when its capability's entry gives one; absent, Claude Code's default.",
+        ),
         text: Text.optional().describe("The session's first message, when it has one."),
         context: ContextSchema.optional().describe(
           "agency's own clients, `page` and `title`, as files to write into the agent's Claude Code " +
@@ -444,6 +481,18 @@ export const CommandSchema = z
       })
       .openapi("InterruptCommand"),
     z
+      .object({
+        ...commandBase,
+        kind: z.literal("configure").describe("Which command this is."),
+        model: ModelName.describe("The model the live session runs on from its next request to the model."),
+        effort: Effort.nullable().describe("Its `--effort` from then; null for Claude Code's default."),
+      })
+      .describe(
+        "Switch the agent's live session to `model` and `effort`, as the Agent SDK's `applyFlagSettings` does, from its " +
+          "next request to the model. Queued by `SetAgentCapability`.",
+      )
+      .openapi("ConfigureCommand"),
+    z
       .object({ ...commandBase, kind: z.literal("stop").describe("Which command this is.") })
       .describe("End the session; the agent becomes idle.")
       .openapi("StopCommand"),
@@ -494,6 +543,26 @@ export const AgentSchema = z
       .describe("The `claimed-by` header of the `CreateAgent` call that made it, unverified. Null when it had none."),
     whenDone: WhenDone,
     runtime: Runtime,
+    capability: Capability.describe(
+      "How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as " +
+        "`SetAgentCapability` last changed it. An agent made before capabilities is 3.",
+    ),
+    model: ModelName.describe("Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on."),
+    contextTokens: z
+      .number()
+      .int()
+      .min(0)
+      .nullable()
+      .describe(
+        "How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), " +
+          "as its host last reported; null until one is reported.",
+      ),
+    overPriceStep: z
+      .boolean()
+      .describe(
+        "True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session " +
+          "is worth ending or compacting. False otherwise, or when the model has no step.",
+      ),
     skills: z.array(z.string()).describe("The honed skills each session is given, by name: its role's own first."),
     credentials: z
       .array(z.string())
@@ -872,6 +941,7 @@ export type SocketOutbound = z.infer<typeof SocketOutboundSchema>;
 /** The groups the reference sets operations out in, each its resource; the hosts' calls apart. */
 export const TAGS = {
   agents: "Agents",
+  capabilities: "Capabilities",
   requests: "Requests",
   roles: "Roles",
   hosts: "Hosts",
@@ -886,6 +956,7 @@ const tagOf = (path: string): string => {
   const found: Record<string, string> = {
     agents: TAGS.agents,
     requests: TAGS.requests,
+    capabilities: TAGS.capabilities,
     roles: TAGS.roles,
     hosts: TAGS.hosts,
     usage: TAGS.usage,
@@ -901,7 +972,7 @@ const secured = { security: [{ bearerAuth: [] }] };
 
 /** Reads nothing but state. */
 const forClientReading = <R extends Untagged & { method: "get" }>(route: R) => createRoute({ ...route, ...secured, tags: [tagOf(route.path)] });
-const forClientActing = <R extends Untagged & { method: "post" | "patch" | "delete" }>(route: R) => createRoute({ ...route, ...secured, tags: [tagOf(route.path)] });
+const forClientActing = <R extends Untagged & { method: "post" | "put" | "patch" | "delete" }>(route: R) => createRoute({ ...route, ...secured, tags: [tagOf(route.path)] });
 /** Called by an agent, from its session, of itself. */
 const forAgent = <R extends Untagged & { method: "put" }>(route: R) => createRoute({ ...route, ...secured, tags: [tagOf(route.path)] });
 
@@ -996,6 +1067,9 @@ export const createAgentRoute = forClientActing({
             "The work item it is started on, kept for its life so `ListAgents` with `item` finds it. Absent, none.",
           ),
           whenDone: WhenDone.optional().describe("Absent, the role's, or without one `keep`."),
+          capability: Capability.optional().describe(
+            "How capable a model it runs on, 1 to 3 (`ListCapabilities`). Absent, the role's, or without one 3.",
+          ),
           credentials: Credentials.optional().describe(
             "The services each session is given an address and token for, by name: `agency` (or `agent-service`, its former name) and each " +
               "its services file names, such as `waypoint` and `honed`. A name it does not have is refused. " +
@@ -1016,7 +1090,7 @@ export const createAgentRoute = forClientActing({
     ...REFUSED("an agent not deleted already has `name`, the host is `lost`, or it is full and a `brief` was given."),
     ...FAILS,
     503: fails(503, "No API token is configured, or no `hostId` was given and no connected host fits and has room."),
-    400: fails(400, "The request failed validation, `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.",
+    400: fails(400, "The request failed validation (a `capability` outside 1-3 among it), `role` is not one this stage has, a credential is not one this stage has, or honed has no skill named in `skills`.",
     ),
   },
 });
@@ -1260,6 +1334,60 @@ export const setAgentTitleRoute = forAgent({
   },
 });
 
+export const setAgentCapabilityRoute = forClientActing({
+  method: "put",
+  path: "/agents/{id}/capability",
+  operationId: "SetAgentCapability",
+  summary: "Set an agent's capability",
+  description:
+    "Records the agent's new `capability`, and so its `model`. While it has a live session, queues a `configure` for its " +
+    "host with the new model and effort, which the session takes from its next request to the model; otherwise its next " +
+    "start, a resumed one too, carries them. Switching models costs one prompt-cache rewrite on the new model: the " +
+    "session's whole context is written to the new model's cache at its next request. The same capability changes nothing.",
+  request: {
+    ...agentParam,
+    body: json(z.strictObject({ capability: Capability }).openapi("AgentCapability"), "The agent's new capability."),
+  },
+  responses: {
+    200: json(AgentSchema, "Recorded, and `configure` queued for a live session."),
+    ...NO_AGENT,
+    ...REFUSED("the agent is deleted, or its host is `lost`."),
+    ...FAILS,
+  },
+});
+
+export const CapabilityEntrySchema = z
+  .object({
+    capability: Capability,
+    model: ModelName.describe("The model an agent at this capability runs on."),
+    effort: Effort.nullable().describe("Its `--effort`; null for Claude Code's default, `medium`."),
+    priceStepAt: z
+      .number()
+      .int()
+      .nullable()
+      .describe("The context size in tokens above which the model's price goes up, as an agent's `overPriceStep` reads it; null for none."),
+  })
+  .openapi("CapabilityModel");
+
+export const listCapabilitiesRoute = forClientReading({
+  method: "get",
+  path: "/capabilities",
+  operationId: "ListCapabilities",
+  summary: "List capabilities",
+  description:
+    "Each capability, 1 to 3, and the model, effort and price step an agent at it runs on, as this stage maps them " +
+    `(agency's \`--capabilities\` file). By default: ${CAPABILITIES.map((n) => `${n} \`${DEFAULT_CAPABILITIES[n].model}\``).join(", ")}, ` +
+    `each at Claude Code's default effort, and only capability 1's model with a price step, at ${DEFAULT_CAPABILITIES[1].priceStepAt} tokens. ` +
+    `${DEFAULT_CAPABILITY} is today's default and the ceiling.`,
+  responses: {
+    200: json(
+      z.object({ capabilities: z.array(CapabilityEntrySchema).describe("Every capability, 1 first.") }).openapi("CapabilityList"),
+      "The capabilities.",
+    ),
+    ...FAILS,
+  },
+});
+
 export const getUsageRoute = forClientReading({
   method: "get",
   path: "/usage",
@@ -1285,6 +1413,7 @@ export const RoleSchema = z
     label: AgentLabel,
     description: Text.nullable().describe("What an agent in it is for and who starts one: markdown, a sentence or two. Null for none."),
     priority: Priority.describe("Of two requests waiting to start, the higher starts first."),
+    capability: Capability.describe("The capability an agent made from it runs at when its caller gives none: its `role.json`'s `capability`, 3 when that has none."),
     brief: Text.nullable().describe("The first message of an agent made from it with no `brief` of its own; null when the caller must give one."),
     version: z.number().int().describe("The version of its honed skill it was read at."),
   })
@@ -1347,6 +1476,7 @@ export const RequestSchema = z
     label: z.string().nullable().describe("In place of the role's label; null for the role's."),
     labels: z.array(Label).describe("What the host it is placed on must all carry."),
     credentials: z.array(z.string()).nullable().describe("In place of the role's, by name; null for the role's. Never a token."),
+    capability: Capability.nullable().describe("In place of the role's; null for the role's, as it is when the agent is made."),
     requester: z.string().nullable().describe("The `claimed-by` header it was made with, unverified; null for none."),
     state: z
       .enum(REQUEST_STATES)
@@ -1393,6 +1523,9 @@ export const createRequestRoute = forClientActing({
               "host rather than in a container (see the agent's `runtime`); every host carries that label.",
           ),
           credentials: Credentials.optional().describe("In place of the role's, as `CreateAgent` takes them."),
+          capability: Capability.optional().describe(
+            "How capable a model its agent runs on, 1 to 3 (`ListCapabilities`), such as the work item's difficulty. Absent, the role's.",
+          ),
           another: z
             .boolean()
             .optional()
@@ -1407,7 +1540,7 @@ export const createRequestRoute = forClientActing({
   responses: {
     201: json(RequestSchema, "Recorded, and `started` if it was admitted at once."),
     ...FAILS,
-    400: fails(400, "The request failed validation, the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has."),
+    400: fails(400, "The request failed validation (a `capability` outside 1-3 among it), the stage has no such role, neither it nor its role has a brief, or a credential is not one this stage has."),
     409: fails(409, "Its `item` has an agent or a request on it already, and it did not say `another: true`."),
   },
 });

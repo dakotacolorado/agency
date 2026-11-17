@@ -127,7 +127,7 @@ describe("the reference", async () => {
   const all = await schemas();
 
   it("names every operation as AWS names theirs: a verb, then what it acts on, in PascalCase", () => {
-    const verbs = ["Get", "List", "Create", "Update", "Delete", "Put", "Send", "Stop", "Resume", "Delete", "Withdraw"];
+    const verbs = ["Get", "List", "Create", "Update", "Delete", "Put", "Send", "Set", "Stop", "Resume", "Delete", "Withdraw"];
     const named = new RegExp(`^(${verbs.join("|")})(?:[A-Z][a-z]+)+$`);
     expect(ops.map((op) => op.operationId).filter((id) => !named.test(id))).toEqual([]);
   });
@@ -165,12 +165,12 @@ describe("the shapes", async () => {
     expect(fields("Agent")).toEqual(
       [
         "createdAt", "hostId", "hostStatus", "id", "name", "reportedAt", "session", "state", "title",
-        "label", "item", "role", "tokens", "createdBy", "whenDone", "runtime", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil",
+        "label", "item", "role", "tokens", "createdBy", "whenDone", "runtime", "capability", "model", "contextTokens", "overPriceStep", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil",
       ].sort(),
     );
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());
     expect(fields("LineReport")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text", "agentId"].sort());
-    expect(fields("AgentReport")).toEqual(["id", "limitedUntil", "sessionId", "state", "tasks", "told"]);
+    expect(fields("AgentReport")).toEqual(["contextTokens", "id", "limitedUntil", "sessionId", "state", "tasks", "told"]);
     expect(fields("CommandReport")).toEqual(["commandId", "error", "ok"]);
     expect(fields("Heartbeat")).toEqual(["capacity", "labels", "type", "version"]);
     expect(fields("SocketReport")).toEqual(["agents", "commandResults", "lines", "tokens", "type", "usage"]);
@@ -181,8 +181,10 @@ describe("the shapes", async () => {
     expect(fields("Usage")).toEqual(["fiveHour", "readAt", "sevenDay"]);
     expect(fields("UsageWindow")).toEqual(["hostId", "readAt", "resetsAt", "utilization"]);
     expect(fields("CreateCommand")).toEqual(["id", "kind", "name", "agentId"].sort());
-    expect(fields("StartCommand")).toEqual(["context", "credentials", "documents", "env", "id", "kind", "mcpServers", "resume", "runtime", "secrets", "sessionId", "text", "agentId"].sort());
-    expect(fields("NewAgent")).toEqual(["brief", "credentials", "hostId", "item", "label", "labels", "name", "role", "skills", "whenDone"]);
+    expect(fields("StartCommand")).toEqual(["context", "credentials", "documents", "env", "id", "kind", "mcpServers", "model", "effort", "resume", "runtime", "secrets", "sessionId", "text", "agentId"].sort());
+    expect(fields("NewAgent")).toEqual(["brief", "capability", "credentials", "hostId", "item", "label", "labels", "name", "role", "skills", "whenDone"]);
+    expect(fields("ConfigureCommand")).toEqual(["agentId", "effort", "id", "kind", "model"]);
+    expect(fields("CapabilityModel")).toEqual(["capability", "effort", "model", "priceStepAt"]);
     expect(fields("Message")).toEqual(["interrupt", "text"]);
     expect(fields("SocketTicket")).toEqual(["expiresAt", "socketUrl", "ticket"]);
     expect(fields("Accepted")).toEqual(["commandId"]);
