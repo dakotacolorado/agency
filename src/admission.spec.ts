@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { AgencyApi, type TokenSource } from "./api.ts";
-import { FRESH_FOR_MS, inStartOrder, MAKING_FOR_MS, usageRefusal, type AgentRequest } from "./admission.ts";
+import { inStartOrder, MAKING_FOR_MS, usageRefusal, type AgentRequest } from "./admission.ts";
 import type { Credential } from "./credentials.ts";
 import { KeyringUnreachable } from "./keyring.ts";
 import { FakeStore } from "./fake-store.ts";
@@ -73,12 +73,12 @@ const request = async (id: string) => (await (await call("GET", `/requests/${id}
 const waiting = async () => ((await (await call("GET", "/requests")).json()) as { requests: Record<string, any>[] }).requests;
 
 describe("a request for an agent", () => {
-  it("waits while usage is at or over 90%, and says so", async () => {
+  it("waits while usage is at or over 95%, and says so", async () => {
     await beat("laptop", 2);
-    await usage(0.9, 0.2);
+    await usage(0.95, 0.2);
     const asked = await ask({ role: "reviewer", brief: "Review PR #41.", subject: "PR #41" });
     expect(asked).toMatchObject({ state: "waiting", agentId: null, position: 1 });
-    expect(asked.why).toBe("Waits on usage: 5-hour usage is 90%, at or over 90%.");
+    expect(asked.why).toBe("Waits on usage: 5-hour usage is 95%, at or over 95%.");
     expect(store.agents.size).toBe(0);
   });
 
@@ -114,59 +114,21 @@ describe("a request for an agent", () => {
     expect(await request(asked.id)).toMatchObject({ state: "started" });
   });
 
-  it("waits on usage never reported, or read too long ago, but not on a window since reset", async () => {
+  it("waits on usage never reported, but not on a window since reset", async () => {
     await beat("laptop", 2);
     expect((await ask({ role: "reviewer", brief: "Go." })).why).toContain("no 5-hour usage has been reported");
-    await usage(0.8, 0.1, new Date(now.getTime() - FRESH_FOR_MS - 60_000));
-    expect(usageRefusal(await api["fleet"].usage(), now)).toContain("minutes old, read at 80%");
     const reset = { utilization: 0.99, resetsAt: new Date(now.getTime() - 1000).toISOString(), readAt: NOW.toISOString() };
     expect(usageRefusal({ readAt: null, fiveHour: { ...reset, hostId: "h" }, sevenDay: { ...reset, hostId: "h" } }, now)).toBeNull();
   });
 
-  it("on a stale reading well under the limit, starts one request at a time, each once the last start is fresh or gave a reading", async () => {
+  it("judges a reading however old: starts everything a host has room for under the limit, and waits at it", async () => {
     await beat("laptop", 3);
-    const stale = new Date(now.getTime() - 15 * 60 * 60_000);
-    await usage(0.04, 0.37, stale);
-    const first = await ask({ role: "reviewer", brief: "Go." });
-    expect(first.state).toBe("started");
-    const second = await ask({ role: "reviewer", brief: "Go." });
-    const third = await ask({ role: "reviewer", brief: "Go." });
-    expect(second).toMatchObject({ state: "waiting" });
-    expect(second.why).toContain("the agent started since has not given a new one yet");
-    // The started agent's session gives a fresh reading: everything waiting may start.
-    later(30);
-    await usage(0.05, 0.37);
-    await beat("laptop", 3);
-    expect((await request(second.id)).state).toBe("started");
-    expect((await request(third.id)).state).toBe("started");
-  });
-
-  it("on a stale reading with no reading since a start, starts the next once that start is itself stale", async () => {
-    await beat("laptop", 3);
-    await usage(0.1, 0.1, new Date(now.getTime() - FRESH_FOR_MS - 60_000));
-    await ask({ role: "reviewer", brief: "Go." });
-    const next = await ask({ role: "reviewer", brief: "Go." });
-    expect(next.state).toBe("waiting");
-    later(FRESH_FOR_MS / 1000 + 1);
-    await beat("laptop", 2);
-    expect((await request(next.id)).state).toBe("started");
-  });
-
-  it("starts at most one in a single admission on a stale reading", async () => {
-    await beat("laptop", 0);
-    await usage(0.1, 0.1, new Date(now.getTime() - FRESH_FOR_MS - 60_000));
-    const a = await ask({ role: "reviewer", brief: "Go." });
-    const b = await ask({ role: "reviewer", brief: "Go." });
-    await beat("laptop", 3);
-    const after = [await request(a.id), await request(b.id)];
-    expect(after.map((each) => each.state).sort()).toEqual(["started", "waiting"]);
-    expect(after.find((each) => each.state === "waiting")!.why).toContain("the agent just started will give a new one");
-  });
-
-  it("still waits on a stale reading near the limit", async () => {
-    await beat("laptop", 3);
-    await usage(0.75, 0.1, new Date(now.getTime() - FRESH_FOR_MS - 60_000));
-    expect((await ask({ role: "reviewer", brief: "Go." })).why).toContain("minutes old, read at 75%");
+    const old = new Date(now.getTime() - 15 * 60 * 60_000);
+    await usage(0.04, 0.74, old);
+    const asked = [await ask({ role: "reviewer", brief: "Go." }), await ask({ role: "reviewer", brief: "Go." })];
+    expect(asked.map((each) => each.state)).toEqual(["started", "started"]);
+    await usage(0.1, 0.95, new Date(old.getTime() + 60_000));
+    expect((await ask({ role: "reviewer", brief: "Go." })).why).toBe("Waits on usage: weekly usage is 95%, at or over 95%.");
   });
 
   it("starts once usage and a host allow, on a host and under a name the service chooses, and records its agent", async () => {

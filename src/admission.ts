@@ -3,10 +3,7 @@ import type { Role } from "./roles.ts";
 import type { Usage, UsageWindow } from "./schema.ts";
 
 /** At or above this share of either usage window, nothing is admitted. */
-export const USAGE_LIMIT = 0.9;
-
-/** A reading older than this, of a window that has not reset since, says nothing about now. */
-export const FRESH_FOR_MS = 15 * 60_000;
+export const USAGE_LIMIT = 0.95;
 
 /**
  * A request started this recently whose agent is not recorded yet is being made: it is still on its item.
@@ -47,51 +44,30 @@ export interface AgentRequest {
   rev?: string;
 }
 
-/**
- * A stale reading this far under `USAGE_LIMIT` still admits one request at a time: the agent it starts
- * gives the next reading, which nothing else would while no session is running.
- */
-export const STALE_UNDER = USAGE_LIMIT - 0.2;
+type WindowVerdict = { ok: true } | { ok: false; why: string };
 
-type WindowVerdict = { ok: true; stale: boolean } | { ok: false; why: string };
-
+/** Judged on the window's newest reading however old it is; one whose window has since reset reads 0. */
 function windowVerdict(name: string, window: UsageWindow | null, now: number): WindowVerdict {
   if (window === null) return { ok: false, why: `no ${name} usage has been reported` };
-  if (Date.parse(window.resetsAt) <= now) return { ok: true, stale: false };
+  if (Date.parse(window.resetsAt) <= now) return { ok: true };
   const percent = Math.round(window.utilization * 100);
-  const age = now - Date.parse(window.readAt);
-  if (age > FRESH_FOR_MS) {
-    if (window.utilization < STALE_UNDER) return { ok: true, stale: true };
-    const minutes = Math.round(age / 60_000);
-    return { ok: false, why: `the ${name} usage reading is ${minutes} minutes old, read at ${percent}%, and its window has not reset` };
-  }
   if (window.utilization >= USAGE_LIMIT) return { ok: false, why: `${name} usage is ${percent}%, at or over ${USAGE_LIMIT * 100}%` };
-  return { ok: true, stale: false };
+  return { ok: true };
 }
 
-/** What usage lets start now: nothing (and why), one request alone, or as many as hosts allow. */
-export type UsageAdmits = { none: string } | { one: true } | { any: true };
+/** What usage lets start now: nothing (and why), or as many as hosts allow. */
+export type UsageAdmits = { none: string } | { any: true };
 
-/**
- * `lastStart` is when a request last started: on a stale reading one starts only once none has
- * since that reading, or within the last `FRESH_FOR_MS`, so a burst never starts on a stale reading.
- */
-export function usageAdmits(usage: Usage, now: Date, lastStart: Date | null = null): UsageAdmits {
+export function usageAdmits(usage: Usage, now: Date): UsageAdmits {
   const verdicts = [windowVerdict("5-hour", usage.fiveHour, now.getTime()), windowVerdict("weekly", usage.sevenDay, now.getTime())];
   const why = verdicts.flatMap((each) => (each.ok ? [] : [each.why]));
   if (why.length) return { none: `Waits on usage: ${why.join("; ")}.` };
-  if (!verdicts.some((each) => each.ok && each.stale)) return { any: true };
-  const readAt = Math.max(...[usage.fiveHour, usage.sevenDay].map((each) => Date.parse(each!.readAt)));
-  const since = lastStart === null ? -Infinity : lastStart.getTime();
-  if (since > readAt && now.getTime() - since < FRESH_FOR_MS) {
-    return { none: "Waits on usage: the last reading is stale, and the agent started since has not given a new one yet." };
-  }
-  return { one: true };
+  return { any: true };
 }
 
 /** Why usage lets nothing start now, or null when it lets something. */
-export function usageRefusal(usage: Usage, now: Date, lastStart: Date | null = null): string | null {
-  const admits = usageAdmits(usage, now, lastStart);
+export function usageRefusal(usage: Usage, now: Date): string | null {
+  const admits = usageAdmits(usage, now);
   return "none" in admits ? admits.none : null;
 }
 
