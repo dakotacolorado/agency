@@ -629,9 +629,8 @@ export class AgencyApi {
     if (!waiting.length) return;
     const roles = await this.roles();
     const now = this.now();
-    const starts = requests.flatMap((r) => (r.startedAt ? [Date.parse(r.startedAt)] : []));
-    const admits = usageAdmits(await this.fleet.usage(), now, starts.length ? new Date(Math.max(...starts)) : null);
-    let blocked = "none" in admits ? admits.none : null;
+    const admits = usageAdmits(await this.fleet.usage(), now);
+    const blocked = "none" in admits ? admits.none : null;
     const waits = async (request: AgentRequest, why: string) => {
       if (request.why === why) return;
       await this.store.putRequest({ ...request, why }).catch((err) => {
@@ -680,7 +679,6 @@ export class AgencyApi {
       });
       // Put back to wait, saying why, for the next admission to try again.
       if ("refused" in made) await putBack(`Could not start: ${made.refused}`);
-      else if ("one" in admits) blocked = "Waits on usage: the last reading is stale, and the agent just started will give a new one.";
     }
   }
 

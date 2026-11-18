@@ -23,7 +23,7 @@ import {
   HOST_RUNTIME_LABEL,
   RUNTIMES,
 } from "./domain.ts";
-import { FRESH_FOR_MS, REQUEST_STATES, STALE_UNDER, USAGE_LIMIT } from "./admission.ts";
+import { REQUEST_STATES, USAGE_LIMIT } from "./admission.ts";
 import { CAPABILITIES, DEFAULT_CAPABILITIES, DEFAULT_CAPABILITY, EFFORTS } from "./capabilities.ts";
 
 /** Validates every request and generates `openapi.json`, so neither can drift. */
@@ -1601,13 +1601,11 @@ const Subject = z
   .openapi({ example: "dakotacolorado/agency#41" });
 
 const ADMISSION =
-  `A request starts once both usage windows read under ${USAGE_LIMIT * 100}% (from a reading under ` +
-  `${FRESH_FOR_MS / 60_000} minutes old, or one whose window has since reset) and a connected host carrying its ` +
-  "`labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission " +
-  "runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which " +
-  "is when a host's capacity and usage are next known. A reading older than that, of a window not since reset, " +
-  `still admits one request at a time while both windows read under ${Math.round(STALE_UNDER * 100)}%: one starts once none ` +
-  `has since that reading, or none in the last ${FRESH_FOR_MS / 60_000} minutes, so the agent it starts gives the next reading.`;
+  `A request starts once both usage windows read under ${USAGE_LIMIT * 100}% (on each window's newest reading, ` +
+  "however old; one whose window has since reset reads 0%) and a connected host carrying its `labels` has a free " +
+  "slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made " +
+  "and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and " +
+  "usage are next known.";
 
 export const RequestSchema = z
   .object({
