@@ -82,6 +82,20 @@ describe("a request for an agent", () => {
     expect(store.agents.size).toBe(0);
   });
 
+  it("starts at 95% and over while the usage limit is off, and waits again once it is on", async () => {
+    await beat("laptop", 3);
+    await usage(0.2, 0.97);
+    const asked = await ask({ role: "reviewer", brief: "Go." });
+    expect(asked.why).toBe("Waits on usage: weekly usage is 97%, at or over 95%.");
+    const off = await call("PUT", "/usage/limit", { on: false });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ limitOn: false });
+    expect(await request(asked.id)).toMatchObject({ state: "started" });
+    expect(await (await call("GET", "/usage")).json()).toMatchObject({ limitOn: false });
+    await call("PUT", "/usage/limit", { on: true });
+    expect((await ask({ role: "reviewer", brief: "Go again." })).why).toBe("Waits on usage: weekly usage is 97%, at or over 95%.");
+  });
+
   it("waits while no connected host has room, and says so", async () => {
     await beat("laptop", 0);
     await usage(0.1, 0.1);
@@ -118,7 +132,7 @@ describe("a request for an agent", () => {
     await beat("laptop", 2);
     expect((await ask({ role: "reviewer", brief: "Go." })).why).toContain("no 5-hour usage has been reported");
     const reset = { utilization: 0.99, resetsAt: new Date(now.getTime() - 1000).toISOString(), readAt: NOW.toISOString() };
-    expect(usageRefusal({ readAt: null, fiveHour: { ...reset, hostId: "h" }, sevenDay: { ...reset, hostId: "h" } }, now)).toBeNull();
+    expect(usageRefusal({ readAt: null, fiveHour: { ...reset, hostId: "h" }, sevenDay: { ...reset, hostId: "h" }, limitOn: true }, now)).toBeNull();
   });
 
   it("judges a reading however old: starts everything a host has room for under the limit, and waits at it", async () => {

@@ -314,12 +314,19 @@ export class Fleet {
     if (kept.some(Boolean)) await this.push.toViewers([{ type: "usage", usage: await this.usage() }]);
   }
 
+  async putUsageLimit(on: boolean): Promise<Usage> {
+    await this.store.putUsageLimitOn(on);
+    const usage = await this.usage();
+    await this.push.toViewers([{ type: "usage", usage }]);
+    return usage;
+  }
+
   async usage(): Promise<Usage> {
     const held = await this.store.usage();
     const fiveHour = held.fiveHour ?? null;
     const sevenDay = held.sevenDay ?? null;
     const readAt = [fiveHour?.readAt, sevenDay?.readAt].filter((at) => at !== undefined).sort().at(-1) ?? null;
-    return { readAt, fiveHour, sevenDay };
+    return { readAt, fiveHour, sevenDay, limitOn: await this.store.usageLimitOn() };
   }
 
   async report(hostId: string, report: Report): Promise<void> {

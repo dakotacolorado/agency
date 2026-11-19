@@ -550,6 +550,12 @@ export class AgencyApi {
 
     app.openapi(routes.getUsageRoute, async (c) => c.json(await this.fleet.usage(), 200));
 
+    app.openapi(routes.putUsageLimitRoute, async (c) => {
+      const usage = await this.fleet.putUsageLimit(c.req.valid("json").on);
+      if (!usage.limitOn) await this.admitting(this.origin(c));
+      return c.json(usage, 200);
+    });
+
     app.openapi(routes.socketTicketRoute, async (c) => {
       const socketUrl = this.socketFor(c);
       if (!socketUrl) return c.json(failure(503, "This server has no socket."), 503);

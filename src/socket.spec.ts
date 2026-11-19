@@ -437,7 +437,7 @@ describe("the account's usage, as hosts report it", () => {
   it("reads empty, every field null, before any host reports it", async () => {
     const res = await http("GET", "/usage");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ readAt: null, fiveHour: null, sevenDay: null });
+    expect(await res.json()).toEqual({ readAt: null, fiveHour: null, sevenDay: null, limitOn: true });
   });
 
   it("serves the newest reading with when it was read and by whom", async () => {
@@ -446,6 +446,7 @@ describe("the account's usage, as hosts report it", () => {
       readAt: "2026-10-27T11:59:00.000Z",
       fiveHour: { utilization: 0.35, resetsAt: "2026-10-27T15:00:00.000Z", readAt: "2026-10-27T11:59:00.000Z", hostId: "laptop" },
       sevenDay: { utilization: 0.31, resetsAt: "2026-11-01T00:00:00.000Z", readAt: "2026-10-27T11:59:00.000Z", hostId: "laptop" },
+      limitOn: true,
     });
   });
 
@@ -486,7 +487,7 @@ describe("the account's usage, as hosts report it", () => {
   it("refuses a report whose reading is malformed, with why", async () => {
     await send("h1", { type: "report", usage: { readAt: "yesterday", fiveHour: { utilization: -1, resetsAt: "2026-10-27T15:00:00.000Z" } } });
     expect(poster.to("h1").at(-1)).toMatchObject({ type: "error" });
-    expect(await usage()).toEqual({ readAt: null, fiveHour: null, sevenDay: null });
+    expect(await usage()).toEqual({ readAt: null, fiveHour: null, sevenDay: null, limitOn: true });
   });
 });
 

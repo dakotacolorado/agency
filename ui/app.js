@@ -633,6 +633,34 @@ function windowPanel(title, reading) {
   );
 }
 
+function limitPanel(u, fill) {
+  const box = errorBox();
+  const button = h(
+    "button",
+    {
+      type: "button",
+      onclick: async () => {
+        button.disabled = true;
+        try {
+          fill(await api("PUT", "/usage/limit", { on: !u.limitOn }));
+        } catch (err) {
+          show(box, err);
+          button.disabled = false;
+        }
+      },
+    },
+    u.limitOn ? "Turn the limit off" : "Turn the limit on",
+  );
+  return h(
+    "div",
+    { class: "panel" },
+    h("h2", {}, "Usage limit"),
+    h("p", {}, u.limitOn ? "On: requests wait while either window reads 95% or more." : "Off: requests start whatever usage reads."),
+    h("div", { class: "row" }, button),
+    box,
+  );
+}
+
 async function usage() {
   const live = current();
   const load = () => api("GET", "/usage");
@@ -641,6 +669,7 @@ async function usage() {
     view.replaceChildren(
       h("div", { class: "grid2" }, windowPanel("5-hour window", u.fiveHour), windowPanel("Weekly window", u.sevenDay)),
       h("p", { class: "muted" }, u.readAt ? `Last read ${when(u.readAt)}.` : "No host has reported usage."),
+      limitPanel(u, fill),
     );
   fill(await load());
   if (!live()) return;

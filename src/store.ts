@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS usage (name TEXT PRIMARY KEY, read_at TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS requests (
   id TEXT PRIMARY KEY, rev TEXT NOT NULL, state TEXT NOT NULL, ended_at TEXT, record TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS skill_copies (name TEXT PRIMARY KEY, version INTEGER NOT NULL, record TEXT NOT NULL);
 `;
 
@@ -339,6 +340,18 @@ export class Store {
       .prepare("INSERT INTO usage (name, read_at, record) VALUES (?, ?, ?) ON CONFLICT (name) DO UPDATE SET read_at = excluded.read_at, record = excluded.record WHERE usage.read_at < excluded.read_at")
       .run(name, window.readAt, JSON.stringify(window));
     return changes === 1;
+  }
+
+  /** On unless turned off. */
+  async usageLimitOn(): Promise<boolean> {
+    const row = this.db.prepare("SELECT value FROM settings WHERE name = 'usageLimitOn'").get();
+    return row ? JSON.parse(row.value as string) === true : true;
+  }
+
+  async putUsageLimitOn(on: boolean): Promise<void> {
+    this.db
+      .prepare("INSERT INTO settings (name, value) VALUES ('usageLimitOn', ?) ON CONFLICT (name) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify(on));
   }
 
   async usage(): Promise<Partial<Record<UsageWindowName, UsageWindow>>> {
