@@ -249,6 +249,7 @@ describe("creating an agent", () => {
       capability: 3,
       model: "claude-opus-5-5",
       contextTokens: null,
+      contextAddedTokens: null,
       overPriceStep: false,
       skills: [],
       credentials: null,

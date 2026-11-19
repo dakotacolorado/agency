@@ -88,6 +88,7 @@ Body: `AgentTitle`. What the agent names itself.
 | `capability` | integer (≥ 1, ≤ 3) | How capable a model it runs on, 1 to 3: the one it was made or requested with, else its role's, as `SetAgentCapability` last changed it. An agent made before capabilities is 3. |
 | `model` | string | Its capability's model, as `ListCapabilities` maps it now: what its next start, or a live session told with `configure`, runs on. |
 | `contextTokens` | integer or null (≥ 0) | How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported. |
+| `contextAddedTokens` | integer or null (≥ 0) | How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one. |
 | `overPriceStep` | boolean | True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step. |
 | `skills` | string[] | The honed skills each session is given, by name: its role's own first. |
 | `credentials` | array or null | The services each session is given, by name; null for every one the stage has. Never a token. |

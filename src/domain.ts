@@ -222,6 +222,8 @@ export interface Agent {
   capability?: Capability;
   /** Its session's context size at its last request to the model, as its host last reported; null or absent until one is. */
   contextTokens?: number | null;
+  /** How much its context grew at its last request, as its host last reported; null or absent until one is, and after a fall in `contextTokens` without one. */
+  contextAddedTokens?: number | null;
   /** The honed skills each session is given, by name. */
   skills?: string[];
   /** The services each session is given, by name; absent, every one the stage has. */

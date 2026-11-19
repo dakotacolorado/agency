@@ -447,7 +447,7 @@ export class Fleet {
     }
 
     // A limit already resumed from, reported before the resume reached the host, is not set again.
-    for (const { id, sessionId, limitedUntil, contextTokens, activeMs, turns } of report.agents) {
+    for (const { id, sessionId, limitedUntil, contextTokens, contextAddedTokens, activeMs, turns } of report.agents) {
       const agent = agents.get(id);
       if (!agent) continue;
       if (sessionId && (activeMs !== undefined || turns !== undefined || contextTokens !== undefined)) {
@@ -457,7 +457,14 @@ export class Fleet {
       const reported = limitedUntil ? new Date(limitedUntil).toISOString() : null;
       const limited = reported !== null && reported === agent.resumed ? null : reported;
       if (limited !== (agent.limitedUntil ?? null)) update(agent, { limitedUntil: limited });
-      if (contextTokens !== undefined && contextTokens !== (agent.contextTokens ?? null)) update(agents.get(id)!, { contextTokens });
+      if (contextTokens !== undefined && contextTokens !== (agent.contextTokens ?? null)) {
+        // A fall is a compaction: the growth before it no longer describes the context.
+        const fell = contextTokens < (agent.contextTokens ?? 0);
+        update(agents.get(id)!, { contextTokens, ...(contextAddedTokens === undefined && fell ? { contextAddedTokens: null } : {}) });
+      }
+      if (contextAddedTokens !== undefined && contextAddedTokens !== (agents.get(id)!.contextAddedTokens ?? null)) {
+        update(agents.get(id)!, { contextAddedTokens });
+      }
     }
 
     const lines = new Map<string, TranscriptLine[]>();
@@ -530,7 +537,7 @@ export const agentView = (
   sessions: Session[] = [],
 ) => {
   const current = agent.session ? (sessions.find((s) => s.id === agent.session!.id) ?? null) : null;
-  const { hadSession: _, begun: __, needsStart: ______________, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, capability: ___________, contextTokens, ...served } =
+  const { hadSession: _, begun: __, needsStart: ______________, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, capability: ___________, contextTokens, contextAddedTokens, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
   const { turn: ______, paged: _______, ...rest } = served as typeof served & { turn?: unknown; paged?: unknown };
@@ -548,6 +555,7 @@ export const agentView = (
     capability: capabilityOf(agent),
     model: runsOn.model,
     contextTokens: contextTokens ?? null,
+    contextAddedTokens: contextAddedTokens ?? null,
     overPriceStep: runsOn.priceStepAt !== null && (contextTokens ?? 0) > runsOn.priceStepAt,
     skills: skills ?? [],
     // An agent made before credentials were chosen was given today's defaults at each start.
@@ -617,6 +625,7 @@ export function begin(
       tasks: 0,
       told: null,
       contextTokens: null,
+      contextAddedTokens: null,
     },
     session,
     command: {
