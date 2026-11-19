@@ -232,6 +232,56 @@ describe("a session's record", () => {
   });
 });
 
+describe("an agent's lifetime cost", () => {
+  const spend = (agent: { id: string; session: { id: string } }, input: number, model = "claude-sonnet-5-5") =>
+    report({ tokens: [{ agentId: agent.id, sessionId: agent.session.id, ...tokens(input, 0), byModel: { [model]: tokens(input, 0) } }] });
+  const agents = async () => Object.fromEntries(((await call("GET", "/agents?all=true")).body.agents as any[]).map((a) => [a.id, a]));
+  /** Ends the agent's live session and opens a new one by messaging it. */
+  const reopen = async (agent: { id: string; session: { id: string } }) => {
+    expect((await call("POST", `/agents/${agent.id}/stop`)).status).toBe(202);
+    expect((await call("POST", `/agents/${agent.id}/messages`, { text: "Again." })).status).toBe(202);
+    return ((await call("GET", `/agents/${agent.id}`)).body as { session: { id: string } }).session;
+  };
+
+  it("sums two ended sessions and the live one, and counts them", async () => {
+    const agent = await create();
+    await spend(agent, M); // $2
+    const second = await reopen(agent);
+    await spend({ id: agent.id, session: second }, 2 * M); // $4
+    const third = await reopen(agent);
+    await spend({ id: agent.id, session: third }, M / 2); // $1, live
+    const served = (await call("GET", `/agents/${agent.id}`)).body;
+    expect(served).toMatchObject({ lifetimeCostUsd: 7, sessionCount: 3 });
+    expect(served.currentSession.estimatedCostUsd).toBe(1);
+    expect((await agents())[agent.id]).toMatchObject({ lifetimeCostUsd: 7, sessionCount: 3 });
+    await spend({ id: agent.id, session: third }, M);
+    expect((await agents())[agent.id].lifetimeCostUsd).toBe(8);
+  });
+
+  it("serves a closed agent's total", async () => {
+    const agent = await create();
+    await spend(agent, M);
+    expect((await call("DELETE", `/agents/${agent.id}`)).status).toBe(202);
+    expect((await agents())[agent.id]).toMatchObject({ lifetimeCostUsd: 2, sessionCount: 1, currentSession: null });
+    expect((await call("GET", `/agents/${agent.id}`)).body).toMatchObject({ lifetimeCostUsd: 2, sessionCount: 1 });
+  });
+
+  it("is null when no session can be priced, and still counts them", async () => {
+    const agent = await create();
+    store.db.prepare("UPDATE sessions SET record = json_remove(record, '$.model', '$.tokens', '$.byModel')").run();
+    expect((await agents())[agent.id]).toMatchObject({ lifetimeCostUsd: null, sessionCount: 1 });
+  });
+
+  it("reads sessions once for the list, whatever the number of agents", async () => {
+    for (let i = 0; i < 4; i++) await create();
+    const prepare = store.db.prepare.bind(store.db);
+    const reads: string[] = [];
+    store.db.prepare = ((sql: string) => (reads.push(sql), prepare(sql))) as typeof store.db.prepare;
+    expect((await call("GET", "/agents")).body.agents).toHaveLength(4);
+    expect(reads.filter((sql) => /FROM sessions/.test(sql))).toHaveLength(1);
+  });
+});
+
 describe("ListSessions", () => {
   const seed = async () => {
     const a = await create({ role: "implementer", item: "task-1", capability: 3 });

@@ -772,6 +772,8 @@ export const AgentSchema = z
     hostStatus: HostStatus.describe(
       "Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.",
     ),
+    lifetimeCostUsd: z.number().nullable().describe("The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced."),
+    sessionCount: z.number().int().describe("How many sessions it has had, ended or live."),
     currentSession: SessionSchema.nullable().describe("Its live session's record, as `ListSessions` lists it, so far; null without a live session."),
   })
   .openapi("Agent");

@@ -165,7 +165,7 @@ describe("the shapes", async () => {
     expect(fields("Agent")).toEqual(
       [
         "createdAt", "hostId", "hostStatus", "id", "name", "reportedAt", "session", "state", "title",
-        "label", "item", "role", "tokens", "createdBy", "whenDone", "runtime", "capability", "model", "contextTokens", "overPriceStep", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil", "currentSession",
+        "label", "item", "role", "tokens", "createdBy", "whenDone", "runtime", "capability", "model", "contextTokens", "overPriceStep", "skills", "credentials", "status", "summary", "headline", "saidAt", "activity", "tasks", "told", "limitedUntil", "lifetimeCostUsd", "sessionCount", "currentSession",
       ].sort(),
     );
     expect(fields("TranscriptLine")).toEqual(["at", "commandId", "from", "seq", "sessionId", "text"].sort());

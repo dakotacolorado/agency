@@ -242,15 +242,17 @@ export class Store {
     return all<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? ORDER BY started_at, rowid").all(agentId));
   }
 
-  async getSession(agentId: string, id: string): Promise<Session | null> {
-    return parse<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? AND id = ?").get(agentId, id));
+  /** Every session of each agent, oldest first, in one query; of every agent when `agentIds` is omitted. */
+  async sessionsByAgent(agentIds?: string[]): Promise<Map<string, Session[]>> {
+    const where = agentIds ? ` WHERE agent_id IN (${agentIds.map(() => "?").join(",") || "NULL"})` : "";
+    const rows = all<Session>(this.db.prepare(`SELECT record FROM sessions${where} ORDER BY started_at, rowid`).all(...(agentIds ?? [])));
+    const by = new Map<string, Session[]>();
+    for (const s of rows) by.set(s.agentId, [...(by.get(s.agentId) ?? []), s]);
+    return by;
   }
 
-  /** Every session not ended, by its agent's id. */
-  async liveSessions(): Promise<Map<string, Session>> {
-    return new Map(
-      all<Session>(this.db.prepare("SELECT record FROM sessions WHERE json_extract(record, '$.endedAt') IS NULL ORDER BY started_at, rowid").all()).map((s) => [s.agentId, s]),
-    );
+  async getSession(agentId: string, id: string): Promise<Session | null> {
+    return parse<Session>(this.db.prepare("SELECT record FROM sessions WHERE agent_id = ? AND id = ?").get(agentId, id));
   }
 
   /** Newest first, kept whatever became of their agents; `since` and `until` bound `startedAt`, `until` excluded. */

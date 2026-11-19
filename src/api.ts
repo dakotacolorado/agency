@@ -239,8 +239,8 @@ export class AgencyApi {
 
   /** An agent as it is served, its model as this stage maps its capability. */
   private async view(agent: Agent, host: Host | null) {
-    const current = agent.session ? await this.store.getSession(agent.id, agent.session.id) : null;
-    return agentView(agent, host, this.now(), this.fleet.capabilities, current);
+    const sessions = (await this.store.sessionsByAgent([agent.id])).get(agent.id) ?? [];
+    return agentView(agent, host, this.now(), this.fleet.capabilities, sessions);
   }
 
   /** The roles in honed's `agent-roles/`, as last read. */
@@ -381,7 +381,7 @@ export class AgencyApi {
       const { createdBy, all, item, role } = c.req.valid("query");
       const now = this.now();
       const hosts = new Map((await this.store.listHosts()).map((h) => [h.id, h]));
-      const live = await this.store.liveSessions();
+      const sessions = await this.store.sessionsByAgent();
       const agents = (await this.store.listAgents())
         .filter(
           (w) =>
@@ -391,7 +391,7 @@ export class AgencyApi {
             (all === "true" || item !== undefined || w.state !== "deleted"),
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now, this.fleet.capabilities, live.get(w.id) ?? null));
+        .map((w) => agentView(w, hosts.get(w.hostId) ?? null, now, this.fleet.capabilities, sessions.get(w.id) ?? []));
       return c.json({ agents }, 200);
     });
 

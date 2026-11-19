@@ -1342,6 +1342,17 @@
             ],
             "description": "Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date."
           },
+          "lifetimeCostUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced."
+          },
+          "sessionCount": {
+            "type": "integer",
+            "description": "How many sessions it has had, ended or live."
+          },
           "currentSession": {
             "$ref": "#/components/schemas/Session"
           }
@@ -1377,6 +1388,8 @@
           "told",
           "limitedUntil",
           "hostStatus",
+          "lifetimeCostUsd",
+          "sessionCount",
           "currentSession"
         ]
       },
