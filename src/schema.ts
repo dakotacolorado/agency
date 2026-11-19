@@ -307,6 +307,17 @@ export const AgentReportSchema = z
           "request to the model. Absent from a host that does not say, or before the session's first request; the last " +
           "size reported stands.",
       ),
+    contextAddedTokens: z
+      .number()
+      .int()
+      .min(0)
+      .max(Number.MAX_SAFE_INTEGER)
+      .optional()
+      .describe(
+        "How many tokens its session's context grew by at its last request to the model, over the request before it " +
+          "in the same session (its `contextTokens` less that one's). Absent from a host that does not say, and after a " +
+          "compaction until two requests have followed it; the last value reported stands.",
+      ),
     activeMs: z
       .number()
       .int()
@@ -673,6 +684,16 @@ export const AgentSchema = z
       .describe(
         "How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), " +
           "as its host last reported; null until one is reported.",
+      ),
+    contextAddedTokens: z
+      .number()
+      .int()
+      .min(0)
+      .nullable()
+      .describe(
+        "How many tokens its session's context grew by at its last request to the model, over the request before it " +
+          "(its `contextTokens` less that one's), as its host last reported; null until one is, and null again when " +
+          "a report's `contextTokens` falls (a compaction) without one.",
       ),
     overPriceStep: z
       .boolean()

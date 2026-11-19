@@ -206,3 +206,29 @@ describe("an agent's context size", () => {
     expect((await call("GET", `/agents/${agent.id}`)).body).toMatchObject({ contextTokens: 120000, overPriceStep: false });
   });
 });
+
+describe("an agent's context growth", () => {
+  it("is kept, carried over when absent, and cleared when the context falls without it", async () => {
+    const agent = await create({ brief: "Go.", capability: 1 });
+    const live = { id: agent.id, state: "working", sessionId: agent.session.id };
+    await store.putConnection({ connectionId: "page", kind: "viewer", connectedAt: NOW.toISOString() });
+    const added = async () => (await call("GET", `/agents/${agent.id}`)).body.contextAddedTokens;
+    expect(await added()).toBeNull();
+    await report([{ ...live, contextTokens: 90000, contextAddedTokens: 4000 }]);
+    expect(await added()).toBe(4000);
+    expect(poster.posts.some((p) => p.message.type === "agent" && p.message.agent.contextAddedTokens === 4000)).toBe(true);
+    // A report that does not say leaves the last, also when the context grew.
+    await report([{ ...live, contextTokens: 95000 }]);
+    expect(await added()).toBe(4000);
+    await report([live]);
+    expect(await added()).toBe(4000);
+    // A fall without it is a compaction: cleared.
+    await report([{ ...live, contextTokens: 20000 }]);
+    expect(await added()).toBeNull();
+    // A fall with it keeps what the host says.
+    await report([{ ...live, contextTokens: 30000, contextAddedTokens: 10000 }]);
+    await report([{ ...live, contextTokens: 5000, contextAddedTokens: 0 }]);
+    expect(await added()).toBe(0);
+    expect((await call("GET", "/agents")).body.agents.find((a: { id: string }) => a.id === agent.id).contextAddedTokens).toBe(0);
+  });
+});

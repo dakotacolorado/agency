@@ -210,6 +210,7 @@ Content-type: application/json
    "capability": number,
    "model": "string",
    "contextTokens": number,
+   "contextAddedTokens": number,
    "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
@@ -335,6 +336,10 @@ Type: String.
 
 **contextTokens**  
 How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one.  
 Type: Integer. Range: 0 to any. Nullable: Yes.
 
 **overPriceStep**  
@@ -830,6 +835,7 @@ Content-type: application/json
    "capability": number,
    "model": "string",
    "contextTokens": number,
+   "contextAddedTokens": number,
    "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
@@ -955,6 +961,10 @@ Type: String.
 
 **contextTokens**  
 How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one.  
 Type: Integer. Range: 0 to any. Nullable: Yes.
 
 **overPriceStep**  
@@ -1452,6 +1462,7 @@ Content-type: application/json
       "capability": number,
       "model": "string",
       "contextTokens": number,
+      "contextAddedTokens": number,
       "overPriceStep": boolean,
       "skills": [ "string" ],
       "credentials": [ "string" ],
@@ -2052,6 +2063,7 @@ Content-type: application/json
    "capability": number,
    "model": "string",
    "contextTokens": number,
+   "contextAddedTokens": number,
    "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
@@ -2177,6 +2189,10 @@ Type: String.
 
 **contextTokens**  
 How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one.  
 Type: Integer. Range: 0 to any. Nullable: Yes.
 
 **overPriceStep**  
@@ -2336,6 +2352,7 @@ Content-type: application/json
    "capability": number,
    "model": "string",
    "contextTokens": number,
+   "contextAddedTokens": number,
    "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
@@ -2461,6 +2478,10 @@ Type: String.
 
 **contextTokens**  
 How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one.  
 Type: Integer. Range: 0 to any. Nullable: Yes.
 
 **overPriceStep**  
@@ -2774,6 +2795,7 @@ Content-type: application/json
    "capability": number,
    "model": "string",
    "contextTokens": number,
+   "contextAddedTokens": number,
    "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
@@ -2899,6 +2921,10 @@ Type: String.
 
 **contextTokens**  
 How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one.  
 Type: Integer. Range: 0 to any. Nullable: Yes.
 
 **overPriceStep**  
@@ -3126,6 +3152,7 @@ Content-type: application/json
    "capability": number,
    "model": "string",
    "contextTokens": number,
+   "contextAddedTokens": number,
    "overPriceStep": boolean,
    "skills": [ "string" ],
    "credentials": [ "string" ],
@@ -3251,6 +3278,10 @@ Type: String.
 
 **contextTokens**  
 How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
+Type: Integer. Range: 0 to any. Nullable: Yes.
+
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one.  
 Type: Integer. Range: 0 to any. Nullable: Yes.
 
 **overPriceStep**  
@@ -3566,6 +3597,10 @@ Type: String. Required: Yes.
 How large its session's context was at its last request to the model (input plus cache read plus cache write tokens), as its host last reported; null until one is reported.  
 Type: Integer. Range: 0 to any. Nullable: Yes. Required: Yes.
 
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it (its `contextTokens` less that one's), as its host last reported; null until one is, and null again when a report's `contextTokens` falls (a compaction) without one.  
+Type: Integer. Range: 0 to any. Nullable: Yes. Required: Yes.
+
 **overPriceStep**  
 True when `contextTokens` is above its model's `priceStepAt`, past which each token costs more: such a session is worth ending or compacting. False otherwise, or when the model has no step.  
 Type: Boolean. Required: Yes.
@@ -3721,6 +3756,10 @@ Type: String. Nullable: Yes. Required: No.
 
 **contextTokens**  
 How large its session's context is: the input, cache read and cache write tokens of the session's last request to the model. Absent from a host that does not say, or before the session's first request; the last size reported stands.  
+Type: Integer. Range: 0 to 9007199254740991. Required: No.
+
+**contextAddedTokens**  
+How many tokens its session's context grew by at its last request to the model, over the request before it in the same session (its `contextTokens` less that one's). Absent from a host that does not say, and after a compaction until two requests have followed it; the last value reported stands.  
 Type: Integer. Range: 0 to 9007199254740991. Required: No.
 
 **activeMs**  
