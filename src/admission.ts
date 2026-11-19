@@ -59,6 +59,7 @@ function windowVerdict(name: string, window: UsageWindow | null, now: number): W
 export type UsageAdmits = { none: string } | { any: true };
 
 export function usageAdmits(usage: Usage, now: Date): UsageAdmits {
+  if (!usage.limitOn) return { any: true };
   const verdicts = [windowVerdict("5-hour", usage.fiveHour, now.getTime()), windowVerdict("weekly", usage.sevenDay, now.getTime())];
   const why = verdicts.flatMap((each) => (each.ok ? [] : [each.why]));
   if (why.length) return { none: `Waits on usage: ${why.join("; ")}.` };

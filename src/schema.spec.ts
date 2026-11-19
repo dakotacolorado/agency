@@ -178,7 +178,7 @@ describe("the shapes", async () => {
       ["byModel", "cacheCreationInputTokens", "cacheReadInputTokens", "inputTokens", "outputTokens", "sessionId", "agentId"].sort(),
     );
     expect(fields("UsageReport")).toEqual(["fiveHour", "readAt", "sevenDay"]);
-    expect(fields("Usage")).toEqual(["fiveHour", "readAt", "sevenDay"]);
+    expect(fields("Usage")).toEqual(["fiveHour", "limitOn", "readAt", "sevenDay"]);
     expect(fields("UsageWindow")).toEqual(["hostId", "readAt", "resetsAt", "utilization"]);
     expect(fields("CreateCommand")).toEqual(["id", "kind", "name", "agentId"].sort());
     expect(fields("StartCommand")).toEqual(["context", "credentials", "documents", "env", "id", "kind", "mcpServers", "model", "effort", "resume", "runtime", "secrets", "sessionId", "text", "agentId"].sort());

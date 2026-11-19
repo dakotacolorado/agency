@@ -920,8 +920,11 @@ export const UsageSchema = z
     readAt: Instant.nullable().describe("The newest of the windows' `readAt`; null when nothing has been reported."),
     fiveHour: UsageWindowSchema.nullable().describe("The 5-hour window's newest reading; null when none has been reported."),
     sevenDay: UsageWindowSchema.nullable().describe("The weekly window's newest reading; null when none has been reported."),
+    limitOn: z
+      .boolean()
+      .describe(`Whether requests wait while either window reads ${USAGE_LIMIT * 100}% or more; turned off with \`PutUsageLimit\`, they start whatever usage reads.`),
   })
-  .describe("How much of the Claude account's 5-hour and weekly allowance is used, as last reported.")
+  .describe("How much of the Claude account's 5-hour and weekly allowance is used, as last reported, and whether admission waits on it.")
   .openapi("Usage");
 
 export type Usage = z.infer<typeof UsageSchema>;
@@ -1009,7 +1012,7 @@ export const SocketOutboundSchema = z
       .openapi("HostPush"),
     z
       .object({ type: z.literal("usage").describe("Which message this is."), usage: UsageSchema })
-      .describe("To viewers, when a report brings a newer reading of the account's usage.")
+      .describe("To viewers, when a report brings a newer reading of the account's usage, or its limit is turned on or off.")
       .openapi("UsagePush"),
     z
       .object({ type: z.literal("error").describe("Which message this is."), error: z.string().describe("Why the message up was refused.") })
@@ -1545,6 +1548,21 @@ export const getUsageRoute = forClientReading({
   responses: { 200: json(UsageSchema, "The newest reading."), 401: FAILS[401], 503: FAILS[503] },
 });
 
+export const putUsageLimitRoute = forClientActing({
+  method: "put",
+  path: "/usage/limit",
+  operationId: "PutUsageLimit",
+  summary: "Put the usage limit",
+  description:
+    `Turn on or off the limit that holds requests while either usage window reads ${USAGE_LIMIT * 100}% or more, ` +
+    "such as while extra usage credits cover the rest of the week. It stays as set until set again; turning it off " +
+    "runs admission at once.",
+  request: {
+    body: json(z.strictObject({ on: z.boolean().describe("True to hold requests at the limit, false to start them whatever usage reads.") }).openapi("UsageLimit"), "The limit."),
+  },
+  responses: { 200: json(UsageSchema, "Recorded."), ...FAILS },
+});
+
 // --- roles ------------------------------------------------------------------
 
 const Priority = z.number().int().min(0).max(1000);
@@ -1604,7 +1622,7 @@ const Subject = z
 
 const ADMISSION =
   `A request starts once both usage windows read under ${USAGE_LIMIT * 100}% (on each window's newest reading, ` +
-  "however old; one whose window has since reset reads 0%) and a connected host carrying its `labels` has a free " +
+  "however old; one whose window has since reset reads 0%), or whatever they read while the usage limit is off (`PutUsageLimit`), and a connected host carrying its `labels` has a free " +
   "slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made " +
   "and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and " +
   "usage are next known.";

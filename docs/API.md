@@ -36,6 +36,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [ListTranscriptLines](#listtranscriptlines): List transcript lines
 - [PutAgentStatus](#putagentstatus): Put an agent's status
 - [PutAgentTitle](#putagenttitle): Put an agent's title
+- [PutUsageLimit](#putusagelimit): Put the usage limit
 - [SendMessage](#sendmessage): Send a message
 - [SetAgentCapability](#setagentcapability): Set an agent's capability
 - [StopAgent](#stopagent): Stop an agent
@@ -97,6 +98,7 @@ agency: Agents at your command, across all your computers. People, their Claude 
 - [Transcript](#transcript)
 - [TranscriptLine](#transcriptline)
 - [Usage](#usage)
+- [UsageLimit](#usagelimit)
 - [UsagePush](#usagepush)
 - [UsageReport](#usagereport)
 - [UsageWindow](#usagewindow)
@@ -441,7 +443,7 @@ HTTP status: 503
 
 ## CreateRequest
 
-Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
+Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%), or whatever they read while the usage limit is off (`PutUsageLimit`), and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
 
 ### Request syntax
 
@@ -1361,7 +1363,8 @@ Content-type: application/json
       "resetsAt": "string",
       "readAt": "string",
       "hostId": "string"
-   }
+   },
+   "limitOn": boolean
 }
 ```
 
@@ -1378,6 +1381,10 @@ Type: [UsageWindow](#usagewindow) object.
 **sevenDay**  
 The weekly window's newest reading; null when none has been reported.  
 Type: [UsageWindow](#usagewindow) object.
+
+**limitOn**  
+Whether requests wait while either window reads 95% or more; turned off with `PutUsageLimit`, they start whatever usage reads.  
+Type: Boolean.
 
 ### Errors
 
@@ -1651,7 +1658,7 @@ HTTP status: 503
 
 ## ListRequests
 
-Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known.
+Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%), or whatever they read while the usage limit is off (`PutUsageLimit`), and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known.
 
 ### Request syntax
 
@@ -2553,6 +2560,86 @@ HTTP status: 404
 **ConflictException**  
 The agent is deleted, or has a title already.  
 HTTP status: 409
+
+**ServiceUnavailableException**  
+No API token is configured.  
+HTTP status: 503
+
+---
+
+## PutUsageLimit
+
+Turn on or off the limit that holds requests while either usage window reads 95% or more, such as while extra usage credits cover the rest of the week. It stays as set until set again; turning it off runs admission at once.
+
+### Request syntax
+
+```http
+PUT /usage/limit HTTP/1.1
+Authorization: Bearer token
+Content-type: application/json
+
+{
+   "on": boolean
+}
+```
+
+### Request body
+
+**on**  
+True to hold requests at the limit, false to start them whatever usage reads.  
+Type: Boolean. Required: Yes.
+
+### Response syntax
+
+```http
+HTTP/1.1 200
+Content-type: application/json
+
+{
+   "readAt": "string",
+   "fiveHour": {
+      "utilization": number,
+      "resetsAt": "string",
+      "readAt": "string",
+      "hostId": "string"
+   },
+   "sevenDay": {
+      "utilization": number,
+      "resetsAt": "string",
+      "readAt": "string",
+      "hostId": "string"
+   },
+   "limitOn": boolean
+}
+```
+
+### Response elements
+
+**readAt**  
+The newest of the windows' `readAt`; null when nothing has been reported.  
+Type: String. Nullable: Yes.
+
+**fiveHour**  
+The 5-hour window's newest reading; null when none has been reported.  
+Type: [UsageWindow](#usagewindow) object.
+
+**sevenDay**  
+The weekly window's newest reading; null when none has been reported.  
+Type: [UsageWindow](#usagewindow) object.
+
+**limitOn**  
+Whether requests wait while either window reads 95% or more; turned off with `PutUsageLimit`, they start whatever usage reads.  
+Type: Boolean.
+
+### Errors
+
+**ValidationException**  
+The request failed validation.  
+HTTP status: 400
+
+**UnauthorizedException**  
+Missing or incorrect bearer token.  
+HTTP status: 401
 
 **ServiceUnavailableException**  
 No API token is configured.  
@@ -4648,7 +4735,7 @@ Type: String. Length: 1 to 128. Required: No.
 
 ## Usage
 
-How much of the Claude account's 5-hour and weekly allowance is used, as last reported.
+How much of the Claude account's 5-hour and weekly allowance is used, as last reported, and whether admission waits on it.
 
 ### Contents
 
@@ -4664,9 +4751,21 @@ Type: [UsageWindow](#usagewindow) object. Required: Yes.
 The weekly window's newest reading; null when none has been reported.  
 Type: [UsageWindow](#usagewindow) object. Required: Yes.
 
+**limitOn**  
+Whether requests wait while either window reads 95% or more; turned off with `PutUsageLimit`, they start whatever usage reads.  
+Type: Boolean. Required: Yes.
+
+## UsageLimit
+
+### Contents
+
+**on**  
+True to hold requests at the limit, false to start them whatever usage reads.  
+Type: Boolean. Required: Yes.
+
 ## UsagePush
 
-To viewers, when a report brings a newer reading of the account's usage.
+To viewers, when a report brings a newer reading of the account's usage, or its limit is turned on or off.
 
 ### Contents
 
@@ -4675,7 +4774,7 @@ Which message this is.
 Type: String. Valid values: `usage`. Required: Yes.
 
 **usage**  
-How much of the Claude account's 5-hour and weekly allowance is used, as last reported.  
+How much of the Claude account's 5-hour and weekly allowance is used, as last reported, and whether admission waits on it.  
 Type: [Usage](#usage) object. Required: Yes.
 
 ## UsageReport

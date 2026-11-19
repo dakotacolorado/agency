@@ -58,6 +58,7 @@ What the server tells an agent when it connects:
 | [`list_transcript_lines`](#list_transcript_lines) | List transcript lines | yes |
 | [`put_agent_status`](#put_agent_status) | Put an agent's status |  |
 | [`put_agent_title`](#put_agent_title) | Put an agent's title |  |
+| [`put_usage_limit`](#put_usage_limit) | Put the usage limit |  |
 | [`send_message`](#send_message) | Send a message |  |
 | [`set_agent_capability`](#set_agent_capability) | Set an agent's capability |  |
 | [`stop_agent`](#stop_agent) | Stop an agent |  |
@@ -84,7 +85,7 @@ Records the agent `idle` and queues `create` for its host, which makes its home.
 
 ### create_request
 
-Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
+Records the request `waiting`, then admits what it can at once. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%), or whatever they read while the usage limit is off (`PutUsageLimit`), and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known. Admitted, the agent is made from its role as `CreateAgent` with `role` would, with this request's id as its own and a name of the service's choosing (`<role>-<first 8 of its id>`), placed on a host of the service's choosing; `agentId` names it. A request names no host or agent name. One `item` gets one agent: a request for an item that has an agent neither deleted nor `done`, a request waiting, or one started whose agent is still being made, is refused with 409 naming them, unless it says `another: true`. The check and the record are one write, so of two asked at once for one item only the first is recorded. Agents run in containers by default. With `runtime:host` among its `labels`, it runs on the host instead, for host work such as installs, `/etc`, podman builds or the host's systemd; a host agent may not have full functionality, since the host may lack the tools, logins or environment a container gets. Its `runtime` says which, for its life.
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
@@ -171,7 +172,7 @@ Every host that has sent a heartbeat since it was last deregistered with `Delete
 
 ### list_requests
 
-Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%) and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known.
+Those `waiting`, in the order they would start, each with why it waits. With `all=true`, every one, the waiting first in that order and then the rest newest first. A request starts once both usage windows read under 95% (on each window's newest reading, however old; one whose window has since reset reads 0%), or whatever they read while the usage limit is off (`PutUsageLimit`), and a connected host carrying its `labels` has a free slot; of those waiting, the highest role `priority` first, then the oldest. Admission runs when a request is made and on every host's heartbeat, every 30 seconds while any host is connected, which is when a host's capacity and usage are next known.
 
 | Input | Type | Required | |
 | --- | --- | --- | --- |
@@ -230,6 +231,14 @@ Called by the agent itself, early in its first session, once it knows what it is
 | --- | --- | --- | --- |
 | `id` | string | yes | Assigned by the service when the agent is created. |
 | `title` | string | yes | What the agent is there to do, in a few words. |
+
+### put_usage_limit
+
+Turn on or off the limit that holds requests while either usage window reads 95% or more, such as while extra usage credits cover the rest of the week. It stays as set until set again; turning it off runs admission at once.
+
+| Input | Type | Required | |
+| --- | --- | --- | --- |
+| `on` | boolean | yes | True to hold requests at the limit, false to start them whatever usage reads. |
 
 ### send_message
 
