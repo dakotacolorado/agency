@@ -105,6 +105,8 @@ Body: `AgentTitle`. What the agent names itself.
 | `told` | boolean or null | Whether its live session's current or last turn began with a message delivered to it (the person's, or a brief), rather than by itself, as a turn a background task's end begins does; so `idle` after a turn that was told is a reply. Null without a live session, or when its host has not said. |
 | `limitedUntil` | string or null (date-time) | When the usage limit that stopped its last turn resets, as its host reported; null when no limit stopped it. About a minute after that time, agency sends it `Your usage limit has reset. Carry on from where you were stopped.` as `SendMessage` would (a `message` to a live session, else a `start` resuming its last conversation) and clears this, so each limit resumes it once. A message sent to it, or a report without it, clears it too. |
 | `hostStatus` | `connected`, `disconnected`, `lost` | Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date. |
+| `lifetimeCostUsd` | number or null | The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced. |
+| `sessionCount` | integer | How many sessions it has had, ended or live. |
 | `currentSession` | `Session` |  |
 
 ## Tokens

@@ -236,6 +236,8 @@ Content-type: application/json
    "told": boolean,
    "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost",
+   "lifetimeCostUsd": number,
+   "sessionCount": number,
    "currentSession": {
       "id": "string",
       "agentId": "string",
@@ -400,6 +402,14 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**lifetimeCostUsd**  
+The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced.  
+Type: Number. Nullable: Yes.
+
+**sessionCount**  
+How many sessions it has had, ended or live.  
+Type: Integer.
 
 **currentSession**  
 Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
@@ -846,6 +856,8 @@ Content-type: application/json
    "told": boolean,
    "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost",
+   "lifetimeCostUsd": number,
+   "sessionCount": number,
    "currentSession": {
       "id": "string",
       "agentId": "string",
@@ -1010,6 +1022,14 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**lifetimeCostUsd**  
+The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced.  
+Type: Number. Nullable: Yes.
+
+**sessionCount**  
+How many sessions it has had, ended or live.  
+Type: Integer.
 
 **currentSession**  
 Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
@@ -1453,6 +1473,8 @@ Content-type: application/json
       "told": boolean,
       "limitedUntil": "string",
       "hostStatus": "connected | disconnected | lost",
+      "lifetimeCostUsd": number,
+      "sessionCount": number,
       "currentSession": {
          "id": "string",
          "agentId": "string",
@@ -2051,6 +2073,8 @@ Content-type: application/json
    "told": boolean,
    "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost",
+   "lifetimeCostUsd": number,
+   "sessionCount": number,
    "currentSession": {
       "id": "string",
       "agentId": "string",
@@ -2215,6 +2239,14 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**lifetimeCostUsd**  
+The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced.  
+Type: Number. Nullable: Yes.
+
+**sessionCount**  
+How many sessions it has had, ended or live.  
+Type: Integer.
 
 **currentSession**  
 Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
@@ -2325,6 +2357,8 @@ Content-type: application/json
    "told": boolean,
    "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost",
+   "lifetimeCostUsd": number,
+   "sessionCount": number,
    "currentSession": {
       "id": "string",
       "agentId": "string",
@@ -2489,6 +2523,14 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**lifetimeCostUsd**  
+The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced.  
+Type: Number. Nullable: Yes.
+
+**sessionCount**  
+How many sessions it has had, ended or live.  
+Type: Integer.
 
 **currentSession**  
 Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
@@ -2673,6 +2715,8 @@ Content-type: application/json
    "told": boolean,
    "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost",
+   "lifetimeCostUsd": number,
+   "sessionCount": number,
    "currentSession": {
       "id": "string",
       "agentId": "string",
@@ -2837,6 +2881,14 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**lifetimeCostUsd**  
+The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced.  
+Type: Number. Nullable: Yes.
+
+**sessionCount**  
+How many sessions it has had, ended or live.  
+Type: Integer.
 
 **currentSession**  
 Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
@@ -3015,6 +3067,8 @@ Content-type: application/json
    "told": boolean,
    "limitedUntil": "string",
    "hostStatus": "connected | disconnected | lost",
+   "lifetimeCostUsd": number,
+   "sessionCount": number,
    "currentSession": {
       "id": "string",
       "agentId": "string",
@@ -3179,6 +3233,14 @@ Type: String. Nullable: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`.
+
+**lifetimeCostUsd**  
+The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced.  
+Type: Number. Nullable: Yes.
+
+**sessionCount**  
+How many sessions it has had, ended or live.  
+Type: Integer.
 
 **currentSession**  
 Its live session's record, as `ListSessions` lists it, so far; null without a live session.  
@@ -3484,6 +3546,14 @@ Type: String. Nullable: Yes. Required: Yes.
 **hostStatus**  
 Its host's `status`. While the host is `disconnected` or `lost`, `state` may be out of date.  
 Type: String. Valid values: `connected` | `disconnected` | `lost`. Required: Yes.
+
+**lifetimeCostUsd**  
+The estimated cost of every session it has had, ended or live, each priced as in `ListSessions`; null when none can be priced.  
+Type: Number. Nullable: Yes. Required: Yes.
+
+**sessionCount**  
+How many sessions it has had, ended or live.  
+Type: Integer. Required: Yes.
 
 **currentSession**  
 Its live session's record, as `ListSessions` lists it, so far; null without a live session.  

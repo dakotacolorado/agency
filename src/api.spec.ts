@@ -260,6 +260,8 @@ describe("creating an agent", () => {
       tasks: 0,
       told: null,
       limitedUntil: null,
+      lifetimeCostUsd: null,
+      sessionCount: 0,
       hostStatus: "connected",
       currentSession: null,
     });

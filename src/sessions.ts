@@ -108,6 +108,12 @@ export function sessionView(session: Session, capabilities: CapabilityMap) {
   };
 }
 
+/** An agent's sessions summed: their estimated costs, null when none can be priced, and how many there are. */
+export function lifetimeOf(sessions: Session[], capabilities: CapabilityMap) {
+  const costs = sessions.map((s) => sessionView(s, capabilities).estimatedCostUsd).filter((c): c is number => c !== null);
+  return { lifetimeCostUsd: costs.length ? dollars(costs.reduce((a, b) => a + b, 0)) : null, sessionCount: sessions.length };
+}
+
 export type SessionView = ReturnType<typeof sessionView>;
 
 /** Whether it ran on `model` at any time: at its start, or in a model's tokens. */

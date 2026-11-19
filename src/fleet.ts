@@ -41,7 +41,7 @@ import {
   type Usage,
   type UsageReport,
 } from "./schema.ts";
-import { sessionView, type Tally } from "./sessions.ts";
+import { lifetimeOf, sessionView, type Tally } from "./sessions.ts";
 import { Conflict, type Change, type SessionWrite, type Store } from "./store.ts";
 
 /**
@@ -178,10 +178,10 @@ export class Fleet {
   async announce(agents: Agent[]): Promise<void> {
     if (!agents.length) return;
     const hosts = new Map((await this.store.listHosts()).map((h) => [h.id, h]));
-    const current = await Promise.all(agents.map((w) => (w.session ? this.store.getSession(w.id, w.session.id) : null)));
+    const sessions = await this.store.sessionsByAgent(agents.map((w) => w.id));
     const now = this.now();
     await this.push.toViewers(
-      agents.map((w, i) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now, this.capabilities, current[i]) })),
+      agents.map((w) => ({ type: "agent", agent: agentView(w, hosts.get(w.hostId) ?? null, now, this.capabilities, sessions.get(w.id) ?? []) })),
     );
   }
 
@@ -520,8 +520,9 @@ export const agentView = (
   host: Host | null,
   now: Date,
   capabilities: CapabilityMap = DEFAULT_CAPABILITIES,
-  current: Session | null = null,
+  sessions: Session[] = [],
 ) => {
+  const current = agent.session ? (sessions.find((s) => s.id === agent.session!.id) ?? null) : null;
   const { hadSession: _, begun: __, needsStart: ______________, rev: ________, resumed: _________, limitedUntil, sessionTokens, item, role, title, label, createdBy, whenDone, runtime, skills, credentials, status: _____, summary, headline, saidAt, activity, tasks, capability: ___________, contextTokens, ...served } =
     // Records written before `turn` and `paged` were dropped still hold them.
     agent as Agent & { turn?: unknown; paged?: unknown };
@@ -553,7 +554,8 @@ export const agentView = (
     told: agent.told ?? null,
     limitedUntil: limitedUntil ?? null,
     hostStatus: host ? hostStatus(host.heartbeatAt, now) : ("lost" as const),
-    currentSession: agent.session && current?.id === agent.session.id ? sessionView(current, capabilities) : null,
+    ...lifetimeOf(sessions, capabilities),
+    currentSession: current ? sessionView(current, capabilities) : null,
   };
 };
 
